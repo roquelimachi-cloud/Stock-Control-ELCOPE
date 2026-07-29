@@ -7,13 +7,29 @@ class StockQueryService {
   final SupabaseClient db = SupabaseService.client;
 
   Future<List<StockItem>> buscar(String texto) async {
-    final respuesta = await db
-        .from('stock')
-        .select()
-       .or(
-'codigo.ilike.%$texto%,descripcion.ilike.%$texto%,cliente.ilike.%$texto%,vendedor.ilike.%$texto%,lote.ilike.%$texto%,produccion.ilike.%$texto%,modelo.ilike.%$texto%',
-)
-        .limit(300);
+    var consulta = db.from('stock').select();
+
+    if (texto.trim().isNotEmpty) {
+      final palabras = texto
+          .trim()
+          .split(RegExp(r'\s+'))
+          .where((e) => e.isNotEmpty)
+          .toList();
+
+      for (final palabra in palabras) {
+        consulta = consulta.or(
+          'codigo.ilike.%$palabra%,'
+          'descripcion.ilike.%$palabra%,'
+          'cliente.ilike.%$palabra%,'
+          'vendedor.ilike.%$palabra%,'
+          'lote.ilike.%$palabra%,'
+          'produccion.ilike.%$palabra%,'
+          'modelo.ilike.%$palabra%',
+        );
+      }
+    }
+
+    final respuesta = await consulta.limit(300);
 
     return (respuesta as List)
         .map((e) => StockItem.fromJson(e))

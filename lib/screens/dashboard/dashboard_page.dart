@@ -216,7 +216,7 @@ if (Sesion.esAdministrador)
       const SizedBox(height: 15),
 
       const Text(
-        "Sistema Inteligente de Gestión de Inventario",
+         "Sistema Inteligente de Gestión de Ventas",
         style: TextStyle(
           fontSize: 18,
           color: Colors.grey,

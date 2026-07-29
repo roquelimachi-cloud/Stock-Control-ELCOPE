@@ -1,12 +1,12 @@
 import 'package:excel/excel.dart';
 
-import '../models/stock_item.dart';
+import '../models/stock/stock_item.dart';
 import 'excel_date.dart';
 import 'excel_helper.dart';
 
 class ExcelMapper {
   ExcelMapper._();
-
+}
   static StockItem convertir(
     List<Data?> fila,
     Map<String, int> columnas,

@@ -8,7 +8,7 @@ import 'dart:io';
 
 import 'package:excel/excel.dart';
 
-import '../models/stock_item.dart';
+import '../models/stock/stock_item.dart';
 import 'excel_helper.dart';
 import 'excel_mapper.dart';
 

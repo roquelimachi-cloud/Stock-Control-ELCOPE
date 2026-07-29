@@ -9,11 +9,13 @@ class StockItem {
   final double peso;
   final String almacen;
 
-  // NUEVOS CAMPOS
   final double valorListaPrecioDolar;
   final double valorFacturacionDolar;
   final double listaPrecioDolar;
 
+  // NUEVO CAMPO
+  final String fechaIngreso;
+final String prueba = "OK";
   StockItem({
     required this.codigo,
     required this.descripcion,
@@ -27,6 +29,7 @@ class StockItem {
     required this.valorListaPrecioDolar,
     required this.valorFacturacionDolar,
     required this.listaPrecioDolar,
+    required this.fechaIngreso,
   });
 
   factory StockItem.fromJson(Map<String, dynamic> json) {
@@ -40,14 +43,17 @@ class StockItem {
       stock: (json['stock'] ?? 0).toDouble(),
       peso: (json['peso'] ?? 0).toDouble(),
       almacen: json['almacen'] ?? '',
-      listaPrecioDolar:
-    (json['lista_precio_dolar'] ?? 0).toDouble(),
 
-      // NUEVOS CAMPOS
+      listaPrecioDolar:
+          (json['lista_precio_dolar'] ?? 0).toDouble(),
+
       valorListaPrecioDolar:
           (json['valor_lista_precio_dolar'] ?? 0).toDouble(),
+
       valorFacturacionDolar:
           (json['valor_facturacion_dolar'] ?? 0).toDouble(),
+
+      fechaIngreso: json['fecha_ingreso'] ?? '',
     );
   }
 }

@@ -9,8 +9,8 @@ class VendedorService {
         .select('vendedor');
 
     final vendedores = response
-        .map<String>((e) => e['vendedor'].toString())
-        .where((e) => e.trim().isNotEmpty)
+        .map<String>((e) => e['vendedor'].toString().trim())
+        .where((e) => e.isNotEmpty)
         .toSet()
         .toList();
 

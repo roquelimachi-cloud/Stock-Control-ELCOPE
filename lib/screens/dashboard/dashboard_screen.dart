@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../models/dashboard/dashboard_summary.dart';
-import '../../services/dashboard/dashboard_service.dart';
+import '../../services/supabase/dashboard_service.dart';
 import '../../widgets/dashboard/kpi_card.dart';
 
 class DashboardScreen extends StatefulWidget {
@@ -20,14 +20,12 @@ class _DashboardScreenState extends State<DashboardScreen> {
 
   late Future<DashboardSummary> resumen;
 
-  @override
-  void initState() {
-    super.initState();
+@override
+void initState() {
+  super.initState();
 
-    resumen = DashboardService.obtenerResumen(
-      vendedor: widget.vendedor,
-    );
-  }
+  resumen = DashboardService().obtenerResumen();
+}
 
   @override
   Widget build(BuildContext context) {

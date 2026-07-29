@@ -18,43 +18,47 @@ class UsuarioService {
   }
 
   Future<void> insertarUsuario({
-    required String usuario,
-    required String nombre,
-    required String correo,
-    required String password,
-    required String rol,
-  }) async {
-    await db.from('usuarios').insert({
-      'usuario': usuario,
-      'nombre': nombre,
-      'correo': correo,
-      'password': password,
-      'rol': rol,
-      'activo': true,
-    });
-  }
+  required String usuario,
+  required String nombre,
+  required String correo,
+  required String password,
+  required String rol,
+  required String vendedor,
+}) async {
+  await db.from('usuarios').insert({
+    'usuario': usuario,
+    'nombre': nombre,
+    'correo': correo,
+    'password': password,
+    'rol': rol,
+    'vendedor': vendedor,
+    'activo': true,
+  });
+}
 
   Future<void> actualizarUsuario(
-    int id, {
-    required String usuario,
-    required String nombre,
-    required String correo,
-    required String password,
-    required String rol,
-    required bool activo,
-  }) async {
-    await db
-        .from('usuarios')
-        .update({
-          'usuario': usuario,
-          'nombre': nombre,
-          'correo': correo,
-          'password': password,
-          'rol': rol,
-          'activo': activo,
-        })
-        .eq('id', id);
-  }
+  int id, {
+  required String usuario,
+  required String nombre,
+  required String correo,
+  required String password,
+  required String rol,
+  required String vendedor,
+  required bool activo,
+}) async {
+  await db
+      .from('usuarios')
+      .update({
+        'usuario': usuario,
+        'nombre': nombre,
+        'correo': correo,
+        'password': password,
+        'rol': rol,
+        'vendedor': vendedor,
+        'activo': activo,
+      })
+      .eq('id', id);
+}
 
   Future<void> eliminarUsuario(int id) async {
     await db
@@ -72,6 +76,7 @@ Future<void> actualizarMiPerfil({
 }) async {
 
   if (password.trim().isEmpty) {
+    print("ACTUALIZANDO SIN PASSWORD");
 
     await db
         .from('usuarios')
@@ -82,6 +87,7 @@ Future<void> actualizarMiPerfil({
         .eq('id', id);
 
   } else {
+    print("ACTUALIZANDO CON PASSWORD");
 
     await db
         .from('usuarios')
@@ -91,7 +97,6 @@ Future<void> actualizarMiPerfil({
           'password': password.trim(),
         })
         .eq('id', id);
-
   }
 }
   Future<Usuario?> login(

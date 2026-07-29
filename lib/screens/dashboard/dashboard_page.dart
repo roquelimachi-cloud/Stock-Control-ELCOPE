@@ -6,8 +6,14 @@ import '../sync/sync_page.dart';
 import '../usuarios/usuarios_page.dart';
 import '../../services/sesion.dart';
 import '../perfil/mi_perfil_page.dart';
+import '../../models/dashboard/dashboard_summary.dart';
+import '../../services/supabase/dashboard_service.dart';
+import '../../widgets/dashboard/kpi_card.dart';
+import '../../models/dashboard/cliente_top.dart';
+import '../../widgets/dashboard/top_clientes_card.dart';
 class DashboardPage extends StatelessWidget {
-  const DashboardPage({super.key});
+  DashboardPage({super.key});
+  final DashboardService dashboardService = DashboardService();
 
   @override
   Widget build(BuildContext context) {
@@ -182,50 +188,135 @@ if (Sesion.esAdministrador)
           ),
         ),
       ),
-    body: Center(
-  child: Column(
-    mainAxisAlignment: MainAxisAlignment.center,
-    children: [
+    body: FutureBuilder<DashboardSummary>(
+  future: dashboardService.obtenerResumen(),
+  builder: (context, snapshot) {
+    if (snapshot.connectionState == ConnectionState.waiting) {
+      return const Center(
+        child: CircularProgressIndicator(),
+      );
+    }
 
-      Image.asset(
-        'assets/images/logo_mr.png',
-        width: 220,
-      ),
-
-      const SizedBox(height: 20),
-
-      const Text(
-        "Bienvenido a",
-        style: TextStyle(
-          fontSize: 22,
+    if (snapshot.hasError) {
+      return Center(
+        child: Text(
+          "Error: ${snapshot.error}",
         ),
-      ),
+      );
+    }
 
-      const SizedBox(height: 10),
+    final resumen = snapshot.data!;
 
-      const Text(
-        "CONTROL DE STOCK ELCOPE",
-        textAlign: TextAlign.center,
-        style: TextStyle(
-          fontSize: 30,
-          fontWeight: FontWeight.bold,
-          color: Colors.indigo,
-        ),
-      ),
+    return FutureBuilder<List<ClienteTop>>(
+      future: dashboardService.obtenerTopClientes(),
+      builder: (context, topSnapshot) {
+        if (topSnapshot.connectionState ==
+            ConnectionState.waiting) {
+          return const Center(
+            child: CircularProgressIndicator(),
+          );
+        }
 
-      const SizedBox(height: 15),
+        if (topSnapshot.hasError) {
+          return Center(
+            child: Text(
+              "Error: ${topSnapshot.error}",
+            ),
+          );
+        }
 
-      const Text(
-         "Sistema Inteligente de Gestión de Ventas",
-        style: TextStyle(
-          fontSize: 18,
-          color: Colors.grey,
-        ),
-      ),
-    ],
-  ),
+       final topClientes = topSnapshot.data ?? [];
+
+debugPrint("================================");
+debugPrint("Cantidad de clientes: ${topClientes.length}");
+
+for (final c in topClientes) {
+  debugPrint("${c.cliente} -> ${c.valorStock}");
+}
+
+debugPrint("================================");
+
+        return SingleChildScrollView(
+          padding: const EdgeInsets.all(20),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+
+              Text(
+                "Bienvenido ${Sesion.nombre}",
+                style: const TextStyle(
+                  fontSize: 30,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+
+              const SizedBox(height: 8),
+
+              Text(
+                Sesion.rol,
+                style: const TextStyle(
+                  fontSize: 18,
+                  color: Colors.grey,
+                ),
+              ),
+
+              const SizedBox(height: 30),
+
+              GridView.count(
+                shrinkWrap: true,
+                physics: const NeverScrollableScrollPhysics(),
+                crossAxisCount: 2,
+                crossAxisSpacing: 20,
+                mainAxisSpacing: 20,
+                childAspectRatio: 2.8,
+                children: [
+
+                  KpiCard(
+                    titulo: "Stock Total",
+                    valor: resumen.stockTotal.toStringAsFixed(0),
+                    icono: Icons.inventory,
+                    color: Colors.blue,
+                  ),
+
+                  KpiCard(
+                    titulo: "Peso Total",
+                    valor:
+                        "${resumen.pesoTotal.toStringAsFixed(2)} Kg",
+                    icono: Icons.scale,
+                    color: Colors.orange,
+                  ),
+
+                  KpiCard(
+                    titulo: "Valor Stock",
+                    valor:
+                        "US\$ ${resumen.valorStock.toStringAsFixed(2)}",
+                    icono: Icons.attach_money,
+                    color: Colors.green,
+                  ),
+
+                  KpiCard(
+                    titulo: "Clientes",
+                    valor: resumen.clientes.toString(),
+                    icono: Icons.people,
+                    color: Colors.purple,
+                  ),
+                ],
+              ),
+
+              const SizedBox(height: 30),
+
+              TopClientesCard(
+                clientes: topClientes,
+              ),
+
+              const SizedBox(height: 20),
+            ],
+          ),
+        );
+      },
+    );
+  },
 ),
-
 
     );
   }

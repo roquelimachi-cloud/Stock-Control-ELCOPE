@@ -4,6 +4,7 @@ class Usuario {
   final String nombre;
   final String correo;
   final String rol;
+  final String vendedor;
   final bool activo;
 
   Usuario({
@@ -12,6 +13,7 @@ class Usuario {
     required this.nombre,
     required this.correo,
     required this.rol,
+    required this.vendedor,
     required this.activo,
   });
 
@@ -22,6 +24,7 @@ class Usuario {
       nombre: json['nombre'] ?? '',
       correo: json['correo'] ?? '',
       rol: json['rol'] ?? '',
+      vendedor: json['vendedor'] ?? '',
       activo: json['activo'] ?? false,
     );
   }
@@ -33,6 +36,7 @@ class Usuario {
       'nombre': nombre,
       'correo': correo,
       'rol': rol,
+      'vendedor': vendedor,
       'activo': activo,
     };
   }

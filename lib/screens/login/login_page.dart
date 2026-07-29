@@ -52,7 +52,7 @@ if (usuario != null) {
   Navigator.pushReplacement(
     context,
     MaterialPageRoute(
-      builder: (_) => const DashboardPage(),
+      builder: (_) => DashboardPage(),
     ),
   );
 } else {

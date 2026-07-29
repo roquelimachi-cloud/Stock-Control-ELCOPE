@@ -79,15 +79,15 @@ class _MiPerfilPageState extends State<MiPerfilPage> {
       correo: correoController.text.trim(),
       password: passwordController.text.trim(),
     );
-
-    Sesion.usuarioActual = Usuario(
-      id: Sesion.usuarioActual!.id,
-      usuario: Sesion.usuarioActual!.usuario,
-      nombre: nombreController.text.trim(),
-      correo: correoController.text.trim(),
-      rol: Sesion.usuarioActual!.rol,
-      activo: Sesion.usuarioActual!.activo,
-    );
+Sesion.usuarioActual = Usuario(
+  id: Sesion.usuarioActual!.id,
+  usuario: Sesion.usuarioActual!.usuario,
+  nombre: nombreController.text.trim(),
+  correo: correoController.text.trim(),
+  rol: Sesion.usuarioActual!.rol,
+  vendedor: Sesion.usuarioActual!.vendedor,
+  activo: Sesion.usuarioActual!.activo,
+);
 
     if (!mounted) return;
 

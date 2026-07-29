@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../services/supabase/usuario_service.dart';
+import '../../services/supabase/vendedor_service.dart';
 
 class NuevoUsuarioPage extends StatefulWidget {
   const NuevoUsuarioPage({super.key});
@@ -11,34 +12,50 @@ class NuevoUsuarioPage extends StatefulWidget {
 
 class _NuevoUsuarioPageState extends State<NuevoUsuarioPage> {
   final UsuarioService servicio = UsuarioService();
+  final VendedorService vendedorService = VendedorService();
 
   final usuarioController = TextEditingController();
   final nombreController = TextEditingController();
   final correoController = TextEditingController();
   final passwordController = TextEditingController();
 
+  List<String> vendedores = [];
+  String? vendedorSeleccionado;
   String rol = "Comercial";
 
   bool guardando = false;
   bool ocultarPassword = true;
 
+  @override
+  void initState() {
+    super.initState();
+    cargarVendedores();
+  }
+
+  Future<void> cargarVendedores() async {
+    vendedores = await vendedorService.obtenerVendedores();
+
+    if (vendedores.isNotEmpty) {
+      vendedorSeleccionado = vendedores.first;
+    }
+
+    if (mounted) setState(() {});
+  }
+
   Future<void> guardarUsuario() async {
     if (usuarioController.text.trim().isEmpty ||
         nombreController.text.trim().isEmpty ||
         correoController.text.trim().isEmpty ||
-        passwordController.text.trim().isEmpty) {
+        passwordController.text.trim().isEmpty ||
+        vendedorSeleccionado == null) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text("Complete todos los campos."),
-        ),
+        const SnackBar(content: Text("Complete todos los campos.")),
       );
       return;
     }
 
     try {
-      setState(() {
-        guardando = true;
-      });
+      setState(() => guardando = true);
 
       await servicio.insertarUsuario(
         usuario: usuarioController.text.trim(),
@@ -46,35 +63,18 @@ class _NuevoUsuarioPageState extends State<NuevoUsuarioPage> {
         correo: correoController.text.trim(),
         password: passwordController.text.trim(),
         rol: rol,
+        vendedor: vendedorSeleccionado!,
       );
 
       if (!mounted) return;
 
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text("Usuario registrado correctamente."),
-        ),
+        const SnackBar(content: Text("Usuario registrado correctamente.")),
       );
 
       Navigator.pop(context);
-    } catch (e, stackTrace) {
-  debugPrint("ERROR AL GUARDAR USUARIO:");
-  debugPrint(e.toString());
-  debugPrint(stackTrace.toString());
-
-  if (!mounted) return;
-
-  ScaffoldMessenger.of(context).showSnackBar(
-    SnackBar(
-      content: Text(e.toString()),
-    ),
-  );
     } finally {
-      if (mounted) {
-        setState(() {
-          guardando = false;
-        });
-      }
+      if (mounted) setState(() => guardando = false);
     }
   }
 
@@ -86,6 +86,12 @@ class _NuevoUsuarioPageState extends State<NuevoUsuarioPage> {
     passwordController.dispose();
     super.dispose();
   }
+
+  InputDecoration deco(String t, IconData i)=>InputDecoration(
+    labelText:t,
+    border: const OutlineInputBorder(),
+    prefixIcon: Icon(i),
+  );
 
   @override
   Widget build(BuildContext context) {
@@ -99,123 +105,51 @@ class _NuevoUsuarioPageState extends State<NuevoUsuarioPage> {
         padding: const EdgeInsets.all(20),
         child: ListView(
           children: [
-            TextField(
-              controller: usuarioController,
-              decoration: const InputDecoration(
-                labelText: "Usuario",
-                border: OutlineInputBorder(),
-                prefixIcon: Icon(Icons.person),
-              ),
-            ),
-
-            const SizedBox(height: 15),
-
-            TextField(
-              controller: nombreController,
-              decoration: const InputDecoration(
-                labelText: "Nombre Completo",
-                border: OutlineInputBorder(),
-                prefixIcon: Icon(Icons.badge),
-              ),
-            ),
-
-            const SizedBox(height: 15),
-
-            TextField(
-              controller: correoController,
-              keyboardType: TextInputType.emailAddress,
-              decoration: const InputDecoration(
-                labelText: "Correo",
-                border: OutlineInputBorder(),
-                prefixIcon: Icon(Icons.email),
-              ),
-            ),
-
-            const SizedBox(height: 15),
-
+            TextField(controller: usuarioController, decoration: deco("Usuario", Icons.person)),
+            const SizedBox(height:15),
+            TextField(controller: nombreController, decoration: deco("Nombre Completo", Icons.badge)),
+            const SizedBox(height:15),
+            TextField(controller: correoController, keyboardType: TextInputType.emailAddress, decoration: deco("Correo", Icons.email)),
+            const SizedBox(height:15),
             TextField(
               controller: passwordController,
               obscureText: ocultarPassword,
-              decoration: InputDecoration(
-                labelText: "Contraseña",
-                border: const OutlineInputBorder(),
-                prefixIcon: const Icon(Icons.lock),
+              decoration: deco("Contraseña", Icons.lock).copyWith(
                 suffixIcon: IconButton(
-                  icon: Icon(
-                    ocultarPassword
-                        ? Icons.visibility
-                        : Icons.visibility_off,
-                  ),
-                  onPressed: () {
-                    setState(() {
-                      ocultarPassword = !ocultarPassword;
-                    });
-                  },
+                  icon: Icon(ocultarPassword ? Icons.visibility : Icons.visibility_off),
+                  onPressed: ()=>setState(()=>ocultarPassword=!ocultarPassword),
                 ),
               ),
             ),
-
-            const SizedBox(height: 15),
-
+            const SizedBox(height:15),
             DropdownButtonFormField<String>(
               value: rol,
-              decoration: const InputDecoration(
-                labelText: "Rol",
-                border: OutlineInputBorder(),
-                prefixIcon: Icon(Icons.admin_panel_settings),
-              ),
+              decoration: deco("Rol", Icons.admin_panel_settings),
               items: const [
-                DropdownMenuItem(
-                  value: "Administrador",
-                  child: Text("Administrador"),
-                ),
-                DropdownMenuItem(
-                  value: "Comercial",
-                  child: Text("Comercial"),
-                ),
-                DropdownMenuItem(
-                  value: "Producción",
-                  child: Text("Producción"),
-                ),
-                DropdownMenuItem(
-                  value: "Logística",
-                  child: Text("Logística"),
-                ),
-                DropdownMenuItem(
-                  value: "Gerencia",
-                  child: Text("Gerencia"),
-                ),
+                DropdownMenuItem(value:"Administrador",child:Text("Administrador")),
+                DropdownMenuItem(value:"Comercial",child:Text("Comercial")),
+                DropdownMenuItem(value:"Producción",child:Text("Producción")),
+                DropdownMenuItem(value:"Logística",child:Text("Logística")),
+                DropdownMenuItem(value:"Gerencia",child:Text("Gerencia")),
               ],
-              onChanged: (value) {
-                if (value == null) return;
-
-                setState(() {
-                  rol = value;
-                });
-              },
+              onChanged:(v){ if(v!=null) setState(()=>rol=v);},
             ),
-
-            const SizedBox(height: 30),
-
+            const SizedBox(height:15),
+            DropdownButtonFormField<String>(
+              value: vendedorSeleccionado,
+              decoration: deco("Vendedor", Icons.badge_outlined),
+              items: vendedores.map((e)=>DropdownMenuItem(value:e,child:Text(e))).toList(),
+              onChanged:(v)=>setState(()=>vendedorSeleccionado=v),
+            ),
+            const SizedBox(height:30),
             SizedBox(
-              height: 50,
+              height:50,
               child: ElevatedButton.icon(
-                onPressed: guardando ? null : guardarUsuario,
+                onPressed: guardando?null:guardarUsuario,
                 icon: guardando
-                    ? const SizedBox(
-                        width: 20,
-                        height: 20,
-                        child: CircularProgressIndicator(
-                          strokeWidth: 2,
-                          color: Colors.white,
-                        ),
-                      )
-                    : const Icon(Icons.save),
-                label: Text(
-                  guardando
-                      ? "Guardando..."
-                      : "GUARDAR USUARIO",
-                ),
+                  ? const SizedBox(width:20,height:20,child:CircularProgressIndicator(strokeWidth:2,color:Colors.white))
+                  : const Icon(Icons.save),
+                label: Text(guardando?"Guardando...":"GUARDAR USUARIO"),
               ),
             ),
           ],

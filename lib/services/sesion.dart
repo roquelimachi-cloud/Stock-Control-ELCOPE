@@ -20,6 +20,9 @@ class Sesion {
   static String get rol =>
       usuarioActual?.rol ?? "";
 
+  static String get vendedor =>
+      usuarioActual?.vendedor ?? "";
+
   static void cerrarSesion() {
     usuarioActual = null;
   }

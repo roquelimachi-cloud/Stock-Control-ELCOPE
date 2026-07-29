@@ -24,6 +24,7 @@ class _EditarUsuarioPageState extends State<EditarUsuarioPage> {
   late TextEditingController nombreController;
   late TextEditingController correoController;
   late TextEditingController passwordController;
+  late TextEditingController vendedorController;
 
   late String rol;
   late bool activo;
@@ -45,60 +46,69 @@ class _EditarUsuarioPageState extends State<EditarUsuarioPage> {
 
     passwordController = TextEditingController();
 
+    vendedorController =
+        TextEditingController(text: widget.usuario.vendedor);
+
     rol = widget.usuario.rol;
     activo = widget.usuario.activo;
   }
-Future<void> guardar() async {
-  if (!_formKey.currentState!.validate()) return;
 
-  setState(() {
-    guardando = true;
-  });
+  @override
+  void dispose() {
+    usuarioController.dispose();
+    nombreController.dispose();
+    correoController.dispose();
+    passwordController.dispose();
+    vendedorController.dispose();
+    super.dispose();
+  }
 
-  try {
-    print("Iniciando actualización...");
+  Future<void> guardar() async {
+    if (!_formKey.currentState!.validate()) return;
 
-    await servicio.actualizarUsuario(
-      widget.usuario.id,
-      usuario: usuarioController.text.trim(),
-      nombre: nombreController.text.trim(),
-      correo: correoController.text.trim(),
-      password: passwordController.text.trim(),
-      rol: rol,
-      activo: activo,
-    );
+    setState(() {
+      guardando = true;
+    });
 
-    print("Actualización correcta");
+    try {
+      await servicio.actualizarUsuario(
+        widget.usuario.id,
+        usuario: usuarioController.text.trim(),
+        nombre: nombreController.text.trim(),
+        correo: correoController.text.trim(),
+        password: passwordController.text.trim(),
+        rol: rol,
+        vendedor: vendedorController.text.trim(),
+        activo: activo,
+      );
 
-    if (!mounted) return;
+      if (!mounted) return;
 
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(
-        content: Text("Usuario actualizado correctamente"),
-        backgroundColor: Colors.green,
-      ),
-    );
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text("Usuario actualizado correctamente"),
+          backgroundColor: Colors.green,
+        ),
+      );
 
-    Navigator.pop(context);
-  } catch (e) {
-    print("ERROR:");
-    print(e);
+      Navigator.pop(context);
+    } catch (e) {
+      if (!mounted) return;
 
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(e.toString()),
-        backgroundColor: Colors.red,
-      ),
-    );
-  } finally {
-    if (mounted) {
-      setState(() {
-        guardando = false;
-      });
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(e.toString()),
+          backgroundColor: Colors.red,
+        ),
+      );
+    } finally {
+      if (mounted) {
+        setState(() {
+          guardando = false;
+        });
+      }
     }
   }
-}
- 
 
   @override
   Widget build(BuildContext context) {
@@ -121,7 +131,6 @@ Future<void> guardar() async {
                 child: ListView(
                   shrinkWrap: true,
                   children: [
-
                     TextFormField(
                       controller: usuarioController,
                       decoration: const InputDecoration(
@@ -169,44 +178,56 @@ Future<void> guardar() async {
 
                     const SizedBox(height: 15),
 
-               DropdownButtonFormField<String>(
-  value: rol,
-  decoration: const InputDecoration(
-    labelText: "Rol",
-    border: OutlineInputBorder(),
-  ),
-  items: const [
-    DropdownMenuItem(
-      value: "Administrador",
-      child: Text("Administrador"),
-    ),
-    DropdownMenuItem(
-      value: "Comercial",
-      child: Text("Comercial"),
-    ),
-    DropdownMenuItem(
-      value: "Usuario",
-      child: Text("Usuario"),
-    ),
-    DropdownMenuItem(
-      value: "Producción",
-      child: Text("Producción"),
-    ),
-    DropdownMenuItem(
-      value: "Logística",
-      child: Text("Logística"),
-    ),
-    DropdownMenuItem(
-      value: "Compras",
-      child: Text("Compras"),
-    ),
-  ],
-  onChanged: (value) {
-    setState(() {
-      rol = value!;
-    });
-  },
-),
+                    DropdownButtonFormField<String>(
+                      value: rol,
+                      decoration: const InputDecoration(
+                        labelText: "Rol",
+                        border: OutlineInputBorder(),
+                      ),
+                      items: const [
+                        DropdownMenuItem(
+                          value: "Administrador",
+                          child: Text("Administrador"),
+                        ),
+                        DropdownMenuItem(
+                          value: "Comercial",
+                          child: Text("Comercial"),
+                        ),
+                        DropdownMenuItem(
+                          value: "Usuario",
+                          child: Text("Usuario"),
+                        ),
+                        DropdownMenuItem(
+                          value: "Producción",
+                          child: Text("Producción"),
+                        ),
+                        DropdownMenuItem(
+                          value: "Logística",
+                          child: Text("Logística"),
+                        ),
+                        DropdownMenuItem(
+                          value: "Compras",
+                          child: Text("Compras"),
+                        ),
+                      ],
+                      onChanged: (value) {
+                        setState(() {
+                          rol = value!;
+                        });
+                      },
+                    ),
+
+                    const SizedBox(height: 15),
+
+                    TextFormField(
+                      controller: vendedorController,
+                      decoration: const InputDecoration(
+                        labelText: "Vendedor",
+                        border: OutlineInputBorder(),
+                      ),
+                      validator: (v) =>
+                          v!.isEmpty ? "Ingrese el vendedor" : null,
+                    ),
 
                     const SizedBox(height: 15),
 

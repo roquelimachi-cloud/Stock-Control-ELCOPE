@@ -1,0 +1,44 @@
+name: stock_control_elcope
+description: Sistema Control de Stock ELCOPE
+publish_to: 'none'
+
+version: 1.0.0+1
+
+environment:
+  sdk: ">=3.12.0 <4.0.0"
+
+dependencies:
+  flutter:
+    sdk: flutter
+
+  cupertino_icons: ^1.0.8
+
+  # Base de datos
+  supabase_flutter: ^2.9.1
+
+  # Lectura de Excel
+  excel: ^4.0.6
+  file_picker: ^10.3.2
+
+  # Utilidades
+  intl: ^0.20.2
+  flutter_dotenv: ^5.2.1
+
+  # Estado de la aplicación
+  provider: ^6.1.5
+
+  # Tabla profesional
+  syncfusion_flutter_datagrid: ^30.2.7
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+
+  flutter_lints: ^6.0.0
+
+flutter:
+  uses-material-design: true
+
+  assets:
+    - .env
+    - assets/images/

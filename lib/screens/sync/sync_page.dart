@@ -4,7 +4,7 @@ import 'package:stock_control_elcope/services/excel/excel_service.dart';
 import 'package:stock_control_elcope/services/import/import_excel_service.dart';
 import 'package:stock_control_elcope/services/supabase/stock_service.dart';
 import 'package:stock_control_elcope/widgets/columnas_dialog.dart';
-
+import 'dart:typed_data';
 class SyncPage extends StatefulWidget {
   const SyncPage({super.key});
 
@@ -19,42 +19,49 @@ final StockService stockService = StockService();
 
   String archivo = "No seleccionado";
   String rutaArchivo = "";
+  Uint8List? archivoBytes;
   String estado = "Esperando sincronización...";
   String ultima = "Nunca";
 
   int totalFilas = 0;
   int totalColumnas = 0;
 
-  Future<void> seleccionarArchivo() async {
-    FilePickerResult? result = await FilePicker.platform.pickFiles(
-      type: FileType.custom,
-      allowedExtensions: ['xlsx', 'xls'],
-    );
+Future<void> seleccionarArchivo() async {
+  FilePickerResult? result = await FilePicker.platform.pickFiles(
+    type: FileType.custom,
+    allowedExtensions: ['xlsx', 'xls'],
+    withData: true,
+  );
 
-    if (result != null) {
-      setState(() {
-        rutaArchivo = result.files.single.path!;
-        archivo = result.files.single.name;
-        estado = "Archivo seleccionado correctamente.";
-      });
-    }
-  }
+  if (result == null) return;
+
+  final file = result.files.single;
+
+  setState(() {
+    archivo = file.name;
+    rutaArchivo = file.path ?? "";
+    archivoBytes = file.bytes;
+
+    estado = "Archivo seleccionado correctamente.";
+  });
+}
 
 
 Future<void> sincronizar() async {
-  if (rutaArchivo.isEmpty) {
-    setState(() {
-      estado = "Debe seleccionar un archivo Excel.";
-    });
-    return;
-  }
+if (rutaArchivo.isEmpty && archivoBytes == null) {
+  setState(() {
+    estado = "Debe seleccionar un archivo Excel.";
+  });
+  return;
+}
 
   try {
     setState(() {
       estado = "Leyendo Excel...";
     });
-
-    final resultado = await excelService.leerExcel(rutaArchivo);
+final resultado = await excelService.leerExcel(
+  bytes: archivoBytes!,
+);
 
     totalFilas = resultado["filas"];
     totalColumnas = resultado["columnas"];
@@ -64,9 +71,9 @@ Future<void> sincronizar() async {
         (e) => Map<String, String>.from(e),
       ),
     );
-
-    final rows = await importExcelService.importar(rutaArchivo);
-
+final rows = await importExcelService.importar(
+  bytes: archivoBytes!,
+);
     setState(() {
       estado = "Sincronizando ${rows.length} registros...";
     });

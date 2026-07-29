@@ -1,19 +1,15 @@
-import 'dart:io';
+
+import 'dart:typed_data';
 
 import 'package:excel/excel.dart';
 
 import '../../models/excel/stock_excel_row.dart';
-
 class ImportExcelService {
-  Future<List<StockExcelRow>> importar(String rutaArchivo) async {
-    final file = File(rutaArchivo);
 
-    if (!await file.exists()) {
-      throw Exception("No existe el archivo Excel.");
-    }
-
-    final bytes = await file.readAsBytes();
-    final excel = Excel.decodeBytes(bytes);
+Future<List<StockExcelRow>> importar({
+  required Uint8List bytes,
+}) async {
+final excel = Excel.decodeBytes(bytes);
 
     if (excel.tables.isEmpty) {
       throw Exception("El archivo no contiene hojas.");

@@ -17,142 +17,132 @@ class DashboardScreen extends StatefulWidget {
 }
 
 class _DashboardScreenState extends State<DashboardScreen> {
-
   late Future<DashboardSummary> resumen;
 
-@override
-void initState() {
-  super.initState();
-
-  resumen = DashboardService().obtenerResumen();
-}
+  @override
+  void initState() {
+    super.initState();
+    resumen = DashboardService().obtenerResumen();
+  }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: const Color(0xffF5F7FA),
+      body: FutureBuilder<DashboardSummary>(
+        future: resumen,
+        builder: (context, snapshot) {
+          if (snapshot.connectionState == ConnectionState.waiting) {
+            return const Center(child: CircularProgressIndicator());
+          }
 
-      body: Padding(
-        padding: const EdgeInsets.all(24),
+          if (snapshot.hasError) {
+            return Center(
+              child: Text(snapshot.error.toString()),
+            );
+          }
 
-        child: FutureBuilder<DashboardSummary>(
-          future: resumen,
+          final data = snapshot.data!;
 
-          builder: (context, snapshot) {
+          return LayoutBuilder(
+            builder: (context, constraints) {
+              final esMovil = constraints.maxWidth < 700;
 
-            if (snapshot.connectionState ==
-                ConnectionState.waiting) {
-              return const Center(
-                child: CircularProgressIndicator(),
-              );
-            }
+              final anchoTarjeta = esMovil
+                  ? (constraints.maxWidth - 24) / 2
+                  : (constraints.maxWidth - 48) / 4;
 
-            if (snapshot.hasError) {
-              return Center(
-                child: Text(snapshot.error.toString()),
-              );
-            }
-
-            final data = snapshot.data!;
-
-            return Column(
-              crossAxisAlignment:
-                  CrossAxisAlignment.start,
-
-              children: [
-
-                const Text(
-                  "Dashboard Comercial",
-                  style: TextStyle(
-                    fontSize: 28,
-                    fontWeight: FontWeight.bold,
-                  ),
-                ),
-
-                const SizedBox(height: 8),
-
-                Text(
-                  "Asesor: ${data.asesor}",
-                  style: const TextStyle(
-                    color: Colors.grey,
-                    fontSize: 16,
-                  ),
-                ),
-
-                const SizedBox(height: 30),
-
-                Row(
+              return SingleChildScrollView(
+                padding: const EdgeInsets.all(24),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-
-                    Expanded(
-                      child: KpiCard(
-                        titulo: "Stock",
-                        valor: data.stockTotal
-                            .toStringAsFixed(0),
-                        icono: Icons.inventory,
-                        color: Colors.blue,
+                    const Text(
+                      "Dashboard Comercial",
+                      style: TextStyle(
+                        fontSize: 28,
+                        fontWeight: FontWeight.bold,
                       ),
                     ),
 
-                    const SizedBox(width: 16),
+                    const SizedBox(height: 8),
 
-                    Expanded(
-                      child: KpiCard(
-                        titulo: "Peso",
-                        valor:
-                            "${data.pesoTotal.toStringAsFixed(2)} kg",
-                        icono: Icons.scale,
-                        color: Colors.green,
+                    Text(
+                      "Asesor: ${data.asesor}",
+                      style: const TextStyle(
+                        fontSize: 16,
+                        color: Colors.grey,
                       ),
                     ),
 
-                    const SizedBox(width: 16),
+                    const SizedBox(height: 30),
 
-                    Expanded(
-                      child: KpiCard(
-                        titulo: "Valor Stock",
-                        valor:
-                            "US\$ ${data.valorStock.toStringAsFixed(2)}",
-                        icono:
-                            Icons.attach_money,
-                        color: Colors.orange,
-                      ),
+                    Wrap(
+                      spacing: 16,
+                      runSpacing: 16,
+                      children: [
+                        SizedBox(
+                          width: anchoTarjeta,
+                          child: KpiCard(
+                            titulo: "Stock",
+                            valor: data.stockTotal.toStringAsFixed(0),
+                            icono: Icons.inventory,
+                            color: Colors.blue,
+                          ),
+                        ),
+                        SizedBox(
+                          width: anchoTarjeta,
+                          child: KpiCard(
+                            titulo: "Peso",
+                            valor:
+                                "${data.pesoTotal.toStringAsFixed(2)} kg",
+                            icono: Icons.scale,
+                            color: Colors.green,
+                          ),
+                        ),
+                        SizedBox(
+                          width: anchoTarjeta,
+                          child: KpiCard(
+                            titulo: "Valor Stock",
+                            valor:
+                                "US\$ ${data.valorStock.toStringAsFixed(2)}",
+                            icono: Icons.attach_money,
+                            color: Colors.orange,
+                          ),
+                        ),
+                        SizedBox(
+                          width: anchoTarjeta,
+                          child: KpiCard(
+                            titulo: "Clientes",
+                            valor: data.clientes.toString(),
+                            icono: Icons.groups,
+                            color: Colors.purple,
+                          ),
+                        ),
+                      ],
                     ),
 
-                    const SizedBox(width: 16),
+                    const SizedBox(height: 30),
 
-                    Expanded(
-                      child: KpiCard(
-                        titulo: "Clientes",
-                        valor:
-                            data.clientes.toString(),
-                        icono: Icons.groups,
-                        color: Colors.purple,
-                      ),
-                    ),
-
-                  ],
-                ),
-
-                const SizedBox(height: 30),
-
-                Expanded(
-                  child: Card(
-                    child: Center(
-                      child: Text(
-                        "Aquí irá el gráfico de Top Clientes",
-                        style: TextStyle(
-                          color: Colors.grey.shade600,
+                    SizedBox(
+                      height: 500,
+                      child: Card(
+                        child: Center(
+                          child: Text(
+                            "Aquí irá el gráfico de Top Clientes",
+                            style: TextStyle(
+                              color: Colors.grey.shade600,
+                            ),
+                          ),
                         ),
                       ),
                     ),
-                  ),
+                  ],
                 ),
-
-              ],
-            );
-          },
-        ),
+              );
+            },
+          );
+        },
       ),
     );
   }

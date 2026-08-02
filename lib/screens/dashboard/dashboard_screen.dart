@@ -49,8 +49,8 @@ class _DashboardScreenState extends State<DashboardScreen> {
               final esMovil = constraints.maxWidth < 700;
 
               final anchoTarjeta = esMovil
-                  ? (constraints.maxWidth - 24) / 2
-                  : (constraints.maxWidth - 48) / 4;
+    ? (constraints.maxWidth - 40) / 2
+    : (constraints.maxWidth - 48) / 4;
 
               return SingleChildScrollView(
                 padding: const EdgeInsets.all(24),

@@ -16,52 +16,72 @@ class KpiCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Card(
-      elevation: 3,
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(14),
-      ),
-      child: Padding(
-        padding: const EdgeInsets.all(18),
-        child: Row(
-          children: [
-            CircleAvatar(
-              radius: 24,
-              backgroundColor: color.withOpacity(0.12),
-              child: Icon(
-                icono,
-                color: color,
-                size: 28,
+    final ancho = MediaQuery.of(context).size.width;
+
+    final bool esMovil = ancho < 700;
+
+    final double padding = esMovil ? 12 : 18;
+    final double radio = esMovil ? 18 : 24;
+    final double iconoSize = esMovil ? 22 : 28;
+    final double tituloSize = esMovil ? 12 : 14;
+    final double valorSize = esMovil ? 18 : 24;
+
+    return SizedBox(
+      height: esMovil ? 95 : 115,
+      child: Card(
+        elevation: 3,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(14),
+        ),
+        child: Padding(
+          padding: EdgeInsets.all(padding),
+          child: Row(
+            children: [
+              CircleAvatar(
+                radius: radio,
+                backgroundColor: color.withValues(alpha: 0.12),
+                child: Icon(
+                  icono,
+                  color: color,
+                  size: iconoSize,
+                ),
               ),
-            ),
 
-            const SizedBox(width: 16),
+              const SizedBox(width: 12),
 
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    titulo,
-                    style: const TextStyle(
-                      fontSize: 14,
-                      color: Colors.grey,
+              Expanded(
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      titulo,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        fontSize: tituloSize,
+                        color: Colors.grey.shade700,
+                      ),
                     ),
-                  ),
 
-                  const SizedBox(height: 6),
+                    const SizedBox(height: 4),
 
-                  Text(
-                    valor,
-                    style: const TextStyle(
-                      fontSize: 24,
-                      fontWeight: FontWeight.bold,
+                    FittedBox(
+                      fit: BoxFit.scaleDown,
+                      alignment: Alignment.centerLeft,
+                      child: Text(
+                        valor,
+                        style: TextStyle(
+                          fontSize: valorSize,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
                     ),
-                  ),
-                ],
+                  ],
+                ),
               ),
-            ),
-          ],
+            ],
+          ),
         ),
       ),
     );

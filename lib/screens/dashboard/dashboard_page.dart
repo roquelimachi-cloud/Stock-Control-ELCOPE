@@ -11,12 +11,15 @@ import '../../services/supabase/dashboard_service.dart';
 import '../../widgets/dashboard/kpi_card.dart';
 import '../../models/dashboard/cliente_top.dart';
 import '../../widgets/dashboard/top_clientes_card.dart';
+import 'package:intl/intl.dart';
 class DashboardPage extends StatelessWidget {
   DashboardPage({super.key});
   final DashboardService dashboardService = DashboardService();
 
   @override
   Widget build(BuildContext context) {
+    final entero = NumberFormat("#,##0", "en_US");
+final decimal = NumberFormat("#,##0.00", "en_US");
     return Scaffold(
       appBar: AppBar(
         title: const Text("CONTROL DE STOCK ELCOPE"),
@@ -261,47 +264,45 @@ debugPrint("================================");
               ),
 
               const SizedBox(height: 30),
+GridView.count(
+  shrinkWrap: true,
+  physics: const NeverScrollableScrollPhysics(),
+  crossAxisCount: 2,
+  crossAxisSpacing: 20,
+  mainAxisSpacing: 20,
+  childAspectRatio: 2.8,
+  children: [
 
-              GridView.count(
-                shrinkWrap: true,
-                physics: const NeverScrollableScrollPhysics(),
-                crossAxisCount: 2,
-                crossAxisSpacing: 20,
-                mainAxisSpacing: 20,
-                childAspectRatio: 2.8,
-                children: [
+    KpiCard(
+      titulo: "Stock Total",
+      valor: entero.format(resumen.stockTotal),
+      icono: Icons.inventory,
+      color: Colors.blue,
+    ),
 
-                  KpiCard(
-                    titulo: "Stock Total",
-                    valor: resumen.stockTotal.toStringAsFixed(0),
-                    icono: Icons.inventory,
-                    color: Colors.blue,
-                  ),
+    KpiCard(
+      titulo: "Peso Total",
+      valor: "${decimal.format(resumen.pesoTotal)} Kg",
+      icono: Icons.scale,
+      color: Colors.orange,
+    ),
 
-                  KpiCard(
-                    titulo: "Peso Total",
-                    valor:
-                        "${resumen.pesoTotal.toStringAsFixed(2)} Kg",
-                    icono: Icons.scale,
-                    color: Colors.orange,
-                  ),
+    KpiCard(
+      titulo: "Valor Stock",
+      valor: "US\$ ${decimal.format(resumen.valorStock)}",
+      icono: Icons.attach_money,
+      color: Colors.green,
+    ),
 
-                  KpiCard(
-                    titulo: "Valor Stock",
-                    valor:
-                        "US\$ ${resumen.valorStock.toStringAsFixed(2)}",
-                    icono: Icons.attach_money,
-                    color: Colors.green,
-                  ),
+    KpiCard(
+      titulo: "Clientes",
+      valor: entero.format(resumen.clientes),
+      icono: Icons.people,
+      color: Colors.purple,
+    ),
 
-                  KpiCard(
-                    titulo: "Clientes",
-                    valor: resumen.clientes.toString(),
-                    icono: Icons.people,
-                    color: Colors.purple,
-                  ),
-                ],
-              ),
+  ],
+),
 
               const SizedBox(height: 30),
 

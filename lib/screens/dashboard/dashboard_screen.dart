@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../../models/dashboard/dashboard_summary.dart';
 import '../../services/supabase/dashboard_service.dart';
+import '../../utils/formato.dart';
 import '../../widgets/dashboard/kpi_card.dart';
 
 class DashboardScreen extends StatefulWidget {
@@ -33,7 +34,9 @@ class _DashboardScreenState extends State<DashboardScreen> {
         future: resumen,
         builder: (context, snapshot) {
           if (snapshot.connectionState == ConnectionState.waiting) {
-            return const Center(child: CircularProgressIndicator());
+            return const Center(
+              child: CircularProgressIndicator(),
+            );
           }
 
           if (snapshot.hasError) {
@@ -48,19 +51,15 @@ class _DashboardScreenState extends State<DashboardScreen> {
             builder: (context, constraints) {
               final esMovil = constraints.maxWidth < 700;
 
-              final anchoTarjeta = esMovil
-    ? (constraints.maxWidth - 40) / 2
-    : (constraints.maxWidth - 48) / 4;
-
               return SingleChildScrollView(
-                padding: const EdgeInsets.all(24),
+                padding: const EdgeInsets.all(20),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    const Text(
-                      "Dashboard Comercial",
+                  const Text(
+  "MICHAEL PRUEBA",
                       style: TextStyle(
-                        fontSize: 28,
+                        fontSize: 30,
                         fontWeight: FontWeight.bold,
                       ),
                     ),
@@ -70,54 +69,47 @@ class _DashboardScreenState extends State<DashboardScreen> {
                     Text(
                       "Asesor: ${data.asesor}",
                       style: const TextStyle(
-                        fontSize: 16,
+                        fontSize: 17,
                         color: Colors.grey,
                       ),
                     ),
 
                     const SizedBox(height: 30),
 
-                    Wrap(
-                      spacing: 16,
-                      runSpacing: 16,
+                    GridView.count(
+                      shrinkWrap: true,
+                      physics: const NeverScrollableScrollPhysics(),
+                      crossAxisCount: esMovil ? 2 : 4,
+                      crossAxisSpacing: 18,
+                      mainAxisSpacing: 18,
+                      childAspectRatio: esMovil ? 0.95 : 1.10,
                       children: [
-                        SizedBox(
-                          width: anchoTarjeta,
-                          child: KpiCard(
-                            titulo: "Stock",
-                            valor: data.stockTotal.toStringAsFixed(0),
-                            icono: Icons.inventory,
-                            color: Colors.blue,
-                          ),
+                        KpiCard(
+                          titulo: "Stock Total",
+                          valor: Formato.entero(data.stockTotal),
+                          icono: Icons.inventory_2,
+                          color: Colors.blue,
                         ),
-                        SizedBox(
-                          width: anchoTarjeta,
-                          child: KpiCard(
-                            titulo: "Peso",
-                            valor:
-                                "${data.pesoTotal.toStringAsFixed(2)} kg",
-                            icono: Icons.scale,
-                            color: Colors.green,
-                          ),
+
+                        KpiCard(
+                          titulo: "Peso Total",
+                          valor: Formato.peso(data.pesoTotal),
+                          icono: Icons.scale,
+                          color: Colors.orange,
                         ),
-                        SizedBox(
-                          width: anchoTarjeta,
-                          child: KpiCard(
-                            titulo: "Valor Stock",
-                            valor:
-                                "US\$ ${data.valorStock.toStringAsFixed(2)}",
-                            icono: Icons.attach_money,
-                            color: Colors.orange,
-                          ),
+
+                        KpiCard(
+                          titulo: "Valor Stock",
+                          valor: Formato.moneda(data.valorStock),
+                          icono: Icons.attach_money,
+                          color: Colors.green,
                         ),
-                        SizedBox(
-                          width: anchoTarjeta,
-                          child: KpiCard(
-                            titulo: "Clientes",
-                            valor: data.clientes.toString(),
-                            icono: Icons.groups,
-                            color: Colors.purple,
-                          ),
+
+                        KpiCard(
+                          titulo: "Clientes",
+                          valor: Formato.entero(data.clientes),
+                          icono: Icons.groups,
+                          color: Colors.purple,
                         ),
                       ],
                     ),
@@ -127,11 +119,16 @@ class _DashboardScreenState extends State<DashboardScreen> {
                     SizedBox(
                       height: 500,
                       child: Card(
+                        elevation: 5,
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(20),
+                        ),
                         child: Center(
                           child: Text(
                             "Aquí irá el gráfico de Top Clientes",
                             style: TextStyle(
                               color: Colors.grey.shade600,
+                              fontSize: 18,
                             ),
                           ),
                         ),

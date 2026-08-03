@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:intl/intl.dart';
 
 class KpiCard extends StatelessWidget {
   final String titulo;
@@ -16,72 +17,58 @@ class KpiCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final ancho = MediaQuery.of(context).size.width;
-
-    final bool esMovil = ancho < 700;
-
-    final double padding = esMovil ? 12 : 18;
-    final double radio = esMovil ? 18 : 24;
-    final double iconoSize = esMovil ? 22 : 28;
-    final double tituloSize = esMovil ? 12 : 14;
-    final double valorSize = esMovil ? 18 : 24;
-
-    return SizedBox(
-      height: esMovil ? 95 : 115,
-      child: Card(
-        elevation: 3,
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(14),
+    return Card(
+      elevation: 6,
+      shadowColor: Colors.black12,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(22),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(
+          horizontal: 12,
+          vertical: 18,
         ),
-        child: Padding(
-          padding: EdgeInsets.all(padding),
-          child: Row(
-            children: [
-              CircleAvatar(
-                radius: radio,
-                backgroundColor: color.withValues(alpha: 0.12),
-                child: Icon(
-                  icono,
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+
+            CircleAvatar(
+              radius: 28,
+              backgroundColor: color.withValues(alpha: 0.12),
+              child: Icon(
+                icono,
+                color: color,
+                size: 30,
+              ),
+            ),
+
+            const SizedBox(height: 14),
+
+            Text(
+              titulo,
+              textAlign: TextAlign.center,
+              style: const TextStyle(
+                fontSize: 16,
+                color: Colors.grey,
+                fontWeight: FontWeight.w500,
+              ),
+            ),
+
+            const SizedBox(height: 10),
+
+            FittedBox(
+              fit: BoxFit.scaleDown,
+              child: Text(
+                valor,
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                  fontSize: 28,
+                  fontWeight: FontWeight.bold,
                   color: color,
-                  size: iconoSize,
                 ),
               ),
-
-              const SizedBox(width: 12),
-
-              Expanded(
-                child: Column(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      titulo,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: TextStyle(
-                        fontSize: tituloSize,
-                        color: Colors.grey.shade700,
-                      ),
-                    ),
-
-                    const SizedBox(height: 4),
-
-                    FittedBox(
-                      fit: BoxFit.scaleDown,
-                      alignment: Alignment.centerLeft,
-                      child: Text(
-                        valor,
-                        style: TextStyle(
-                          fontSize: valorSize,
-                          fontWeight: FontWeight.bold,
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ],
-          ),
+            ),
+          ],
         ),
       ),
     );

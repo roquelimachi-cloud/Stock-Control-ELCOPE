@@ -12,15 +12,58 @@ import '../../widgets/dashboard/kpi_card.dart';
 import '../../models/dashboard/cliente_top.dart';
 import '../../widgets/dashboard/top_clientes_card.dart';
 import 'package:intl/intl.dart';
-class DashboardPage extends StatelessWidget {
-  DashboardPage({super.key});
-  final DashboardService dashboardService = DashboardService();
+import '../../widgets/dashboard/cliente_hover.dart';
+import '../../widgets/dashboard/clase_pie_chart.dart';
+import '../../models/dashboard/clase_resumen.dart';
+import '../../models/dashboard/producto_top.dart';
+import '../../widgets/dashboard/top_productos_card.dart';
+
+class DashboardPage extends StatefulWidget {
+  const DashboardPage({super.key});
+
+  @override
+  State<DashboardPage> createState() =>
+      _DashboardPageState();
+}
+
+class _DashboardPageState
+    extends State<DashboardPage> {
+
+  final DashboardService dashboardService =
+      DashboardService();
+
+  final ScrollController _scrollController =
+      ScrollController();
+
+  @override
+  void initState() {
+    super.initState();
+
+_scrollController.addListener(() {
+  ClienteHover.cerrarPopup();
+});
+  }
+
+  @override
+  void dispose() {
+    _scrollController.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
+
     final entero = NumberFormat("#,##0", "en_US");
 final decimal = NumberFormat("#,##0.00", "en_US");
-    return Scaffold(
+    return GestureDetector(
+  behavior: HitTestBehavior.translucent,
+  onTap: () {
+    ClienteHover.cerrarPopup();
+    FocusScope.of(context).unfocus();
+  },
+  child: Scaffold(
+
+
       appBar: AppBar(
         title: const Text("CONTROL DE STOCK ELCOPE"),
         centerTitle: true,
@@ -239,9 +282,10 @@ for (final c in topClientes) {
 
 debugPrint("================================");
 
-        return SingleChildScrollView(
-          padding: const EdgeInsets.all(20),
-          child: Column(
+return SingleChildScrollView(
+  controller: _scrollController,
+  padding: const EdgeInsets.all(20),
+  child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
 
@@ -267,18 +311,11 @@ debugPrint("================================");
 GridView.count(
   shrinkWrap: true,
   physics: const NeverScrollableScrollPhysics(),
-  crossAxisCount: 2,
+  crossAxisCount: 3,
   crossAxisSpacing: 20,
   mainAxisSpacing: 20,
-  childAspectRatio: 2.8,
+  childAspectRatio: 2.3,
   children: [
-
-    KpiCard(
-      titulo: "Stock Total",
-      valor: entero.format(resumen.stockTotal),
-      icono: Icons.inventory,
-      color: Colors.blue,
-    ),
 
     KpiCard(
       titulo: "Peso Total",
@@ -304,21 +341,124 @@ GridView.count(
   ],
 ),
 
-              const SizedBox(height: 30),
+const SizedBox(height: 30),
+FutureBuilder<List<ClaseResumen>>(
+  future: dashboardService.obtenerResumenClases(),
+  builder: (context, claseSnapshot) {
+    if (claseSnapshot.connectionState ==
+        ConnectionState.waiting) {
+      return const Center(
+        child: CircularProgressIndicator(),
+      );
+    }
 
-              TopClientesCard(
-                clientes: topClientes,
-              ),
+    if (claseSnapshot.hasError) {
+      return Center(
+        child: Text(
+          "Error: ${claseSnapshot.error}",
+        ),
+      );
+    }
 
-              const SizedBox(height: 20),
-            ],
-          ),
+    final clases = claseSnapshot.data ?? [];
+
+    return FutureBuilder<List<ProductoTop>>(
+      future: dashboardService.obtenerTopProductos(),
+      builder: (context, productoSnapshot) {
+
+        if (productoSnapshot.connectionState ==
+            ConnectionState.waiting) {
+          return const Center(
+            child: CircularProgressIndicator(),
+          );
+        }
+
+        if (productoSnapshot.hasError) {
+          return Center(
+            child: Text(
+              "Error: ${productoSnapshot.error}",
+            ),
+          );
+        }
+
+        final productos =
+            productoSnapshot.data ?? [];
+
+        return Column(
+          children: [
+
+            LayoutBuilder(
+              builder: (context, constraints) {
+
+                if (constraints.maxWidth < 950) {
+
+                  return Column(
+                    children: [
+
+                      ClasePieChart(
+                        datos: clases,
+                      ),
+
+                      const SizedBox(height: 20),
+
+                      TopClientesCard(
+                        clientes: topClientes,
+                      ),
+
+                    ],
+                  );
+                }
+
+                return Row(
+                  crossAxisAlignment:
+                      CrossAxisAlignment.start,
+                  children: [
+
+                    Expanded(
+                      flex: 5,
+                      child: ClasePieChart(
+                        datos: clases,
+                      ),
+                    ),
+
+                    const SizedBox(width: 20),
+
+                    Expanded(
+                      flex: 5,
+                      child: TopClientesCard(
+                        clientes: topClientes,
+                      ),
+                    ),
+
+                  ],
+                );
+              },
+            ),
+
+            const SizedBox(height: 25),
+
+           TopProductosCard(
+              productos: productos,
+            ),
+
+          ],
         );
       },
     );
   },
 ),
 
-    );
-  }
+const SizedBox(height: 20),
+
+          ],
+        ),
+      );
+    },
+  );
+},
+),
+
+    ),
+  );
+}
 }

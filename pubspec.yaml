@@ -16,18 +16,17 @@ dependencies:
   # Base de datos
   supabase_flutter: ^2.9.1
 
-  # Lectura de Excel
+  # Excel
   excel: ^4.0.6
   file_picker: ^10.3.2
 
   # Utilidades
   intl: ^0.20.2
   flutter_dotenv: ^5.2.1
-
-  # Estado de la aplicación
   provider: ^6.1.5
 
-  # Tabla profesional
+  # Dashboard
+  syncfusion_flutter_charts: ^30.2.7
   syncfusion_flutter_datagrid: ^30.2.7
 
 dev_dependencies:
@@ -44,11 +43,11 @@ flutter:
     - .env
     - assets/images/
 
-flutter_icons:
+flutter_launcher_icons:
   android: true
   ios: false
 
-  image_path: "assets/images/logo_elcope.png"
+  image_path: assets/images/logo_elcope.png
 
   adaptive_icon_background: "#FFFFFF"
-  adaptive_icon_foreground: "assets/images/logo_elcope.png"
+  adaptive_icon_foreground: assets/images/logo_elcope.png

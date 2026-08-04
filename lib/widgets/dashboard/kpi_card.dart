@@ -23,9 +23,9 @@ class KpiCard extends StatelessWidget {
         borderRadius: BorderRadius.circular(22),
       ),
       child: Container(
-        constraints: const BoxConstraints(
-          minHeight: 170,
-        ),
+      constraints: const BoxConstraints(
+  minHeight: 140,
+),
         padding: const EdgeInsets.symmetric(
           horizontal: 18,
           vertical: 18,
@@ -60,22 +60,21 @@ class KpiCard extends StatelessWidget {
 
             const SizedBox(height: 12),
 
-            Expanded(
-              child: Center(
-                child: FittedBox(
-                  fit: BoxFit.scaleDown,
-                  child: Text(
-                    valor,
-                    textAlign: TextAlign.center,
-                    style: TextStyle(
-                      fontSize: 34,
-                      fontWeight: FontWeight.bold,
-                      color: color,
-                    ),
-                  ),
-                ),
-              ),
-            ),
+SizedBox(
+  height: 42,
+  child: FittedBox(
+    fit: BoxFit.scaleDown,
+    child: Text(
+      valor,
+      textAlign: TextAlign.center,
+      style: TextStyle(
+        fontSize: 34,
+        fontWeight: FontWeight.bold,
+        color: color,
+      ),
+    ),
+  ),
+),           
 
           ],
         ),

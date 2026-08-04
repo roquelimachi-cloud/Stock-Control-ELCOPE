@@ -35,14 +35,22 @@ class _DashboardPageState
   final ScrollController _scrollController =
       ScrollController();
 
-  @override
-  void initState() {
-    super.initState();
+late Future<DashboardSummary> _resumenFuture;
+late Future<List<ClienteTop>> _clientesFuture;
+late Future<List<ClaseResumen>> _clasesFuture;
+late Future<List<ProductoTop>> _productosFuture;
+@override
+void initState() {
+  super.initState();
+_resumenFuture = dashboardService.obtenerResumen();
+_clientesFuture = dashboardService.obtenerTopClientes();
+_clasesFuture = dashboardService.obtenerResumenClases();
+_productosFuture = dashboardService.obtenerTopProductos();
+  _scrollController.addListener(() {
+    ClienteHover.cerrarPopup();
+  });
 
-_scrollController.addListener(() {
-  ClienteHover.cerrarPopup();
-});
-  }
+}
 
   @override
   void dispose() {
@@ -55,7 +63,9 @@ _scrollController.addListener(() {
 
     final entero = NumberFormat("#,##0", "en_US");
 final decimal = NumberFormat("#,##0.00", "en_US");
-    return GestureDetector(
+
+
+ return GestureDetector(
   behavior: HitTestBehavior.translucent,
   onTap: () {
     ClienteHover.cerrarPopup();
@@ -234,9 +244,11 @@ if (Sesion.esAdministrador)
           ),
         ),
       ),
-    body: FutureBuilder<DashboardSummary>(
-  future: dashboardService.obtenerResumen(),
+  
+body: FutureBuilder<DashboardSummary>(
+  future: _resumenFuture,
   builder: (context, snapshot) {
+
     if (snapshot.connectionState == ConnectionState.waiting) {
       return const Center(
         child: CircularProgressIndicator(),
@@ -251,10 +263,10 @@ if (Sesion.esAdministrador)
       );
     }
 
-    final resumen = snapshot.data!;
+   
 
     return FutureBuilder<List<ClienteTop>>(
-      future: dashboardService.obtenerTopClientes(),
+      future: _clientesFuture,
       builder: (context, topSnapshot) {
         if (topSnapshot.connectionState ==
             ConnectionState.waiting) {
@@ -281,6 +293,8 @@ for (final c in topClientes) {
 }
 
 debugPrint("================================");
+
+final resumen = snapshot.data!;
 
 return SingleChildScrollView(
   controller: _scrollController,
@@ -314,7 +328,12 @@ GridView.count(
   crossAxisCount: 3,
   crossAxisSpacing: 20,
   mainAxisSpacing: 20,
-  childAspectRatio: 2.3,
+  
+  childAspectRatio:
+    MediaQuery.of(context).size.width < 700
+        ? 0.95
+        : 2.3,
+
   children: [
 
     KpiCard(
@@ -343,7 +362,7 @@ GridView.count(
 
 const SizedBox(height: 30),
 FutureBuilder<List<ClaseResumen>>(
-  future: dashboardService.obtenerResumenClases(),
+  future: _clasesFuture,
   builder: (context, claseSnapshot) {
     if (claseSnapshot.connectionState ==
         ConnectionState.waiting) {
@@ -363,7 +382,7 @@ FutureBuilder<List<ClaseResumen>>(
     final clases = claseSnapshot.data ?? [];
 
     return FutureBuilder<List<ProductoTop>>(
-      future: dashboardService.obtenerTopProductos(),
+      future: _productosFuture,
       builder: (context, productoSnapshot) {
 
         if (productoSnapshot.connectionState ==

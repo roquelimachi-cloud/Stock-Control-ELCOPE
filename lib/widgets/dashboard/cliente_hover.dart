@@ -1,7 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
-
+import 'package:flutter/foundation.dart';
 import '../../services/supabase/dashboard_service.dart';
 import 'cliente_popup.dart';
 
@@ -59,6 +59,7 @@ Future<void> mostrar() async {
     final int miToken = ++_token;
 
     _cerrarPopupGlobal();
+
     if (!mounted) return;
 
     final RenderBox box =
@@ -67,7 +68,7 @@ Future<void> mostrar() async {
     final Offset posicion =
         box.localToGlobal(Offset.zero);
 
-   final productos =
+ final productos =
     await service.obtenerProductosCliente(
   widget.cliente,
 );
@@ -79,7 +80,28 @@ if (!mounted) return;
 if (miToken != _token) {
   return;
 }
+// Android / iPhone
+if (!kIsWeb &&
+    (defaultTargetPlatform == TargetPlatform.android ||
+     defaultTargetPlatform == TargetPlatform.iOS)) {
 
+  await showModalBottomSheet(
+    context: context,
+    isScrollControlled: true,
+    showDragHandle: true,
+    backgroundColor: Colors.transparent,
+    builder: (_) {
+      return SafeArea(
+        child: ClientePopup(
+          cliente: widget.cliente,
+          productos: productos,
+        ),
+      );
+    },
+  );
+
+  return;
+}
     const double popupWidth = 420;
     const double popupHeight = 430;
     const double margen = 12;
@@ -138,29 +160,43 @@ if (miToken != _token) {
         );
       },
     );
-
-   
-   if (miToken != _token) {
+if (miToken != _token) {
   return;
 }
 
 _overlayActual = entry;
 
 Overlay.of(context).insert(entry);
+
   }
 
-  @override
-  Widget build(BuildContext context) {
-    return MouseRegion(
-      onEnter: (_) {
+@override
+Widget build(BuildContext context) {
+
+  // Android / iPhone
+  if (!kIsWeb &&
+      (defaultTargetPlatform == TargetPlatform.android ||
+       defaultTargetPlatform == TargetPlatform.iOS)) {
+
+    return InkWell(
+      onTap: () {
         mostrar();
-      },
-      onExit: (_) {
-        _programarCerrar();
       },
       child: widget.child,
     );
   }
+
+  // Windows / Web
+  return MouseRegion(
+    onEnter: (_) {
+      mostrar();
+    },
+    onExit: (_) {
+      _programarCerrar();
+    },
+    child: widget.child,
+  );
+}
 
   @override
   void dispose() {

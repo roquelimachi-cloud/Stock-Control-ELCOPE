@@ -92,13 +92,14 @@ final excel = Excel.decodeBytes(bytes);
           ultimoPrecioFacturadoDolar: numero(17),
           codigoUltimoClienteFacturado: texto(18),
           ultimoClienteFacturado: texto(19),
-          valorListaPrecioDolar: numero(20),
-          valorFacturacionDolar: numero(21),
-          familia: texto(22),
-          calibre: texto(23),
-          clase: texto(24),
-          color: texto(25),
-          presentacion: texto(26),
+    valorListaPrecioDolar: numero(22),
+valorFacturacionDolar: numero(23),
+familia: texto(24),
+calibre: texto(25),
+clase: texto(26),
+color: texto(27),
+presentacion: texto(28),
+
         ),
       );
     }

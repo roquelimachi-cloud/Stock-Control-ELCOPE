@@ -93,12 +93,10 @@ for (final op in lista) {
 
                 const Divider(),
 
-       Expanded(
+   Expanded(
   child: SfDataGrid(
     source: ProduccionMisOpDataSource(lista),
-
     columnWidthMode: ColumnWidthMode.none,
-
     columns: [
 
       GridColumn(
@@ -168,7 +166,7 @@ for (final op in lista) {
       ),
 
       GridColumn(
-        width: 130,
+        width: 140,
         columnName: 'valor',
         label: const Center(
           child: Text(
@@ -179,7 +177,7 @@ for (final op in lista) {
       ),
 
       GridColumn(
-        width: 120,
+        width: 130,
         columnName: 'cobre',
         label: const Center(
           child: Text(
@@ -188,9 +186,57 @@ for (final op in lista) {
           ),
         ),
       ),
+
+      GridColumn(
+        width: 120,
+        columnName: 'canal',
+        label: const Center(
+          child: Text(
+            "Canal",
+            style: TextStyle(fontWeight: FontWeight.bold),
+          ),
+        ),
+      ),
+
+      GridColumn(
+        width: 90,
+        columnName: 'clase',
+        label: const Center(
+          child: Text(
+            "Clase",
+            style: TextStyle(fontWeight: FontWeight.bold),
+          ),
+        ),
+      ),
+
+      GridColumn(
+        width: 150,
+        columnName: 'familia',
+        label: const Center(
+          child: Text(
+            "Familia",
+            style: TextStyle(fontWeight: FontWeight.bold),
+          ),
+        ),
+      ),
+
+GridColumn(
+  width: 130,
+  columnName: 'estado',
+  label: const Center(
+    child: Text(
+      "Estado",
+      style: TextStyle(
+        fontWeight: FontWeight.bold,
+      ),
+    ),
+  ),
+),
     ],
   ),
 ),
+
+
               ],
             ),
           ),

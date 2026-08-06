@@ -75,6 +75,33 @@ class ProduccionModel {
       numeroSemana: map["numero_semana"],
     );
   }
+ 
+ //=========================================================
+// ESTADO CALCULADO
+//=========================================================
+
+String get estado {
+
+  if (fechaProduccion == null) {
+    return "Sin Fecha";
+  }
+
+  final retraso = diasRetraso ?? 0;
+
+  if (retraso <= 0) {
+    return "En Tiempo";
+  }
+
+  if (retraso <= 7) {
+    return "Próximo";
+  }
+
+  if (retraso <= 30) {
+    return "Retrasado";
+  }
+
+  return "Crítico";
+}
 
   Map<String, dynamic> toMap() {
     return {

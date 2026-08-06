@@ -48,6 +48,26 @@ class ProduccionMisOpDataSource extends DataGridSource {
             columnName: 'cobre',
             value: e.pesoCobre ?? 0,
           ),
+
+          DataGridCell(
+            columnName: 'canal',
+            value: e.canal,
+          ),
+
+          DataGridCell(
+            columnName: 'clase',
+            value: e.clase ?? "",
+          ),
+
+          DataGridCell(
+            columnName: 'familia',
+            value: e.abreviadoFamilia ?? "",
+          ),
+
+          DataGridCell(
+            columnName: 'estado',
+            value: e.estado,
+          ),
         ],
       );
     }).toList();
@@ -81,19 +101,69 @@ class ProduccionMisOpDataSource extends DataGridSource {
             break;
 
           case "valor":
-            texto = "US\$ ${formatoDecimal.format(
-              (cell.value as num).toDouble(),
-            )}";
+            texto =
+                "US\$ ${formatoDecimal.format((cell.value as num).toDouble())}";
             break;
 
           case "cobre":
-            texto = "${formatoDecimal.format(
-              (cell.value as num).toDouble(),
-            )} Kg";
+            texto =
+                "${formatoDecimal.format((cell.value as num).toDouble())} Kg";
             break;
 
           default:
             texto = cell.value?.toString() ?? "";
+        }
+
+        //==============================
+        // ESTADO CON COLORES
+        //==============================
+
+        if (cell.columnName == "estado") {
+          Color color = Colors.green;
+
+          switch (cell.value) {
+            case "En Tiempo":
+              color = Colors.green;
+              break;
+
+            case "Próximo":
+              color = Colors.amber;
+              break;
+
+            case "Retrasado":
+              color = Colors.orange;
+              break;
+
+            case "Crítico":
+              color = Colors.red;
+              break;
+
+            case "Sin Fecha":
+              color = Colors.grey;
+              break;
+          }
+
+          return Container(
+            alignment: Alignment.center,
+            padding: const EdgeInsets.symmetric(horizontal: 8),
+            child: Container(
+              padding: const EdgeInsets.symmetric(
+                horizontal: 10,
+                vertical: 5,
+              ),
+              decoration: BoxDecoration(
+                color: color.withOpacity(.15),
+                borderRadius: BorderRadius.circular(20),
+              ),
+              child: Text(
+                cell.value.toString(),
+                style: TextStyle(
+                  color: color,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+            ),
+          );
         }
 
         return Container(

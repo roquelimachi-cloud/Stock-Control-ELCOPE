@@ -28,7 +28,10 @@ class DashboardKpis extends StatelessWidget {
       crossAxisCount: 3,
       crossAxisSpacing: 20,
       mainAxisSpacing: 20,
-      childAspectRatio: 2.8,
+      childAspectRatio:
+    MediaQuery.of(context).size.width < 700
+        ? 1.9
+        : 2.8,
       children: [
 
         KpiCard(

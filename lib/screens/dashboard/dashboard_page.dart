@@ -17,6 +17,7 @@ import '../../widgets/dashboard/clase_pie_chart.dart';
 import '../../models/dashboard/clase_resumen.dart';
 import '../../models/dashboard/producto_top.dart';
 import '../../widgets/dashboard/top_productos_card.dart';
+import '../produccion/produccion_dashboard.dart';
 
 class DashboardPage extends StatefulWidget {
   const DashboardPage({super.key});
@@ -143,6 +144,21 @@ final decimal = NumberFormat("#,##0.00", "en_US");
                         );
                       },
                     ),
+
+              ListTile(
+  leading: const Icon(Icons.factory),
+  title: const Text("Producción Pendiente"),
+  onTap: () {
+    Navigator.pop(context);
+
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => const ProduccionDashboard(),
+      ),
+    );
+  },
+),
                   ListTile(
   leading: const Icon(Icons.person),
   title: const Text("Mi Perfil"),

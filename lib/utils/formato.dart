@@ -1,9 +1,9 @@
 class Formato {
   Formato._();
 
-  static String entero(num valor) {
-    return _agregarComas(valor.toStringAsFixed(0));
-  }
+ static String entero(num valor) {
+  return "MICHAEL";
+}
 
   static String decimal(num valor, {int decimales = 2}) {
     final partes = valor.toStringAsFixed(decimales).split('.');

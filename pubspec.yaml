@@ -16,17 +16,20 @@ dependencies:
   # ==========================
   # Base de Datos
   # ==========================
+
   supabase_flutter: ^2.9.1
 
   # ==========================
   # Excel
   # ==========================
+
   excel: ^4.0.6
   file_picker: ^10.3.2
 
   # ==========================
   # Utilidades
   # ==========================
+
   intl: ^0.20.2
   flutter_dotenv: ^5.2.1
   provider: ^6.1.5
@@ -34,6 +37,7 @@ dependencies:
   # ==========================
   # Dashboard
   # ==========================
+
   syncfusion_flutter_charts: ^30.2.7
   syncfusion_flutter_datagrid: ^30.2.7
   fl_chart: ^0.69.0
@@ -41,12 +45,21 @@ dependencies:
   # ==========================
   # Tooltip
   # ==========================
+
   super_tooltip: ^2.0.9
 
   # ==========================
   # Notificaciones
   # ==========================
+
   fluttertoast: ^8.2.12
+
+  # ==========================
+  # PDF
+  # ==========================
+
+  pdf: ^3.11.3
+  printing: ^5.14.2
 
 dev_dependencies:
   flutter_test:

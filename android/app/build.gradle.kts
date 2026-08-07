@@ -4,8 +4,11 @@ plugins {
 }
 
 android {
+
     namespace = "com.example.stock_control_elcope"
-    compileSdk = flutter.compileSdkVersion
+
+    compileSdk = 36
+
     ndkVersion = "30.0.15729638"
 
     compileOptions {
@@ -14,10 +17,15 @@ android {
     }
 
     defaultConfig {
+
         applicationId = "com.example.stock_control_elcope"
+
         minSdk = flutter.minSdkVersion
-        targetSdk = flutter.targetSdkVersion
+
+        targetSdk = 36
+
         versionCode = flutter.versionCode
+
         versionName = flutter.versionName
     }
 
@@ -30,7 +38,8 @@ android {
 
 kotlin {
     compilerOptions {
-        jvmTarget = org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_17
+        jvmTarget =
+            org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_17
     }
 }
 

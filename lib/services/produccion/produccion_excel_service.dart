@@ -24,15 +24,55 @@ class ProduccionExcelService {
     return Excel.decodeBytes(bytes);
   }
 
-  Sheet obtenerHojaData(Excel excel) {
-    for (final nombre in excel.tables.keys) {
-      if (nombre.toLowerCase() == "data") {
-        return excel.tables[nombre]!;
-      }
+Sheet obtenerHojaData(Excel excel) {
+  // Buscar automáticamente una hoja que contenga
+  // alguna de las columnas que identifican nuestro Excel.
+  for (final nombre in excel.tables.keys) {
+    final hoja = excel.tables[nombre];
+
+    if (hoja == null || hoja.rows.isEmpty) {
+      continue;
     }
 
-    throw Exception("No existe la hoja DATA.");
+    final encabezados = hoja.rows.first;
+
+    final columnas = encabezados
+        .map(
+          (celda) => celda?.value?.toString().trim().toLowerCase() ?? "",
+        )
+        .toList();
+
+    // Buscamos una columna clave del Excel
+    if (columnas.contains("numeroproduccion") ||
+        columnas.contains("numero produccion") ||
+        columnas.contains("número producción")) {
+      debugPrint(
+        "Hoja de producción encontrada automáticamente: $nombre",
+      );
+
+      return hoja;
+    }
   }
+
+  // Si no encontramos una hoja por sus encabezados,
+  // buscamos la primera hoja que tenga información.
+  for (final nombre in excel.tables.keys) {
+    final hoja = excel.tables[nombre];
+
+    if (hoja != null && hoja.rows.isNotEmpty) {
+      debugPrint(
+        "No se encontró una hoja por encabezados. "
+        "Se utilizará la primera hoja con información: $nombre",
+      );
+
+      return hoja;
+    }
+  }
+
+  throw Exception(
+    "No se encontró ninguna hoja con información en el archivo Excel.",
+  );
+}
 
   Map<String, int> obtenerColumnas(Sheet hoja) {
     final encabezados = hoja.rows.first;

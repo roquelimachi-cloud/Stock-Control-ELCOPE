@@ -178,19 +178,33 @@ if (Sesion.esAdministrador)
   ListTile(
     leading: const Icon(Icons.sync),
     title: const Text("Sincronizar Excel"),
+    onTap: () async {
+      Navigator.pop(context);
 
+      await Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (_) => const SyncPage(),
+        ),
+      );
 
-                      onTap: () {
-                        Navigator.pop(context);
+      if (!mounted) return;
 
-                        Navigator.push(
-                          context,
-                          MaterialPageRoute(
-                            builder: (_) => const SyncPage(),
-                          ),
-                        );
-                      },
-                    ),
+      setState(() {
+        _resumenFuture =
+            dashboardService.obtenerResumen();
+
+        _clientesFuture =
+            dashboardService.obtenerTopClientes();
+
+        _clasesFuture =
+            dashboardService.obtenerResumenClases();
+
+        _productosFuture =
+            dashboardService.obtenerTopProductos();
+      });
+    },
+  ),
 
                     if (Sesion.esAdministrador)
   ListTile(

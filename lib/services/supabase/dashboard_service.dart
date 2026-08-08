@@ -36,9 +36,11 @@ class DashboardService {
     for (final fila in datos) {
       stockTotal += (fila['stock'] ?? 0).toDouble();
       pesoTotal += (fila['peso'] ?? 0).toDouble();
-      valorTotal +=
-          (fila['valor_lista_precio_dolar'] ?? 0).toDouble();
+      final valor = double.tryParse(
+  fila['valor_lista_precio_dolar']?.toString() ?? '0',
+) ?? 0;
 
+valorTotal += valor;
       final cliente = fila['cliente'];
 
       if (cliente != null &&
@@ -78,9 +80,9 @@ class DashboardService {
       final clase =
           (fila['clase'] ?? 'SIN CLASE').toString();
 
-      final monto =
-          (fila['valor_lista_precio_dolar'] ?? 0)
-              .toDouble();
+     final monto = double.tryParse(
+  fila['valor_lista_precio_dolar']?.toString() ?? '0',
+) ?? 0;
 
       clases.update(
         clase,
@@ -127,9 +129,9 @@ class DashboardService {
       final cliente =
           (fila['cliente'] ?? 'SIN CLIENTE').toString();
 
-      final valor =
-          (fila['valor_lista_precio_dolar'] ?? 0)
-              .toDouble();
+     final valor = double.tryParse(
+  fila['valor_lista_precio_dolar']?.toString() ?? '0',
+) ?? 0;
 
       clientes.update(
         cliente,

@@ -71,36 +71,39 @@ final excel = Excel.decodeBytes(bytes);
       // ====================================
 
       registros.add(
-        StockExcelRow(
-          codigoAlmacen: texto(0),
-          codigoArticulo: texto(1),
-          articulo: texto(2),
-          lote: texto(3),
-          stockAlmacen: numero(4),
-          pesoCobre: numero(5),
-          fechaIngreso: fecha(6),
-          codigoVendedor: texto(7),
-          vendedor: texto(8),
-          codigoCliente: texto(9),
-          cliente: texto(10),
-          ordenProduccion: texto(11),
-          fechaOrdenProduccion: fecha(12),
-          modelo: texto(13),
-          unidadMedida: texto(14),
-          cantidadEmpaque: numero(15),
-          listaPrecioDolar: numero(16),
-          ultimoPrecioFacturadoDolar: numero(17),
-          codigoUltimoClienteFacturado: texto(18),
-          ultimoClienteFacturado: texto(19),
-    valorListaPrecioDolar: numero(22),
-valorFacturacionDolar: numero(23),
-familia: texto(24),
-calibre: texto(25),
-clase: texto(26),
-color: texto(27),
-presentacion: texto(28),
+ StockExcelRow(
+  codigoAlmacen: texto(0),
+  codigoArticulo: texto(1),
+  articulo: texto(2),
+  lote: texto(3),
+  stockAlmacen: numero(4),
+  pesoCobre: numero(5),
+  fechaIngreso: fecha(6),
+  codigoVendedor: texto(7),
+  vendedor: texto(8),
+  codigoCliente: texto(9),
+  cliente: texto(10),
+  ordenProduccion: texto(11),
+  fechaOrdenProduccion: fecha(12),
+  modelo: texto(13),
+  unidadMedida: texto(14),
+  cantidadEmpaque: numero(15),
+  listaPrecioDolar: numero(16),
+  ultimoPrecioFacturadoDolar: numero(17),
+  codigoUltimoClienteFacturado: texto(18),
+  ultimoClienteFacturado: texto(19),
 
-        ),
+  // PRECIOS CORRECTOS
+  valorListaPrecioDolar: numero(20),
+  valorFacturacionDolar: numero(21),
+
+  // DATOS DEL PRODUCTO
+  familia: texto(22),
+  calibre: texto(23),
+  clase: texto(24),
+  color: texto(25),
+  presentacion: texto(26),
+),
       );
     }
 

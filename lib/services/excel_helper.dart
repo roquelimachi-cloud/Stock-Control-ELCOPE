@@ -4,18 +4,39 @@ class ExcelHelper {
   ExcelHelper._();
 
   //=====================================================
+  // NORMALIZAR TEXTO
+  //=====================================================
+
+  static String _normalizar(String texto) {
+    return texto
+        .toLowerCase()
+        .replaceAll('\n', ' ')
+        .replaceAll('\r', ' ')
+        .replaceAll('\t', ' ')
+        .replaceAll(RegExp(r'\s+'), ' ')
+        .replaceAll('á', 'a')
+        .replaceAll('é', 'e')
+        .replaceAll('í', 'i')
+        .replaceAll('ó', 'o')
+        .replaceAll('ú', 'u')
+        .trim();
+  }
+
+  //=====================================================
   // BUSCAR COLUMNA POR NOMBRE
   //=====================================================
 
   static int buscarColumna(
-    List<String> encabezados,
-    List<String> nombres,
+    List encabezados,
+    List nombres,
   ) {
     for (int i = 0; i < encabezados.length; i++) {
-      final texto = encabezados[i].toLowerCase().trim();
+      final texto = _normalizar(encabezados[i].toString());
 
       for (final nombre in nombres) {
-        if (texto.contains(nombre.toLowerCase())) {
+        final buscado = _normalizar(nombre.toString());
+
+        if (texto.contains(buscado)) {
           return i;
         }
       }
@@ -36,7 +57,13 @@ class ExcelHelper {
       return "";
     }
 
-    final valor = fila[indice]?.value;
+    final celda = fila[indice];
+
+    if (celda == null) {
+      return "";
+    }
+
+    final valor = celda.value;
 
     if (valor == null) {
       return "";
@@ -49,17 +76,75 @@ class ExcelHelper {
   // OBTENER DOUBLE
   //=====================================================
 
-  static double obtenerDouble(
-    List<Data?> fila,
-    int indice,
-  ) {
-    final texto = obtenerTexto(fila, indice)
-        .replaceAll(",", "")
+static double obtenerDouble(
+  List<Data?> fila,
+  int indice,
+) {
+  if (indice < 0 || indice >= fila.length) {
+    return 0;
+  }
+
+  final celda = fila[indice];
+
+  if (celda == null || celda.value == null) {
+    return 0;
+  }
+
+  final valor = celda.value;
+
+  // Excel 4.x: número entero
+  if (valor is IntCellValue) {
+    return valor.value.toDouble();
+  }
+
+  // Excel 4.x: número decimal
+  if (valor is DoubleCellValue) {
+    return valor.value;
+  }
+
+  // Texto
+  if (valor is TextCellValue) {
+    String texto = valor.value.toString().trim();
+
+    if (texto.isEmpty) {
+      return 0;
+    }
+
+    texto = texto
+        .replaceAll('US\$', '')
+        .replaceAll('\$', '')
+        .replaceAll('S/', '')
+        .replaceAll(' ', '')
         .trim();
+
+    // 1.234,56
+    if (texto.contains(',') && texto.contains('.')) {
+      final ultimaComa = texto.lastIndexOf(',');
+      final ultimoPunto = texto.lastIndexOf('.');
+
+      if (ultimaComa > ultimoPunto) {
+        texto = texto
+            .replaceAll('.', '')
+            .replaceAll(',', '.');
+      } else {
+        // 1,234.56
+        texto = texto.replaceAll(',', '');
+      }
+    } else if (texto.contains(',')) {
+      final partes = texto.split(',');
+
+      if (partes.length == 2 && partes[1].length <= 4) {
+        texto = texto.replaceAll(',', '.');
+      } else {
+        texto = texto.replaceAll(',', '');
+      }
+    }
 
     return double.tryParse(texto) ?? 0;
   }
 
+  return 0;
+}
   //=====================================================
   // OBTENER ENTERO
   //=====================================================
@@ -86,7 +171,9 @@ class ExcelHelper {
   // FILA VACÍA
   //=====================================================
 
-  static bool filaVacia(List<Data?> fila) {
+  static bool filaVacia(
+    List<Data?> fila,
+  ) {
     for (final celda in fila) {
       final valor = celda?.value?.toString().trim() ?? "";
 

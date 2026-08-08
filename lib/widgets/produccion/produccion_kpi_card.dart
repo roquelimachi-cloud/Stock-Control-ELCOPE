@@ -41,6 +41,8 @@ class ProduccionKpiCard extends StatelessWidget {
                 children: [
                   Text(
                     titulo,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
                     style: const TextStyle(
                       fontSize: 14,
                       color: Colors.grey,

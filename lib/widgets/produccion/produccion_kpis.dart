@@ -22,44 +22,65 @@ class ProduccionKpis extends StatelessWidget {
     final formato = NumberFormat("#,##0.00", "en_US");
     final formatoEntero = NumberFormat("#,##0", "en_US");
 
-    return GridView.count(
-      shrinkWrap: true,
-      physics: const NeverScrollableScrollPhysics(),
-      crossAxisCount: 4,
-      crossAxisSpacing: 20,
-      mainAxisSpacing: 20,
-      childAspectRatio: 2.2,
-      children: [
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final ancho = constraints.maxWidth;
 
-        ProduccionKpiCard(
-          titulo: "Total OP",
-          valor: formatoEntero.format(totalOp),
-          icono: Icons.factory,
-          color: Colors.indigo,
-        ),
+        int columnas;
+        double proporcion;
 
-        ProduccionKpiCard(
-          titulo: "Valor Neto",
-          valor: "US\$ ${formato.format(valorNeto)}",
-          icono: Icons.attach_money,
-          color: Colors.green,
-        ),
+        if (ancho < 600) {
+          // 📱 Celular
+          columnas = 1;
+          proporcion = 3.2;
+        } else if (ancho < 1000) {
+          // 📱 Tablet
+          columnas = 2;
+          proporcion = 2.4;
+        } else {
+          // 💻 Web / PC
+          columnas = 4;
+          proporcion = 2.2;
+        }
 
-        ProduccionKpiCard(
-          titulo: "Peso Cobre",
-          valor: "${formato.format(pesoCobre)} Kg",
-          icono: Icons.scale,
-          color: Colors.orange,
-        ),
+        return GridView.count(
+          shrinkWrap: true,
+          physics: const NeverScrollableScrollPhysics(),
+          crossAxisCount: columnas,
+          crossAxisSpacing: 20,
+          mainAxisSpacing: 20,
+          childAspectRatio: proporcion,
+          children: [
+            ProduccionKpiCard(
+              titulo: "Total OP",
+              valor: formatoEntero.format(totalOp),
+              icono: Icons.factory,
+              color: Colors.indigo,
+            ),
 
-        ProduccionKpiCard(
-          titulo: "Clientes",
-          valor: formatoEntero.format(clientes),
-          icono: Icons.people,
-          color: Colors.purple,
-        ),
+            ProduccionKpiCard(
+              titulo: "Valor Neto",
+              valor: "US\$ ${formato.format(valorNeto)}",
+              icono: Icons.attach_money,
+              color: Colors.green,
+            ),
 
-      ],
+            ProduccionKpiCard(
+              titulo: "Peso Cobre",
+              valor: "${formato.format(pesoCobre)} Kg",
+              icono: Icons.scale,
+              color: Colors.orange,
+            ),
+
+            ProduccionKpiCard(
+              titulo: "Clientes",
+              valor: formatoEntero.format(clientes),
+              icono: Icons.people,
+              color: Colors.purple,
+            ),
+          ],
+        );
+      },
     );
   }
 }

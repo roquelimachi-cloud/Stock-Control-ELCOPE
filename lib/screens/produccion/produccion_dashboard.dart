@@ -93,115 +93,102 @@ class _ProduccionDashboardState
                 const SizedBox(height: 20),
 
                 // =====================================================
-                // BOTONES
-                // =====================================================
+// BOTONES DE ACCIONES
+// =====================================================
 
-                if (Sesion.esAdministrador)
-                  Wrap(
-                    spacing: 12,
-                    runSpacing: 12,
-                    alignment: WrapAlignment.end,
-                    children: [
-                      ElevatedButton.icon(
-                        icon: const Icon(
-                          Icons.upload_file,
-                        ),
-                        label: const Text(
-                          "Importar Excel",
-                        ),
-                        onPressed: () async {
-                          try {
-                            final excel =
-                                await excelService
-                                    .seleccionarExcel();
+Wrap(
+  spacing: 12,
+  runSpacing: 12,
+  alignment: WrapAlignment.end,
+  children: [
+    // =================================================
+    // IMPORTAR EXCEL
+    // SOLO ADMINISTRADOR
+    // =================================================
 
-                            if (excel == null) {
-                              return;
-                            }
+    if (Sesion.esAdministrador)
+      ElevatedButton.icon(
+        icon: const Icon(
+          Icons.upload_file,
+        ),
+        label: const Text(
+          "Importar Excel",
+        ),
+        onPressed: () async {
+          try {
+            final excel =
+                await excelService.seleccionarExcel();
 
-                            final lista =
-                                excelService
-                                    .leerProduccion(
-                                  excel,
-                                );
+            if (excel == null) {
+              return;
+            }
 
-                            final cantidad =
-                                await importService
-                                    .importar(
-                                  lista,
-                                );
+            final lista =
+                excelService.leerProduccion(excel);
 
-                            await controller.cargar();
+            final cantidad =
+                await importService.importar(lista);
 
-                            if (!mounted) {
-                              return;
-                            }
+            await controller.cargar();
 
-                            ScaffoldMessenger.of(
-                              context,
-                            ).showSnackBar(
-                              SnackBar(
-                                backgroundColor:
-                                    Colors.green,
-                                content: Text(
-                                  "Se importaron $cantidad registros correctamente.",
-                                ),
-                              ),
-                            );
-                          } catch (e) {
-                            if (!mounted) {
-                              return;
-                            }
+            if (!mounted) {
+              return;
+            }
 
-                            ScaffoldMessenger.of(
-                              context,
-                            ).showSnackBar(
-                              SnackBar(
-                                backgroundColor:
-                                    Colors.red,
-                                content: Text(
-                                  e.toString(),
-                                ),
-                              ),
-                            );
-                          }
-                        },
-                      ),
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                backgroundColor: Colors.green,
+                content: Text(
+                  "Se importaron $cantidad registros correctamente.",
+                ),
+              ),
+            );
+          } catch (e) {
+            if (!mounted) {
+              return;
+            }
 
-                      ElevatedButton.icon(
-                        style:
-                            ElevatedButton.styleFrom(
-                          backgroundColor:
-                              Colors.red,
-                          foregroundColor:
-                              Colors.white,
-                        ),
-                        icon: const Icon(
-                          Icons.picture_as_pdf,
-                        ),
-                        label: const Text(
-                          "Exportar PDF",
-                        ),
-                        onPressed: () async {
-                          await pdfService.generar(
-                            totalOp:
-                                controller.totalOp,
-                            clientes:
-                                controller.clientes,
-                            valorNeto:
-                                controller.valorNeto,
-                            pesoCobre:
-                                controller.pesoCobre,
-                            topClientes:
-                                controller.topClientes,
-                            producciones:
-                                controller.producciones,
-                          );
-                        },
-                      ),
-                    ],
-                  ),
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                backgroundColor: Colors.red,
+                content: Text(
+                  e.toString(),
+                ),
+              ),
+            );
+          }
+        },
+      ),
 
+    // =================================================
+    // EXPORTAR PDF
+    // TODOS LOS USUARIOS
+    // =================================================
+
+    ElevatedButton.icon(
+      style: ElevatedButton.styleFrom(
+        backgroundColor: Colors.red,
+        foregroundColor: Colors.white,
+      ),
+      icon: const Icon(
+        Icons.picture_as_pdf,
+      ),
+      label: const Text(
+        "Exportar PDF",
+      ),
+      onPressed: () async {
+        await pdfService.generar(
+          totalOp: controller.totalOp,
+          clientes: controller.clientes,
+          valorNeto: controller.valorNeto,
+          pesoCobre: controller.pesoCobre,
+          topClientes: controller.topClientes,
+          producciones: controller.producciones,
+        );
+      },
+    ),
+  ],
+),
                 const SizedBox(height: 25),
 
                 // =====================================================

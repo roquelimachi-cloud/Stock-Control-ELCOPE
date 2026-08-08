@@ -6,6 +6,10 @@ import 'supabase_service.dart';
 class UsuarioService {
   final SupabaseClient db = SupabaseService.client;
 
+  // ============================================================
+  // OBTENER TODOS LOS USUARIOS
+  // ============================================================
+
   Future<List<Usuario>> obtenerUsuarios() async {
     final respuesta = await db
         .from('usuarios')
@@ -13,52 +17,72 @@ class UsuarioService {
         .order('nombre');
 
     return (respuesta as List)
-        .map((e) => Usuario.fromJson(e))
+        .map(
+          (e) => Usuario.fromJson(e),
+        )
         .toList();
   }
 
+  // ============================================================
+  // INSERTAR USUARIO
+  // ============================================================
+
   Future<void> insertarUsuario({
-  required String usuario,
-  required String nombre,
-  required String correo,
-  required String password,
-  required String rol,
-  required String vendedor,
-}) async {
-  await db.from('usuarios').insert({
-    'usuario': usuario,
-    'nombre': nombre,
-    'correo': correo,
-    'password': password,
-    'rol': rol,
-    'vendedor': vendedor,
-    'activo': true,
-  });
-}
+    required String usuario,
+    required String nombre,
+    required String correo,
+    required String password,
+    required String rol,
+    required String vendedor,
+  }) async {
+    await db.from('usuarios').insert({
+      'usuario': usuario,
+      'nombre': nombre,
+      'correo': correo,
+      'password': password,
+      'rol': rol,
+      'vendedor': vendedor,
+      'activo': true,
+    });
+  }
+
+  // ============================================================
+  // ACTUALIZAR USUARIO
+  // ============================================================
 
   Future<void> actualizarUsuario(
-  int id, {
-  required String usuario,
-  required String nombre,
-  required String correo,
-  required String password,
-  required String rol,
-  required String vendedor,
-  required bool activo,
-}) async {
-  await db
-      .from('usuarios')
-      .update({
-        'usuario': usuario,
-        'nombre': nombre,
-        'correo': correo,
-        'password': password,
-        'rol': rol,
-        'vendedor': vendedor,
-        'activo': activo,
-      })
-      .eq('id', id);
-}
+    int id, {
+    required String usuario,
+    required String nombre,
+    required String correo,
+    required String password,
+    required String rol,
+    required String vendedor,
+    required bool activo,
+  }) async {
+    final datos = <String, dynamic>{
+      'usuario': usuario,
+      'nombre': nombre,
+      'correo': correo,
+      'rol': rol,
+      'vendedor': vendedor,
+      'activo': activo,
+    };
+
+    // Solo actualizamos password si se ingresó una nueva.
+    if (password.trim().isNotEmpty) {
+      datos['password'] = password.trim();
+    }
+
+    await db
+        .from('usuarios')
+        .update(datos)
+        .eq('id', id);
+  }
+
+  // ============================================================
+  // ELIMINAR USUARIO
+  // ============================================================
 
   Future<void> eliminarUsuario(int id) async {
     await db
@@ -67,38 +91,35 @@ class UsuarioService {
         .eq('id', id);
   }
 
-  /// Actualiza únicamente el perfil del usuario que inició sesión.
-Future<void> actualizarMiPerfil({
-  required int id,
-  required String nombre,
-  required String correo,
-  required String password,
-}) async {
+  // ============================================================
+  // ACTUALIZAR MI PERFIL
+  // ============================================================
 
-  if (password.trim().isEmpty) {
-    print("ACTUALIZANDO SIN PASSWORD");
+  Future<void> actualizarMiPerfil({
+    required int id,
+    required String nombre,
+    required String correo,
+    required String password,
+  }) async {
+    final datos = <String, dynamic>{
+      'nombre': nombre,
+      'correo': correo,
+    };
 
-    await db
-        .from('usuarios')
-        .update({
-          'nombre': nombre,
-          'correo': correo,
-        })
-        .eq('id', id);
-
-  } else {
-    print("ACTUALIZANDO CON PASSWORD");
+    if (password.trim().isNotEmpty) {
+      datos['password'] = password.trim();
+    }
 
     await db
         .from('usuarios')
-        .update({
-          'nombre': nombre,
-          'correo': correo,
-          'password': password.trim(),
-        })
+        .update(datos)
         .eq('id', id);
   }
-}
+
+  // ============================================================
+  // LOGIN
+  // ============================================================
+
   Future<Usuario?> login(
     String usuario,
     String password,
@@ -109,13 +130,129 @@ Future<void> actualizarMiPerfil({
         .eq('usuario', usuario)
         .eq('password', password);
 
-    print("RESPUESTA LOGIN:");
-    print(respuesta);
-
     if (respuesta.isEmpty) {
       return null;
     }
 
-    return Usuario.fromJson(respuesta.first);
+    return Usuario.fromJson(
+      respuesta.first,
+    );
+  }
+
+  // ============================================================
+  // OBTENER VENDEDORES PERMITIDOS
+  // ============================================================
+  //
+  // Devuelve los nombres de vendedores que el administrador
+  // asignó al jefe.
+  //
+  // Ejemplo:
+  //
+  // Richard Figueroa
+  // ID = 15
+  //
+  // devuelve:
+  //
+  // [
+  //   "Michael",
+  //   "Daniela",
+  //   "Johana"
+  // ]
+  //
+  // ============================================================
+
+  Future<List<String>> obtenerVendedoresPermitidos(
+    int usuarioJefeId,
+  ) async {
+    final respuesta = await db
+        .from('usuario_permisos')
+        .select('vendedor')
+        .eq(
+          'usuario_jefe_id',
+          usuarioJefeId,
+        );
+
+    return (respuesta as List)
+        .map(
+          (e) => e['vendedor']
+              .toString()
+              .trim(),
+        )
+        .where(
+          (e) => e.isNotEmpty,
+        )
+        .toList();
+  }
+
+  // ============================================================
+  // GUARDAR PERMISOS POR VENDEDOR
+  // ============================================================
+  //
+  // Primero elimina los permisos anteriores.
+  //
+  // Después guarda exactamente los vendedores seleccionados.
+  //
+  // ============================================================
+
+  Future<void> guardarPermisosVendedores({
+    required int usuarioJefeId,
+    required List<String> vendedores,
+  }) async {
+    // ----------------------------------------------------------
+    // 1. ELIMINAR PERMISOS ANTERIORES
+    // ----------------------------------------------------------
+
+    await db
+        .from('usuario_permisos')
+        .delete()
+        .eq(
+          'usuario_jefe_id',
+          usuarioJefeId,
+        );
+
+    // ----------------------------------------------------------
+    // 2. SI NO SE SELECCIONÓ NINGÚN VENDEDOR
+    // ----------------------------------------------------------
+
+    if (vendedores.isEmpty) {
+      return;
+    }
+
+    // ----------------------------------------------------------
+    // 3. LIMPIAR Y ELIMINAR DUPLICADOS
+    // ----------------------------------------------------------
+
+    final vendedoresLimpios = vendedores
+        .map(
+          (v) => v.trim(),
+        )
+        .where(
+          (v) => v.isNotEmpty,
+        )
+        .toSet()
+        .toList();
+
+    // ----------------------------------------------------------
+    // 4. PREPARAR REGISTROS
+    // ----------------------------------------------------------
+
+    final registros =
+        vendedoresLimpios.map(
+      (vendedor) {
+        return {
+          'usuario_jefe_id':
+              usuarioJefeId,
+          'vendedor': vendedor,
+        };
+      },
+    ).toList();
+
+    // ----------------------------------------------------------
+    // 5. INSERTAR EN SUPABASE
+    // ----------------------------------------------------------
+
+    await db
+        .from('usuario_permisos')
+        .insert(registros);
   }
 }

@@ -3,12 +3,12 @@ import '../../models/produccion/produccion_model.dart';
 
 class ProduccionGraficosService {
 
-  //==================================================
-  // ESTADO
-  //==================================================
+//==================================================
+// ESTADO
+//==================================================
 
   List<GraficoProduccion> estado(
-    List<ProduccionModel> lista,
+    List lista,
   ) {
     final Map<String, double> mapa = {};
 
@@ -30,12 +30,12 @@ class ProduccionGraficosService {
         .toList();
   }
 
-  //==================================================
-  // CANAL
-  //==================================================
+//==================================================
+// CANAL
+//==================================================
 
   List<GraficoProduccion> canal(
-    List<ProduccionModel> lista,
+    List lista,
   ) {
     final Map<String, double> mapa = {};
 
@@ -60,29 +60,39 @@ class ProduccionGraficosService {
         .toList();
   }
 
-  //==================================================
-  // CLASE
-  //==================================================
+//==================================================
+// CLASE (POR PESO DE COBRE)
+//==================================================
 
   List<GraficoProduccion> clase(
-    List<ProduccionModel> lista,
+    List lista,
   ) {
     final Map<String, double> mapa = {};
 
     for (final op in lista) {
       final clase =
-          (op.clase ?? "").isEmpty
-              ? "Sin Clase"
-              : op.clase!;
+          (op.clase ?? "")
+                  .toString()
+                  .trim()
+                  .toUpperCase()
+                  .isEmpty
+              ? "SIN CLASE"
+              : op.clase
+                  .toString()
+                  .trim()
+                  .toUpperCase();
+
+      final peso =
+          (op.pesoCobre ?? 0).toDouble();
 
       mapa.update(
         clase,
-        (v) => v + 1,
-        ifAbsent: () => 1,
+        (valor) => valor + peso,
+        ifAbsent: () => peso,
       );
     }
 
-    return mapa.entries
+    final resultado = mapa.entries
         .map(
           (e) => GraficoProduccion(
             nombre: e.key,
@@ -90,14 +100,20 @@ class ProduccionGraficosService {
           ),
         )
         .toList();
+
+    resultado.sort(
+      (a, b) => b.valor.compareTo(a.valor),
+    );
+
+    return resultado;
   }
 
-  //==================================================
-  // FAMILIA (POR PESO DE COBRE)
-  //==================================================
+//==================================================
+// FAMILIA (POR PESO DE COBRE)
+//==================================================
 
   List<GraficoProduccion> familia(
-    List<ProduccionModel> lista,
+    List lista,
   ) {
     final Map<String, double> mapa = {};
 

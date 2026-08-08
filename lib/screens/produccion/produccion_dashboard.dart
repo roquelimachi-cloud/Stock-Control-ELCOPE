@@ -82,13 +82,13 @@ class _ProduccionDashboardState
 
                 const SizedBox(height: 8),
 
-                Text(
-                  "Dashboard Ejecutivo",
-                  style: TextStyle(
-                    fontSize: esMovil ? 16 : 18,
-                    color: Colors.grey,
-                  ),
-                ),
+               Text(
+  Sesion.nombre,
+  style: const TextStyle(
+    fontSize: 17,
+    color: Colors.grey,
+  ),
+),
 
                 const SizedBox(height: 20),
 
@@ -242,7 +242,7 @@ Wrap(
                       return Column(
                         children: [
                           SizedBox(
-                            height: 380,
+                            height: 400,
                             width: double.infinity,
                             child: DonaProduccion(
                               titulo:
@@ -277,24 +277,23 @@ Wrap(
                           const SizedBox(height: 20),
 
                           SizedBox(
-                            height: 380,
+                            height: 400,
                             width: double.infinity,
                             child: DonaProduccion(
-                              titulo:
-                                  "Producción por Clase",
-                              datos:
-                                  controller.clase,
-                              centroValor:
-                                  "US\$ ${NumberFormat("#,##0").format(controller.valorNeto)}",
-                              centroTexto:
-                                  "Valor",
-                            ),
+  titulo: "Producción por Clase",
+  datos: controller.clase,
+  centroValor:
+      "${NumberFormat("#,##0").format(controller.pesoCobre)} Kg",
+  centroTexto:
+      "Kg Cobre",
+  mostrarPesoEnLeyenda: true,
+),
                           ),
 
                           const SizedBox(height: 20),
 
                           SizedBox(
-                            height: 380,
+                            height: 400,
                             width: double.infinity,
                             child: DonaProduccion(
                               titulo:
@@ -346,7 +345,7 @@ Wrap(
                                   Expanded(
                                     child:
                                         SizedBox(
-                                      height: 380,
+                                      height: 400,
                                       child:
                                           DonaProduccion(
                                         titulo:
@@ -369,7 +368,7 @@ Wrap(
                                   Expanded(
                                     child:
                                         SizedBox(
-                                      height: 320,
+                                      height: 400,
                                       child:
                                           DonaProduccion(
                                         titulo:
@@ -392,52 +391,49 @@ Wrap(
                               const SizedBox(
                                 height: 20,
                               ),
+Row(
+  children: [
+    // =============================================
+    // PRODUCCIÓN POR CLASE
+    // =============================================
 
-                              Row(
-                                children: [
-                                  Expanded(
-                                    child:
-                                        SizedBox(
-                                      height: 320,
-                                      child:
-                                          DonaProduccion(
-                                        titulo:
-                                            "Producción por Clase",
-                                        datos:
-                                            controller
-                                                .clase,
-                                        centroValor:
-                                            "US\$ ${NumberFormat("#,##0").format(controller.valorNeto)}",
-                                        centroTexto:
-                                            "Valor",
-                                      ),
-                                    ),
-                                  ),
+    Expanded(
+      child: SizedBox(
+        height: 400,
+        child: DonaProduccion(
+          titulo: "Producción por Clase",
+          datos: controller.clase,
+          centroValor:
+              "${NumberFormat("#,##0").format(controller.pesoCobre)} Kg",
+          centroTexto: "Kg Cobre",
+          mostrarPesoEnLeyenda: true,
+        ),
+      ),
+    ),
 
-                                  const SizedBox(
-                                    width: 15,
-                                  ),
+    const SizedBox(
+      width: 15,
+    ),
 
-                                  Expanded(
-                                    child:
-                                        SizedBox(
-                                      height: 320,
-                                      child:
-                                          DonaProduccion(
-                                        titulo:
-                                            "Producción por Familia",
-                                        datos:
-                                            controller
-                                                .familia,
-                                        centroValor:
-                                            "${NumberFormat("#,##0").format(controller.pesoCobre)} Kg",
-                                        centroTexto:
-                                            "Kg Cobre",
-                                      ),
-                                    ),
-                                  ),
-                                ],
-                              ),
+    // =============================================
+    // PRODUCCIÓN POR FAMILIA
+    // =============================================
+
+    Expanded(
+      child: SizedBox(
+        height: 400,
+        child: DonaProduccion(
+          titulo: "Producción por Familia",
+          datos: controller.familia,
+          centroValor:
+              "${NumberFormat("#,##0").format(controller.pesoCobre)} Kg",
+          centroTexto: "Kg Cobre",
+        ),
+      ),
+    ),
+  ],
+),
+
                             ],
                           ),
                         ),

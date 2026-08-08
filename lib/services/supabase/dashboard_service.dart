@@ -11,21 +11,223 @@ import 'supabase_service.dart';
 class DashboardService {
   final SupabaseClient db = SupabaseService.client;
 
-  //=========================================================
-  // RESUMEN GENERAL
-  //=========================================================
+  // =========================================================
+  // CONVERTIR VALORES A DOUBLE DE FORMA SEGURA
+  // =========================================================
 
-  Future<DashboardSummary> obtenerResumen() async {
-    var consulta = db.from('stock').select();
-
-    if (Sesion.vendedor.trim().isNotEmpty) {
-      consulta = consulta.eq(
-        'vendedor',
-        Sesion.vendedor.trim(),
-      );
+  double _toDouble(dynamic valor) {
+    if (valor == null) {
+      return 0;
     }
 
-    final datos = await consulta;
+    if (valor is num) {
+      return valor.toDouble();
+    }
+
+    return double.tryParse(
+          valor.toString().replaceAll(',', ''),
+        ) ??
+        0;
+  }
+
+  // =========================================================
+  // OBTENER VENDEDORES QUE PUEDE VER EL USUARIO
+  // =========================================================
+  //
+  // null:
+  //     Administrador / Gerencia → todo.
+  //
+  // Set:
+  //     Jefe → vendedores asignados mediante usuario_permisos.
+  //
+  // Vendedor:
+  //     solamente su propio vendedor.
+  //
+  // IMPORTANTE:
+  // NO existen nombres escritos manualmente.
+  // Todo depende de usuario_permisos.
+  // =========================================================
+
+  Future<Set<String>?> _obtenerVendedoresPermitidos() async {
+  // =========================================================
+  // GERENCIA
+  // =========================================================
+  //
+  // Gerencia sí puede ver TODO el stock.
+  //
+  // IMPORTANTE:
+  // El Administrador NO entra aquí automáticamente.
+  // =========================================================
+
+  if (Sesion.rol == 'Gerencia') {
+    return null;
+  }
+
+  // =========================================================
+  // JEFE LIMA / JEFE PROVINCIA
+  // =========================================================
+  //
+  // El jefe solamente puede ver los vendedores que tenga
+  // habilitados en usuario_permisos.
+  // =========================================================
+
+  if (Sesion.rol == 'Jefe Lima' ||
+      Sesion.rol == 'Jefe Provincia') {
+    final respuesta = await db
+        .from('usuario_permisos')
+        .select('vendedor, ver_produccion')
+        .eq(
+          'usuario_jefe_id',
+          Sesion.idUsuario,
+        )
+        .eq(
+          'ver_produccion',
+          true,
+        );
+
+    final vendedores = (respuesta as List)
+        .map(
+          (e) => e['vendedor']
+                  ?.toString()
+                  .trim()
+                  .toLowerCase() ??
+              '',
+        )
+        .where(
+          (v) => v.isNotEmpty,
+        )
+        .toSet();
+
+    return vendedores;
+  }
+
+  // =========================================================
+  // ADMINISTRADOR CON VENDEDOR
+  // =========================================================
+  //
+  // Si el administrador también tiene vendedor asignado,
+  // se comporta como ese vendedor para el dashboard.
+  //
+  // Ejemplo:
+  //
+  // mroque
+  // rol = Administrador
+  // vendedor = Michael Roque
+  //
+  // Resultado:
+  // solamente Michael Roque.
+  // =========================================================
+
+  final vendedor =
+      Sesion.vendedor.trim().toLowerCase();
+
+  if (vendedor.isNotEmpty) {
+    return {vendedor};
+  }
+
+  // =========================================================
+  // USUARIO SIN VENDEDOR
+  // =========================================================
+
+  return <String>{};
+}
+
+  // =========================================================
+  // OBTENER STOCK COMPLETO POR PÁGINAS
+  // =========================================================
+  //
+  // Esto evita depender del límite de filas que pueda devolver
+  // Supabase en una sola consulta.
+  //
+  // Se cargan bloques de 1000 registros hasta terminar.
+  // =========================================================
+
+  Future<List<Map<String, dynamic>>> _obtenerTodoElStock() async {
+    const int tamanoPagina = 1000;
+
+    final List<Map<String, dynamic>> todosLosDatos = [];
+
+    int inicio = 0;
+
+    while (true) {
+      final respuesta = await db
+          .from('stock')
+          .select()
+          .range(
+            inicio,
+            inicio + tamanoPagina - 1,
+          );
+
+      final pagina = (respuesta as List)
+          .map(
+            (e) => Map<String, dynamic>.from(e),
+          )
+          .toList();
+
+      todosLosDatos.addAll(pagina);
+
+      // Si llegaron menos de 1000,
+      // significa que ya llegamos al final.
+      if (pagina.length < tamanoPagina) {
+        break;
+      }
+
+      inicio += tamanoPagina;
+    }
+
+    return todosLosDatos;
+  }
+
+  // =========================================================
+  // FILTRAR STOCK SEGÚN EL USUARIO
+  // =========================================================
+
+  Future<List<Map<String, dynamic>>> _obtenerStockFiltrado() async {
+    final datos = await _obtenerTodoElStock();
+
+    final vendedoresPermitidos =
+        await _obtenerVendedoresPermitidos();
+
+    // -------------------------------------------------------
+    // ADMINISTRADOR / GERENCIA
+    // -------------------------------------------------------
+    //
+    // null = puede ver todo.
+    // -------------------------------------------------------
+
+    if (vendedoresPermitidos == null) {
+      return datos;
+    }
+
+    // -------------------------------------------------------
+    // SIN PERMISOS
+    // -------------------------------------------------------
+
+    if (vendedoresPermitidos.isEmpty) {
+      return [];
+    }
+
+    // -------------------------------------------------------
+    // FILTRAR
+    // -------------------------------------------------------
+
+    return datos.where((fila) {
+      final vendedor = fila['vendedor']
+              ?.toString()
+              .trim()
+              .toLowerCase() ??
+          '';
+
+      return vendedoresPermitidos.contains(vendedor);
+    }).toList();
+  }
+
+  // =========================================================
+  // RESUMEN GENERAL
+  // =========================================================
+
+  Future<DashboardSummary> obtenerResumen() async {
+    final datos = await _obtenerStockFiltrado();
 
     double stockTotal = 0;
     double pesoTotal = 0;
@@ -34,18 +236,21 @@ class DashboardService {
     final clientes = <String>{};
 
     for (final fila in datos) {
-      stockTotal += (fila['stock'] ?? 0).toDouble();
-      pesoTotal += (fila['peso'] ?? 0).toDouble();
-      final valor = double.tryParse(
-  fila['valor_lista_precio_dolar']?.toString() ?? '0',
-) ?? 0;
+      stockTotal += _toDouble(fila['stock']);
 
-valorTotal += valor;
+      pesoTotal += _toDouble(fila['peso']);
+
+      valorTotal += _toDouble(
+        fila['valor_lista_precio_dolar'],
+      );
+
       final cliente = fila['cliente'];
 
       if (cliente != null &&
           cliente.toString().trim().isNotEmpty) {
-        clientes.add(cliente.toString());
+        clientes.add(
+          cliente.toString().trim(),
+        );
       }
     }
 
@@ -58,21 +263,12 @@ valorTotal += valor;
     );
   }
 
-  //=========================================================
+  // =========================================================
   // RESUMEN POR CLASE
-  //=========================================================
+  // =========================================================
 
   Future<List<ClaseResumen>> obtenerResumenClases() async {
-    var consulta = db.from('stock').select();
-
-    if (Sesion.vendedor.trim().isNotEmpty) {
-      consulta = consulta.eq(
-        'vendedor',
-        Sesion.vendedor.trim(),
-      );
-    }
-
-    final datos = await consulta;
+    final datos = await _obtenerStockFiltrado();
 
     final Map<String, double> clases = {};
 
@@ -80,9 +276,9 @@ valorTotal += valor;
       final clase =
           (fila['clase'] ?? 'SIN CLASE').toString();
 
-     final monto = double.tryParse(
-  fila['valor_lista_precio_dolar']?.toString() ?? '0',
-) ?? 0;
+      final monto = _toDouble(
+        fila['valor_lista_precio_dolar'],
+      );
 
       clases.update(
         clase,
@@ -107,21 +303,12 @@ valorTotal += valor;
     return resultado;
   }
 
-  //=========================================================
+  // =========================================================
   // TOP CLIENTES
-  //=========================================================
+  // =========================================================
 
   Future<List<ClienteTop>> obtenerTopClientes() async {
-    var consulta = db.from('stock').select();
-
-    if (Sesion.vendedor.trim().isNotEmpty) {
-      consulta = consulta.eq(
-        'vendedor',
-        Sesion.vendedor.trim(),
-      );
-    }
-
-    final datos = await consulta;
+    final datos = await _obtenerStockFiltrado();
 
     final Map<String, double> clientes = {};
 
@@ -129,9 +316,9 @@ valorTotal += valor;
       final cliente =
           (fila['cliente'] ?? 'SIN CLIENTE').toString();
 
-     final valor = double.tryParse(
-  fila['valor_lista_precio_dolar']?.toString() ?? '0',
-) ?? 0;
+      final valor = _toDouble(
+        fila['valor_lista_precio_dolar'],
+      );
 
       clientes.update(
         cliente,
@@ -156,40 +343,35 @@ valorTotal += valor;
     return resultado.take(10).toList();
   }
 
-  //=========================================================
+  // =========================================================
   // PRODUCTOS POR CLIENTE
-  //=========================================================
+  // =========================================================
 
   Future<List<ProductoCliente>> obtenerProductosCliente(
-      String cliente) async {
-    var consulta = db
-        .from('stock')
-        .select()
-        .eq('cliente', cliente);
+    String cliente,
+  ) async {
+    final datos = await _obtenerStockFiltrado();
 
-    if (Sesion.vendedor.trim().isNotEmpty) {
-      consulta = consulta.eq(
-        'vendedor',
-        Sesion.vendedor.trim(),
-      );
-    }
-
-    final datos = await consulta;
+    final datosCliente = datos.where((fila) {
+      return fila['cliente']?.toString() == cliente;
+    }).toList();
 
     final List<ProductoCliente> productos = [];
 
-    for (final fila in datos) {
+    for (final fila in datosCliente) {
       productos.add(
         ProductoCliente(
           descripcion:
               fila['descripcion']?.toString() ?? '',
-          stock:
-              (fila['stock'] ?? 0).toDouble(),
-          peso:
-              (fila['peso'] ?? 0).toDouble(),
-          valor:
-              (fila['valor_lista_precio_dolar'] ?? 0)
-                  .toDouble(),
+          stock: _toDouble(
+            fila['stock'],
+          ),
+          peso: _toDouble(
+            fila['peso'],
+          ),
+          valor: _toDouble(
+            fila['valor_lista_precio_dolar'],
+          ),
         ),
       );
     }
@@ -201,53 +383,44 @@ valorTotal += valor;
     return productos.take(10).toList();
   }
 
-  //=========================================================
-// TOP PRODUCTOS
-//=========================================================
+  // =========================================================
+  // TOP PRODUCTOS
+  // =========================================================
 
-Future<List<ProductoTop>> obtenerTopProductos() async {
-  var consulta = db.from('stock').select();
+  Future<List<ProductoTop>> obtenerTopProductos() async {
+    final datos = await _obtenerStockFiltrado();
 
-  if (Sesion.vendedor.trim().isNotEmpty) {
-    consulta = consulta.eq(
-      'vendedor',
-      Sesion.vendedor.trim(),
+    final Map<String, double> productos = {};
+
+    for (final fila in datos) {
+      final descripcion =
+          (fila['descripcion'] ?? 'SIN DESCRIPCIÓN')
+              .toString();
+
+      final valor = _toDouble(
+        fila['valor_lista_precio_dolar'],
+      );
+
+      productos.update(
+        descripcion,
+        (actual) => actual + valor,
+        ifAbsent: () => valor,
+      );
+    }
+
+    final resultado = productos.entries
+        .map(
+          (e) => ProductoTop(
+            descripcion: e.key,
+            valor: e.value,
+          ),
+        )
+        .toList();
+
+    resultado.sort(
+      (a, b) => b.valor.compareTo(a.valor),
     );
+
+    return resultado.take(10).toList();
   }
-
-  final datos = await consulta;
-
-  final Map<String, double> productos = {};
-
-  for (final fila in datos) {
-    final descripcion =
-        (fila['descripcion'] ?? 'SIN DESCRIPCIÓN')
-            .toString();
-
-    final valor =
-        (fila['valor_lista_precio_dolar'] ?? 0)
-            .toDouble();
-
-    productos.update(
-      descripcion,
-      (actual) => actual + valor,
-      ifAbsent: () => valor,
-    );
-  }
-
-  final resultado = productos.entries
-      .map(
-        (e) => ProductoTop(
-          descripcion: e.key,
-          valor: e.value,
-        ),
-      )
-      .toList();
-
-  resultado.sort(
-    (a, b) => b.valor.compareTo(a.valor),
-  );
-
-  return resultado.take(10).toList();
-}
 }

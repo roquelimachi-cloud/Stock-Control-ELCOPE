@@ -3,10 +3,16 @@ import '../models/usuario.dart';
 class Sesion {
   static Usuario? usuarioActual;
 
-  static bool get logueado => usuarioActual != null;
+  // ============================================================
+  // ESTADO DE SESIÓN
+  // ============================================================
 
-  static bool get esAdministrador =>
-      usuarioActual?.rol == "Administrador";
+  static bool get logueado =>
+      usuarioActual != null;
+
+  // ============================================================
+  // DATOS DEL USUARIO
+  // ============================================================
 
   static int get idUsuario =>
       usuarioActual?.id ?? 0;
@@ -22,6 +28,35 @@ class Sesion {
 
   static String get vendedor =>
       usuarioActual?.vendedor ?? "";
+
+  // ============================================================
+  // ROLES
+  // ============================================================
+
+  static bool get esAdministrador =>
+      usuarioActual?.rol == "Administrador";
+
+  static bool get esGerencia =>
+      usuarioActual?.rol == "Gerencia";
+
+  static bool get esJefeLima =>
+      usuarioActual?.rol == "Jefe Lima";
+
+  static bool get esJefeProvincia =>
+      usuarioActual?.rol == "Jefe Provincia";
+
+  // ============================================================
+  // PERFIL DE SUPERVISIÓN
+  // ============================================================
+
+  static bool get esSupervisor =>
+      esGerencia ||
+      esJefeLima ||
+      esJefeProvincia;
+
+  // ============================================================
+  // CERRAR SESIÓN
+  // ============================================================
 
   static void cerrarSesion() {
     usuarioActual = null;

@@ -7,7 +7,7 @@ import '../../models/dashboard/producto_cliente.dart';
 import '../../models/dashboard/producto_top.dart';
 import '../sesion.dart';
 import 'supabase_service.dart';
-
+import '../../models/dashboard/stock_vendedor.dart';
 class DashboardService {
   final SupabaseClient db = SupabaseService.client;
 
@@ -388,6 +388,7 @@ class DashboardService {
   // =========================================================
 
   Future<List<ProductoTop>> obtenerTopProductos() async {
+
     final datos = await _obtenerStockFiltrado();
 
     final Map<String, double> productos = {};
@@ -423,4 +424,50 @@ class DashboardService {
 
     return resultado.take(10).toList();
   }
+  // =========================================================
+// STOCK POR VENDEDOR
+// =========================================================
+
+Future<List<StockVendedor>> obtenerStockPorVendedor() async {
+  final datos = await _obtenerStockFiltrado();
+
+  final Map<String, double> vendedores = {};
+
+  for (final fila in datos) {
+    final nombre =
+        fila['vendedor']?.toString().trim() ?? '';
+
+    if (nombre.isEmpty) {
+      continue;
+    }
+
+    final valor = _toDouble(
+      fila['valor_lista_precio_dolar'],
+    );
+
+    vendedores.update(
+      nombre,
+      (actual) => actual + valor,
+      ifAbsent: () => valor,
+    );
+  }
+
+  final resultado = vendedores.entries
+      .map(
+        (e) => StockVendedor(
+          vendedor: e.key,
+          valorStock: e.value,
+        ),
+      )
+      .where(
+        (e) => e.valorStock > 0,
+      )
+      .toList();
+
+  resultado.sort(
+    (a, b) => b.valorStock.compareTo(a.valorStock),
+  );
+
+  return resultado;
+}
 }

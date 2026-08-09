@@ -18,6 +18,8 @@ import '../../models/dashboard/clase_resumen.dart';
 import '../../models/dashboard/producto_top.dart';
 import '../../widgets/dashboard/top_productos_card.dart';
 import '../produccion/produccion_dashboard.dart';
+import '../../models/dashboard/stock_vendedor.dart';
+import '../../widgets/dashboard/stock_vendedor_card.dart';
 
 class DashboardPage extends StatefulWidget {
   const DashboardPage({super.key});
@@ -40,6 +42,7 @@ late Future<DashboardSummary> _resumenFuture;
 late Future<List<ClienteTop>> _clientesFuture;
 late Future<List<ClaseResumen>> _clasesFuture;
 late Future<List<ProductoTop>> _productosFuture;
+late Future<List<StockVendedor>> _stockVendedoresFuture;
 @override
 void initState() {
   super.initState();
@@ -47,6 +50,7 @@ _resumenFuture = dashboardService.obtenerResumen();
 _clientesFuture = dashboardService.obtenerTopClientes();
 _clasesFuture = dashboardService.obtenerResumenClases();
 _productosFuture = dashboardService.obtenerTopProductos();
+_stockVendedoresFuture =dashboardService.obtenerStockPorVendedor();
   _scrollController.addListener(() {
     ClienteHover.cerrarPopup();
   });
@@ -486,10 +490,75 @@ FutureBuilder<List<ClaseResumen>>(
 
             const SizedBox(height: 25),
 
-           TopProductosCard(
-              productos: productos,
-            ),
+          const SizedBox(height: 25),
 
+// =========================================================
+// STOCK POR VENDEDOR
+// =========================================================
+
+FutureBuilder<List<StockVendedor>>(
+  future: _stockVendedoresFuture,
+
+  builder: (context, vendedorSnapshot) {
+    // -------------------------------------------------------
+    // CARGANDO
+    // -------------------------------------------------------
+
+    if (vendedorSnapshot.connectionState ==
+        ConnectionState.waiting) {
+      return const SizedBox(
+        height: 120,
+        child: Center(
+          child: CircularProgressIndicator(),
+        ),
+      );
+    }
+
+    // -------------------------------------------------------
+    // ERROR
+    // -------------------------------------------------------
+
+    if (vendedorSnapshot.hasError) {
+      return const SizedBox.shrink();
+    }
+
+    final vendedores =
+        vendedorSnapshot.data ?? [];
+
+    // -------------------------------------------------------
+    // QUIÉNES PUEDEN VER LA BARRA
+    // -------------------------------------------------------
+
+    final mostrarStockVendedores =
+        Sesion.rol == 'Gerencia' ||
+        Sesion.rol == 'Jefe Lima' ||
+        Sesion.rol == 'Jefe Provincia';
+
+    // -------------------------------------------------------
+    // VENDEDORES / ADMINISTRADOR
+    // NO MOSTRAR
+    // -------------------------------------------------------
+
+    if (!mostrarStockVendedores ||
+        vendedores.isEmpty) {
+      return const SizedBox.shrink();
+    }
+
+    return StockVendedorCard(
+      vendedores: vendedores,
+    );
+  },
+),
+
+const SizedBox(height: 25),
+
+// =========================================================
+// TOP PRODUCTOS
+// =========================================================
+
+TopProductosCard(
+  productos: productos,
+),
           ],
         );
       },

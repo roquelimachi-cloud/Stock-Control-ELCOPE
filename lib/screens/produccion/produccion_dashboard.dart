@@ -14,7 +14,7 @@ import '../../widgets/produccion/top_clientes_widget.dart';
 import '../../widgets/produccion/mis_producciones_widget.dart';
 
 import 'package:intl/intl.dart';
-
+import '../../widgets/produccion/produccion_vendedor_widget.dart';
 class ProduccionDashboard extends StatefulWidget {
   const ProduccionDashboard({super.key});
 
@@ -463,15 +463,39 @@ Row(
                   },
                 ),
 
-                const SizedBox(height: 25),
+             const SizedBox(height: 25),
 
-                // =====================================================
-                // MIS PRODUCCIONES
-                // =====================================================
+// =====================================================
+// PRODUCCIÓN POR VENDEDOR
+// SOLO JEFE LIMA / JEFE PROVINCIA / GERENCIA
+// =====================================================
 
-                const MisProduccionesWidget(),
+if (
+  Sesion.rol == 'Gerencia' ||
+  Sesion.rol == 'Jefe Lima' ||
+  Sesion.rol == 'Jefe Provincia'
+)
+  AnimatedBuilder(
+    animation: controller,
+    builder: (context, _) {
+      if (controller.cargando) {
+        return const SizedBox.shrink();
+      }
 
-                const SizedBox(height: 25),
+      return ProduccionVendedorWidget(
+        producciones:
+            controller.producciones,
+      );
+    },
+  ),
+
+const SizedBox(height: 25),
+
+// =====================================================
+// MIS PRODUCCIONES
+// =====================================================
+
+const MisProduccionesWidget(),
 
                 // =====================================================
                 // RESUMEN EJECUTIVO

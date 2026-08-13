@@ -263,45 +263,152 @@ class DashboardService {
     );
   }
 
-  // =========================================================
-  // RESUMEN POR CLASE
-  // =========================================================
+ // =========================================================
+// RESUMEN POR CLASE
+// =========================================================
+//
+// CLASES VÁLIDAS:
+//
+// CL1
+// CL2
+// CL5
+// CL6
+//
+// Primero intenta utilizar la columna "clase".
+// Si la columna contiene otro dato, intenta obtener
+// CL1 / CL2 / CL5 / CL6 desde la descripción.
+//
+// Esto evita que aparezcan familias como:
+// LSOH 450/750V
+// N2XOH 0.6/1kV
+// THW 450/750V
+// etc.
+//
+// =========================================================
 
-  Future<List<ClaseResumen>> obtenerResumenClases() async {
-    final datos = await _obtenerStockFiltrado();
+Future<List<ClaseResumen>> obtenerResumenClases() async {
+  final datos = await _obtenerStockFiltrado();
 
-    final Map<String, double> clases = {};
+  final Map<String, double> clases = {
+    'CL1': 0,
+    'CL2': 0,
+    'CL5': 0,
+    'CL6': 0,
+  };
 
-    for (final fila in datos) {
-      final clase =
-          (fila['clase'] ?? 'SIN CLASE').toString();
+  for (final fila in datos) {
+    // -------------------------------------------------------
+    // 1. LEER CLASE
+    // -------------------------------------------------------
 
-      final monto = _toDouble(
-        fila['valor_lista_precio_dolar'],
-      );
+    String clase =
+        fila['clase']?.toString().trim().toUpperCase() ?? '';
 
-      clases.update(
-        clase,
-        (value) => value + monto,
-        ifAbsent: () => monto,
-      );
+    // -------------------------------------------------------
+    // 2. NORMALIZAR
+    // -------------------------------------------------------
+
+    clase = clase
+        .replaceAll('CLASE ', 'CL')
+        .replaceAll('CLASE', 'CL')
+        .trim();
+
+    // -------------------------------------------------------
+    // 3. VALIDAR CLASE
+    // -------------------------------------------------------
+
+    String? claseEncontrada;
+
+    if (clase == 'CL1' ||
+        clase == 'CL2' ||
+        clase == 'CL5' ||
+        clase == 'CL6') {
+      claseEncontrada = clase;
     }
 
-    final resultado = clases.entries
-        .map(
-          (e) => ClaseResumen(
-            clase: e.key,
-            monto: e.value,
-          ),
-        )
-        .toList();
+    // -------------------------------------------------------
+    // 4. SI NO ENCUENTRA LA CLASE,
+    //    BUSCARLA EN LA DESCRIPCIÓN
+    // -------------------------------------------------------
 
-    resultado.sort(
-      (a, b) => b.monto.compareTo(a.monto),
+    if (claseEncontrada == null) {
+      final descripcion =
+          fila['descripcion']
+                  ?.toString()
+                  .toUpperCase() ??
+              '';
+
+      final coincidencia = RegExp(
+        r'\bCL[1256]\b',
+      ).firstMatch(descripcion);
+
+      if (coincidencia != null) {
+        claseEncontrada = coincidencia.group(0);
+      }
+    }
+
+    // -------------------------------------------------------
+    // 5. SI NO ES UNA CLASE VÁLIDA, IGNORAR
+    // -------------------------------------------------------
+
+    if (claseEncontrada == null) {
+      continue;
+    }
+
+    // -------------------------------------------------------
+    // 6. VALOR DEL STOCK
+    // -------------------------------------------------------
+
+    final monto = _toDouble(
+      fila['valor_lista_precio_dolar'],
     );
 
-    return resultado;
+    // -------------------------------------------------------
+    // 7. ACUMULAR
+    // -------------------------------------------------------
+
+    clases[claseEncontrada] =
+        (clases[claseEncontrada] ?? 0) + monto;
   }
+
+  // =========================================================
+  // CREAR RESULTADO
+  // =========================================================
+
+  final resultado = clases.entries
+      .where((e) => e.value > 0)
+      .map(
+        (e) => ClaseResumen(
+          clase: e.key,
+          monto: e.value,
+        ),
+      )
+      .toList();
+
+  // =========================================================
+  // ORDEN FIJO:
+  //
+  // CL1
+  // CL2
+  // CL5
+  // CL6
+  // =========================================================
+
+  const orden = {
+    'CL1': 1,
+    'CL2': 2,
+    'CL5': 3,
+    'CL6': 4,
+  };
+
+  resultado.sort(
+    (a, b) =>
+        (orden[a.clase] ?? 99)
+            .compareTo(orden[b.clase] ?? 99),
+  );
+
+  return resultado;
+}
 
   // =========================================================
   // TOP CLIENTES

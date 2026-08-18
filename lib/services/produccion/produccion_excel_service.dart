@@ -1,78 +1,84 @@
-import 'dart:io';
-
 import 'package:excel/excel.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 
 import '../../models/produccion/produccion_model.dart';
-import 'package:flutter/material.dart';
+
 class ProduccionExcelService {
   Future<Excel?> seleccionarExcel() async {
     final resultado = await FilePicker.platform.pickFiles(
       type: FileType.custom,
       allowedExtensions: ['xlsx'],
+      withData: true,
     );
 
     if (resultado == null) {
       return null;
     }
 
-    final archivo = File(resultado.files.single.path!);
+    final archivo = resultado.files.single;
 
-    final bytes = archivo.readAsBytesSync();
+    final bytes = archivo.bytes;
+
+    if (bytes == null || bytes.isEmpty) {
+      throw Exception(
+        "No se pudieron leer los datos del archivo Excel.",
+      );
+    }
 
     return Excel.decodeBytes(bytes);
   }
 
-Sheet obtenerHojaData(Excel excel) {
-  // Buscar automáticamente una hoja que contenga
-  // alguna de las columnas que identifican nuestro Excel.
-  for (final nombre in excel.tables.keys) {
-    final hoja = excel.tables[nombre];
+  Sheet obtenerHojaData(Excel excel) {
+    // Buscar automáticamente una hoja que contenga
+    // alguna de las columnas que identifican nuestro Excel.
+    for (final nombre in excel.tables.keys) {
+      final hoja = excel.tables[nombre];
 
-    if (hoja == null || hoja.rows.isEmpty) {
-      continue;
+      if (hoja == null || hoja.rows.isEmpty) {
+        continue;
+      }
+
+      final encabezados = hoja.rows.first;
+
+      final columnas = encabezados
+          .map(
+            (celda) =>
+                celda?.value?.toString().trim().toLowerCase() ?? "",
+          )
+          .toList();
+
+      // Buscamos una columna clave del Excel.
+      if (columnas.contains("numeroproduccion") ||
+          columnas.contains("numero produccion") ||
+          columnas.contains("número producción")) {
+        debugPrint(
+          "Hoja de producción encontrada automáticamente: $nombre",
+        );
+
+        return hoja;
+      }
     }
 
-    final encabezados = hoja.rows.first;
+    // Si no encontramos una hoja por sus encabezados,
+    // buscamos la primera hoja que tenga información.
+    for (final nombre in excel.tables.keys) {
+      final hoja = excel.tables[nombre];
 
-    final columnas = encabezados
-        .map(
-          (celda) => celda?.value?.toString().trim().toLowerCase() ?? "",
-        )
-        .toList();
+      if (hoja != null && hoja.rows.isNotEmpty) {
+        debugPrint(
+          "No se encontró una hoja por encabezados. "
+          "Se utilizará la primera hoja con información: $nombre",
+        );
 
-    // Buscamos una columna clave del Excel
-    if (columnas.contains("numeroproduccion") ||
-        columnas.contains("numero produccion") ||
-        columnas.contains("número producción")) {
-      debugPrint(
-        "Hoja de producción encontrada automáticamente: $nombre",
-      );
-
-      return hoja;
+        return hoja;
+      }
     }
+
+    throw Exception(
+      "No se encontró ninguna hoja con información en el archivo Excel.",
+    );
   }
-
-  // Si no encontramos una hoja por sus encabezados,
-  // buscamos la primera hoja que tenga información.
-  for (final nombre in excel.tables.keys) {
-    final hoja = excel.tables[nombre];
-
-    if (hoja != null && hoja.rows.isNotEmpty) {
-      debugPrint(
-        "No se encontró una hoja por encabezados. "
-        "Se utilizará la primera hoja con información: $nombre",
-      );
-
-      return hoja;
-    }
-  }
-
-  throw Exception(
-    "No se encontró ninguna hoja con información en el archivo Excel.",
-  );
-}
 
   Map<String, int> obtenerColumnas(Sheet hoja) {
     final encabezados = hoja.rows.first;
@@ -84,6 +90,7 @@ Sheet obtenerHojaData(Excel excel) {
           encabezados[i]?.value?.toString().trim() ?? "";
 
       columnas[nombre] = i;
+
       debugPrint("[$i] -> '$nombre'");
     }
 
@@ -130,15 +137,11 @@ Sheet obtenerHojaData(Excel excel) {
         return null;
       }
 
-      debugPrint(
-        "$columna => ${celda.value} (${celda.value.runtimeType})",
-      );
-final valor = celda.value;
+      final valor = celda.value;
 
-debugPrint(
-  "$columna => ${valor.runtimeType} -> $valor",
-);
-    
+      debugPrint(
+        "$columna => ${valor.runtimeType} -> $valor",
+      );
 
       final textoFecha = valor.toString().trim();
 
@@ -147,16 +150,16 @@ debugPrint(
       try {
         final partes = textoFecha.split(" ");
 
-        final fecha = partes[0].split("/");
+        final fechaPartes = partes[0].split("/");
 
         final hora = partes.length > 1
             ? partes[1].split(":")
             : ["0", "0"];
 
         return DateTime(
-          int.parse(fecha[2]),
-          int.parse(fecha[1]),
-          int.parse(fecha[0]),
+          int.parse(fechaPartes[2]),
+          int.parse(fechaPartes[1]),
+          int.parse(fechaPartes[0]),
           int.parse(hora[0]),
           int.parse(hora[1]),
         );
@@ -177,34 +180,83 @@ debugPrint(
       if (texto(fila, "NumeroProduccion").isEmpty) {
         continue;
       }
-debugPrint(
-    "FechaProd Excel: ${texto(fila, "FechaProd")}"
-);
 
-debugPrint(
-    "FechaEntrega: ${texto(fila, "FechaEntregaEstimada")}"
-);
+      debugPrint(
+        "FechaProd Excel: ${texto(fila, "FechaProd")}",
+      );
+
+      debugPrint(
+        "FechaEntrega: ${texto(fila, "FechaEntregaEstimada")}",
+      );
+
       lista.add(
         ProduccionModel(
           canal: texto(fila, "Canal"),
           representante: texto(fila, "Representante"),
-          fechaOrdenVenta: fecha(fila, "FechaOrdenVenta"),
-          nroPedido: entero(fila, "NroPedido"),
-          numeroProduccion: texto(fila, "NumeroProduccion"),
-          cliente: texto(fila, "Cliente"),
-          clase: texto(fila, "Clase"),
-          abreviadoFamilia: texto(fila, "AbreviadoFamilia"),
-          codigoArticulo: texto(fila, "CodigoArticulo"),
-          articulo: texto(fila, "Articulo"),
-          fechaProduccion: fecha(fila, "FechaProd"),
-          fechaEntregaEstimada:
-              fecha(fila, "FechaEntregaEstimada"),
-          diasRetraso: entero(fila, "DiasDeRetraso"),
-          cantidadTotal: decimal(fila, "Cantidad_TOTAL"),
-          medida: texto(fila, "Medida"),
-          presentacion: texto(fila, "Presentacion"),
-          valorNeto: decimal(fila, "Suma de ValorNeto"),
-          pesoCobre: decimal(fila, "Peso de Cobre"),
+          fechaOrdenVenta: fecha(
+            fila,
+            "FechaOrdenVenta",
+          ),
+          nroPedido: entero(
+            fila,
+            "NroPedido",
+          ),
+          numeroProduccion: texto(
+            fila,
+            "NumeroProduccion",
+          ),
+          cliente: texto(
+            fila,
+            "Cliente",
+          ),
+          clase: texto(
+            fila,
+            "Clase",
+          ),
+          abreviadoFamilia: texto(
+            fila,
+            "AbreviadoFamilia",
+          ),
+          codigoArticulo: texto(
+            fila,
+            "CodigoArticulo",
+          ),
+          articulo: texto(
+            fila,
+            "Articulo",
+          ),
+          fechaProduccion: fecha(
+            fila,
+            "FechaProd",
+          ),
+          fechaEntregaEstimada: fecha(
+            fila,
+            "FechaEntregaEstimada",
+          ),
+          diasRetraso: entero(
+            fila,
+            "DiasDeRetraso",
+          ),
+          cantidadTotal: decimal(
+            fila,
+            "Cantidad_TOTAL",
+          ),
+          medida: texto(
+            fila,
+            "Medida",
+          ),
+          presentacion: texto(
+            fila,
+            "Presentacion",
+          ),
+          valorNeto: decimal(
+            fila,
+            "Suma de ValorNeto",
+          ),
+          pesoCobre: decimal(
+            fila,
+            "Peso de Cobre",
+          ),
           numeroSemana: null,
         ),
       );

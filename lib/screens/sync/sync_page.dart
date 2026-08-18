@@ -105,8 +105,10 @@ class _SyncPageState extends State<SyncPage> {
         ),
       );
 
-      final rows = await importExcelService.importarBytes(
-        archivoBytes!,
+      // IMPORTANTE:
+      // ImportExcelService utiliza importar(bytes: ...)
+      final rows = await importExcelService.importar(
+        bytes: archivoBytes!,
       );
 
       setState(() {

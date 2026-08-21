@@ -409,46 +409,111 @@ Future<List<ClaseResumen>> obtenerResumenClases() async {
 
   return resultado;
 }
+// =========================================================
+// TOP CLIENTES
+// =========================================================
+//
+// Devuelve TODOS los clientes.
+//
+// Cada cliente contiene:
+// - Valor de stock
+// - Peso de cobre
+//
+// Se mantiene el filtro de permisos actual.
+// =========================================================
 
-  // =========================================================
-  // TOP CLIENTES
-  // =========================================================
+Future<List<ClienteTop>> obtenerTopClientes() async {
+  final datos = await _obtenerStockFiltrado();
 
-  Future<List<ClienteTop>> obtenerTopClientes() async {
-    final datos = await _obtenerStockFiltrado();
+  // ---------------------------------------------------------
+  // VALOR POR CLIENTE
+  // ---------------------------------------------------------
 
-    final Map<String, double> clientes = {};
+  final Map<String, double> valores = {};
 
-    for (final fila in datos) {
-      final cliente =
-          (fila['cliente'] ?? 'SIN CLIENTE').toString();
+  // ---------------------------------------------------------
+  // PESO POR CLIENTE
+  // ---------------------------------------------------------
 
-      final valor = _toDouble(
-        fila['valor_lista_precio_dolar'],
-      );
+  final Map<String, double> pesos = {};
 
-      clientes.update(
-        cliente,
-        (actual) => actual + valor,
-        ifAbsent: () => valor,
-      );
+  // ---------------------------------------------------------
+  // RECORRER STOCK
+  // ---------------------------------------------------------
+
+  for (final fila in datos) {
+    final cliente =
+        (fila['cliente'] ?? 'SIN CLIENTE')
+            .toString()
+            .trim();
+
+    if (cliente.isEmpty) {
+      continue;
     }
 
-    final resultado = clientes.entries
-        .map(
-          (e) => ClienteTop(
-            cliente: e.key,
-            valorStock: e.value,
-          ),
-        )
-        .toList();
+    // -------------------------------------------------------
+    // VALOR
+    // -------------------------------------------------------
 
-    resultado.sort(
-      (a, b) => b.valorStock.compareTo(a.valorStock),
+    final valor = _toDouble(
+      fila['valor_lista_precio_dolar'],
     );
 
-    return resultado.take(10).toList();
+    valores.update(
+      cliente,
+      (actual) => actual + valor,
+      ifAbsent: () => valor,
+    );
+
+    // -------------------------------------------------------
+    // PESO
+    // -------------------------------------------------------
+
+    final peso = _toDouble(
+      fila['peso'],
+    );
+
+    pesos.update(
+      cliente,
+      (actual) => actual + peso,
+      ifAbsent: () => peso,
+    );
   }
+
+  // ---------------------------------------------------------
+  // CREAR LISTA TIPADA
+  // ---------------------------------------------------------
+
+  final List<ClienteTop> resultado = [];
+
+  for (final entrada in valores.entries) {
+    resultado.add(
+      ClienteTop(
+        cliente: entrada.key,
+        valorStock: entrada.value,
+        pesoCobre: pesos[entrada.key] ?? 0,
+      ),
+    );
+  }
+
+  // ---------------------------------------------------------
+  // ORDENAR DE MAYOR A MENOR
+  // ---------------------------------------------------------
+
+  resultado.sort(
+    (a, b) => b.valorStock.compareTo(
+      a.valorStock,
+    ),
+  );
+
+  // ---------------------------------------------------------
+  // IMPORTANTE:
+  // DEVOLVER TODOS LOS CLIENTES
+  // ---------------------------------------------------------
+
+  return resultado;
+}
+  
 
   // =========================================================
   // PRODUCTOS POR CLIENTE

@@ -514,46 +514,154 @@ Future<List<ClienteTop>> obtenerTopClientes() async {
   return resultado;
 }
   
+// =========================================================
+// PRODUCTOS POR CLIENTE
+// =========================================================
 
-  // =========================================================
-  // PRODUCTOS POR CLIENTE
-  // =========================================================
+Future<List<ProductoCliente>> obtenerProductosCliente(
+  String cliente,
+) async {
+  // ---------------------------------------------------------
+  // OBTENER STOCK SEGÚN LOS PERMISOS DEL USUARIO
+  // ---------------------------------------------------------
 
-  Future<List<ProductoCliente>> obtenerProductosCliente(
-    String cliente,
-  ) async {
-    final datos = await _obtenerStockFiltrado();
+  final datos = await _obtenerStockFiltrado();
 
-    final datosCliente = datos.where((fila) {
-      return fila['cliente']?.toString() == cliente;
-    }).toList();
+  // ---------------------------------------------------------
+  // NORMALIZAR CLIENTE BUSCADO
+  // ---------------------------------------------------------
 
-    final List<ProductoCliente> productos = [];
+  final clienteBuscado =
+      cliente.trim().toLowerCase();
 
-    for (final fila in datosCliente) {
-      productos.add(
-        ProductoCliente(
-          descripcion:
-              fila['descripcion']?.toString() ?? '',
-          stock: _toDouble(
-            fila['stock'],
-          ),
-          peso: _toDouble(
-            fila['peso'],
-          ),
-          valor: _toDouble(
-            fila['valor_lista_precio_dolar'],
-          ),
-        ),
-      );
-    }
+  // ---------------------------------------------------------
+  // FILTRAR CLIENTE
+  // ---------------------------------------------------------
 
-    productos.sort(
-      (a, b) => b.valor.compareTo(a.valor),
+  final datosCliente = datos.where((fila) {
+    final nombreCliente =
+        fila['cliente']
+                ?.toString()
+                .trim()
+                .toLowerCase() ??
+            '';
+
+    return nombreCliente == clienteBuscado;
+  }).toList();
+
+  // ---------------------------------------------------------
+  // MENSAJES DE CONTROL
+  // ---------------------------------------------------------
+
+  print(
+    '==============================================',
+  );
+
+  print(
+    'CLIENTE SELECCIONADO:',
+  );
+
+  print(
+    '[$clienteBuscado]',
+  );
+
+  print(
+    'TOTAL REGISTROS STOCK: ${datos.length}',
+  );
+
+  print(
+    'TOTAL ARTICULOS CLIENTE: ${datosCliente.length}',
+  );
+
+  print(
+    '==============================================',
+  );
+
+  // ---------------------------------------------------------
+  // CONSTRUIR LISTA
+  // ---------------------------------------------------------
+
+  final List<ProductoCliente> productos = [];
+
+  for (final fila in datosCliente) {
+    final descripcion =
+        fila['descripcion']
+                ?.toString()
+                .trim() ??
+            '';
+
+    final stock =
+        _toDouble(
+      fila['stock'],
     );
 
-    return productos.take(10).toList();
+    final peso =
+        _toDouble(
+      fila['peso'],
+    );
+
+    final valor =
+        _toDouble(
+      fila['valor_lista_precio_dolar'],
+    );
+
+    final fecha =
+        fila['fecha_ingreso']
+                ?.toString()
+                .trim() ??
+            '';
+
+    print(
+      'ARTICULO: $descripcion | '
+      'STOCK: $stock | '
+      'VALOR: $valor | '
+      'PESO: $peso | '
+      'FECHA: $fecha',
+    );
+
+    productos.add(
+      ProductoCliente(
+        descripcion:
+            descripcion.isEmpty
+                ? 'SIN DESCRIPCIÓN'
+                : descripcion,
+
+        stock:
+            stock,
+
+        peso:
+            peso,
+
+        valor:
+            valor,
+
+        fechaIngreso:
+            fecha,
+      ),
+    );
   }
+
+  // ---------------------------------------------------------
+  // ORDENAR POR MONTO
+  // ---------------------------------------------------------
+
+  productos.sort(
+    (a, b) =>
+        b.valor.compareTo(
+      a.valor,
+    ),
+  );
+
+  // ---------------------------------------------------------
+  // RESULTADO
+  // ---------------------------------------------------------
+
+  print(
+    'PRODUCTOS DEVUELTOS: ${productos.length}',
+  );
+
+  return productos;
+}
 
   // =========================================================
   // TOP PRODUCTOS

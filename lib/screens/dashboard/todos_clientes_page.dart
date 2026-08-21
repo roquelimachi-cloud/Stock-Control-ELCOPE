@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 
 import '../../models/dashboard/cliente_top.dart';
-
+import '../../widgets/dashboard/productos_cliente_section.dart';
 class TodosClientesPage extends StatefulWidget {
   final List<ClienteTop> clientes;
 
@@ -23,10 +23,16 @@ class _TodosClientesPageState
 
   String busqueda = '';
 
+  ClienteTop? clienteSeleccionado;
+
   final NumberFormat moneda = NumberFormat(
     '#,##0',
     'en_US',
   );
+
+  // =========================================================
+  // INICIO
+  // =========================================================
 
   @override
   void initState() {
@@ -36,9 +42,36 @@ class _TodosClientesPageState
       setState(() {
         busqueda =
             _buscarController.text.trim().toLowerCase();
+
+        // -----------------------------------------------------
+        // SI EXISTE COINCIDENCIA EXACTA, LA SELECCIONAMOS
+        // -----------------------------------------------------
+
+        final coincidencia = widget.clientes.where(
+          (cliente) =>
+              cliente.cliente.toLowerCase() ==
+              busqueda,
+        );
+
+        if (coincidencia.length == 1) {
+          clienteSeleccionado =
+              coincidencia.first;
+        }
+
+        // -----------------------------------------------------
+        // SI SE BORRA LA BUSQUEDA, QUITAMOS LA SELECCION
+        // -----------------------------------------------------
+
+        if (busqueda.isEmpty) {
+          clienteSeleccionado = null;
+        }
       });
     });
   }
+
+  // =========================================================
+  // CERRAR
+  // =========================================================
 
   @override
   void dispose() {
@@ -46,13 +79,17 @@ class _TodosClientesPageState
     super.dispose();
   }
 
+  // =========================================================
+  // BUILD
+  // =========================================================
+
   @override
   Widget build(BuildContext context) {
     final todosLosClientes = widget.clientes;
 
-    // =========================================================
-    // FILTRAR CLIENTES
-    // =========================================================
+    // =======================================================
+    // FILTRAR
+    // =======================================================
 
     final clientesFiltrados =
         todosLosClientes.where((cliente) {
@@ -65,9 +102,9 @@ class _TodosClientesPageState
           .contains(busqueda);
     }).toList();
 
-    // =========================================================
-    // TOTAL GENERAL
-    // =========================================================
+    // =======================================================
+    // TOTAL VALOR
+    // =======================================================
 
     final total = todosLosClientes.fold<double>(
       0,
@@ -75,26 +112,38 @@ class _TodosClientesPageState
           suma + cliente.valorStock,
     );
 
+    // =======================================================
+    // TOTAL PESO
+    // =======================================================
+
+    final totalPeso = todosLosClientes.fold<double>(
+      0,
+      (suma, cliente) =>
+          suma + cliente.pesoCobre,
+    );
+
     return Scaffold(
       backgroundColor:
           const Color(0xffF5F7FB),
 
-      // =======================================================
+      // =====================================================
       // APP BAR
-      // =======================================================
+      // =====================================================
 
       appBar: AppBar(
         backgroundColor:
             const Color(0xff4056B4),
 
-        foregroundColor: Colors.white,
+        foregroundColor:
+            Colors.white,
 
         elevation: 0,
 
         title: const Text(
           'Todos los Clientes',
           style: TextStyle(
-            fontWeight: FontWeight.bold,
+            fontWeight:
+                FontWeight.bold,
           ),
         ),
 
@@ -108,39 +157,36 @@ class _TodosClientesPageState
         ),
       ),
 
-      // =======================================================
+      // =====================================================
       // CONTENIDO
-      // =======================================================
+      // =====================================================
 
       body: SafeArea(
         child: Padding(
           padding:
               const EdgeInsets.all(20),
 
-          child: Column(
-            crossAxisAlignment:
-                CrossAxisAlignment.start,
+          child: SingleChildScrollView(
+            child: Column(
+              crossAxisAlignment:
+                  CrossAxisAlignment.start,
 
-            children: [
-
+              children: [
               // =================================================
               // ENCABEZADO
               // =================================================
 
               Row(
                 children: [
-
                   Container(
                     width: 48,
                     height: 48,
 
                     decoration:
                         BoxDecoration(
-                      color:
-                          Colors.amber
-                              .withOpacity(
-                        0.15,
-                      ),
+                      color: Colors.amber
+                          .withOpacity(0.15),
+
                       shape:
                           BoxShape.circle,
                     ),
@@ -176,42 +222,123 @@ class _TodosClientesPageState
               ),
 
               // =================================================
-              // RESUMEN
+              // RESUMEN GENERAL
               // =================================================
 
-              Row(
-                children: [
+              LayoutBuilder(
+                builder:
+                    (context, constraints) {
+                  final ancho =
+                      constraints.maxWidth;
 
-                  Expanded(
-                    child: _ResumenCard(
-                      titulo:
-                          'Clientes',
-                      valor:
-                          '${todosLosClientes.length}',
-                      icono:
-                          Icons.people,
-                      color:
-                          Colors.blue,
-                    ),
-                  ),
+                  final compacto =
+                      ancho < 700;
 
-                  const SizedBox(
-                    width: 12,
-                  ),
+                  if (compacto) {
+                    return Column(
+                      children: [
+                        _ResumenCard(
+                          titulo:
+                              'Clientes',
+                          valor:
+                              '${todosLosClientes.length}',
+                          icono:
+                              Icons.people,
+                          color:
+                              Colors.blue,
+                        ),
 
-                  Expanded(
-                    child: _ResumenCard(
-                      titulo:
-                          'Valor total',
-                      valor:
-                          'US\$ ${moneda.format(total)}',
-                      icono:
-                          Icons.attach_money,
-                      color:
-                          Colors.green,
-                    ),
-                  ),
-                ],
+                        const SizedBox(
+                          height: 10,
+                        ),
+
+                        _ResumenCard(
+                          titulo:
+                              'Valor total',
+                          valor:
+                              'US\$ ${moneda.format(total)}',
+                          icono:
+                              Icons
+                                  .attach_money,
+                          color:
+                              Colors.green,
+                        ),
+
+                        const SizedBox(
+                          height: 10,
+                        ),
+
+                        _ResumenCard(
+                          titulo:
+                              'Peso total',
+                          valor:
+                              '${(totalPeso / 1000).toStringAsFixed(2)} t',
+                          icono:
+                              Icons
+                                  .scale,
+                          color:
+                              Colors.orange,
+                        ),
+                      ],
+                    );
+                  }
+
+                  return Row(
+                    children: [
+                      Expanded(
+                        child:
+                            _ResumenCard(
+                          titulo:
+                              'Clientes',
+                          valor:
+                              '${todosLosClientes.length}',
+                          icono:
+                              Icons.people,
+                          color:
+                              Colors.blue,
+                        ),
+                      ),
+
+                      const SizedBox(
+                        width: 12,
+                      ),
+
+                      Expanded(
+                        child:
+                            _ResumenCard(
+                          titulo:
+                              'Valor total',
+                          valor:
+                              'US\$ ${moneda.format(total)}',
+                          icono:
+                              Icons
+                                  .attach_money,
+                          color:
+                              Colors.green,
+                        ),
+                      ),
+
+                      const SizedBox(
+                        width: 12,
+                      ),
+
+                      Expanded(
+                        child:
+                            _ResumenCard(
+                          titulo:
+                              'Peso total',
+                          valor:
+                              '${(totalPeso / 1000).toStringAsFixed(2)} t',
+                          icono:
+                              Icons
+                                  .scale,
+                          color:
+                              Colors.orange,
+                        ),
+                      ),
+                    ],
+                  );
+                },
               ),
 
               const SizedBox(
@@ -243,7 +370,8 @@ class _TodosClientesPageState
                                   const Icon(
                                 Icons.clear,
                               ),
-                              onPressed: () {
+                              onPressed:
+                                  () {
                                 _buscarController
                                     .clear();
                               },
@@ -258,10 +386,10 @@ class _TodosClientesPageState
                   border:
                       OutlineInputBorder(
                     borderRadius:
-                        BorderRadius.circular(
+                        BorderRadius
+                            .circular(
                       14,
                     ),
-
                     borderSide:
                         BorderSide.none,
                   ),
@@ -269,10 +397,10 @@ class _TodosClientesPageState
                   enabledBorder:
                       OutlineInputBorder(
                     borderRadius:
-                        BorderRadius.circular(
+                        BorderRadius
+                            .circular(
                       14,
                     ),
-
                     borderSide:
                         BorderSide(
                       color: Colors
@@ -284,11 +412,39 @@ class _TodosClientesPageState
               ),
 
               const SizedBox(
-                height: 18,
+                height: 15,
               ),
 
               // =================================================
-              // CANTIDAD ENCONTRADA
+              // CLIENTE SELECCIONADO
+              // =================================================
+
+              if (clienteSeleccionado !=
+                  null)
+                _ClienteSeleccionadoCard(
+                  cliente:
+                      clienteSeleccionado!,
+                  total:
+                      total,
+                  moneda:
+                      moneda,
+                  onCerrar:
+                      () {
+                    setState(() {
+                      clienteSeleccionado =
+                          null;
+                    });
+                  },
+                ),
+
+              if (clienteSeleccionado !=
+                  null)
+                const SizedBox(
+                  height: 15,
+                ),
+
+              // =================================================
+              // RESULTADOS
               // =================================================
 
               Text(
@@ -298,8 +454,9 @@ class _TodosClientesPageState
 
                 style:
                     TextStyle(
-                  color:
-                      Colors.grey.shade700,
+                  color: Colors
+                      .grey
+                      .shade700,
 
                   fontSize: 13,
 
@@ -316,73 +473,57 @@ class _TodosClientesPageState
               // LISTA
               // =================================================
 
-              Expanded(
-                child:
-                    clientesFiltrados.isEmpty
-                        ? const Center(
-                            child: Text(
-                              'No se encontraron clientes.',
-                              style:
-                                  TextStyle(
-                                color:
-                                    Colors.grey,
-                              ),
-                            ),
-                          )
-                        : ListView.builder(
-                            itemCount:
-                                clientesFiltrados
-                                    .length,
-
-                            itemBuilder:
-                                (
-                              context,
-                              index,
-                            ) {
-                              final cliente =
-                                  clientesFiltrados[
-                                      index];
-
-                              final porcentaje =
-                                  total == 0
-                                      ? 0.0
-                                      : (cliente
-                                                  .valorStock /
-                                              total) *
-                                          100;
-
-                              final progreso =
-                                  total == 0
-                                      ? 0.0
-                                      : cliente
-                                              .valorStock /
-                                          total;
-
-                              return _ClienteItem(
-                                numero:
-                                    index + 1,
-
-                                cliente:
-                                    cliente
-                                        .cliente,
-
-                                valor:
-                                    cliente
-                                        .valorStock,
-
-                                porcentaje:
-                                    porcentaje,
-
-                                progreso:
-                                    progreso,
-
-                                moneda:
-                                    moneda,
-                              );
-                            },
+              clientesFiltrados.isEmpty
+                  ? const Center(
+                      child: Padding(
+                        padding: EdgeInsets.all(20),
+                        child: Text(
+                          'No se encontraron clientes.',
+                          style: TextStyle(
+                            color: Colors.grey,
                           ),
-              ),
-            ],
+                        ),
+                      ),
+                    )
+                  : ListView.builder(
+                      shrinkWrap: true,
+                      physics:
+                          const NeverScrollableScrollPhysics(),
+                      itemCount:
+                          clientesFiltrados.length,
+                      itemBuilder: (context, index) {
+                        final cliente =
+                            clientesFiltrados[index];
+
+                        final porcentaje =
+                            total == 0
+                                ? 0.0
+                                : (cliente.valorStock / total) * 100;
+
+                        final progreso =
+                            total == 0
+                                ? 0.0
+                                : cliente.valorStock / total;
+
+                        return _ClienteItem(
+                          numero: index + 1,
+                          cliente: cliente,
+                          porcentaje: porcentaje,
+                          progreso: progreso,
+                          moneda: moneda,
+                          seleccionado:
+                              clienteSeleccionado?.cliente ==
+                                  cliente.cliente,
+                          onTap: () {
+                            setState(() {
+                              clienteSeleccionado = cliente;
+                            });
+                          },
+                        );
+                      },
+                    ),
+              ],
+            ),
           ),
         ),
       ),
@@ -391,10 +532,11 @@ class _TodosClientesPageState
 }
 
 // =============================================================
-// RESUMEN
+// TARJETA RESUMEN GENERAL
 // =============================================================
 
-class _ResumenCard extends StatelessWidget {
+class _ResumenCard
+    extends StatelessWidget {
   final String titulo;
   final String valor;
   final IconData icono;
@@ -408,34 +550,42 @@ class _ResumenCard extends StatelessWidget {
   });
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(
+    BuildContext context,
+  ) {
     return Container(
       padding:
           const EdgeInsets.all(15),
 
       decoration:
           BoxDecoration(
-        color: Colors.white,
+        color:
+            Colors.white,
 
         borderRadius:
-            BorderRadius.circular(15),
+            BorderRadius.circular(
+          15,
+        ),
 
         boxShadow: [
           BoxShadow(
             color:
-                Colors.black.withOpacity(
+                Colors.black
+                    .withOpacity(
               0.05,
             ),
             blurRadius: 8,
             offset:
-                const Offset(0, 3),
+                const Offset(
+              0,
+              3,
+            ),
           ),
         ],
       ),
 
       child: Row(
         children: [
-
           Container(
             width: 40,
             height: 40,
@@ -446,14 +596,14 @@ class _ResumenCard extends StatelessWidget {
                   color.withOpacity(
                 0.10,
               ),
-
               shape:
                   BoxShape.circle,
             ),
 
             child: Icon(
               icono,
-              color: color,
+              color:
+                  color,
               size: 21,
             ),
           ),
@@ -465,17 +615,18 @@ class _ResumenCard extends StatelessWidget {
           Expanded(
             child: Column(
               crossAxisAlignment:
-                  CrossAxisAlignment.start,
+                  CrossAxisAlignment
+                      .start,
 
               children: [
-
                 Text(
                   titulo,
                   style:
                       TextStyle(
                     fontSize: 11,
-                    color:
-                        Colors.grey.shade600,
+                    color: Colors
+                        .grey
+                        .shade600,
                   ),
                 ),
 
@@ -486,7 +637,8 @@ class _ResumenCard extends StatelessWidget {
                 Text(
                   valor,
                   overflow:
-                      TextOverflow.ellipsis,
+                      TextOverflow
+                          .ellipsis,
 
                   style:
                       const TextStyle(
@@ -505,44 +657,275 @@ class _ResumenCard extends StatelessWidget {
 }
 
 // =============================================================
-// CLIENTE
+// CLIENTE SELECCIONADO
 // =============================================================
 
-class _ClienteItem extends StatelessWidget {
-  final int numero;
-  final String cliente;
-  final double valor;
-  final double porcentaje;
-  final double progreso;
+class _ClienteSeleccionadoCard extends StatelessWidget {
+  final ClienteTop cliente;
+  final double total;
   final NumberFormat moneda;
+  final VoidCallback onCerrar;
 
-  const _ClienteItem({
-    required this.numero,
+  const _ClienteSeleccionadoCard({
     required this.cliente,
-    required this.valor,
-    required this.porcentaje,
-    required this.progreso,
+    required this.total,
     required this.moneda,
+    required this.onCerrar,
   });
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      margin:
-          const EdgeInsets.only(
-        bottom: 10,
-      ),
+    final porcentaje = total == 0
+        ? 0.0
+        : (cliente.valorStock / total) * 100;
 
+    final toneladas = cliente.pesoCobre / 1000;
+
+    final progreso = total == 0
+        ? 0.0
+        : cliente.valorStock / total;
+
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(18),
+      decoration: BoxDecoration(
+        gradient: const LinearGradient(
+          colors: [
+            Color(0xffEEF4FF),
+            Color(0xffF8FAFF),
+          ],
+        ),
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(
+          color: const Color(0xffBFDBFE),
+        ),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.blue.withOpacity(0.08),
+            blurRadius: 12,
+            offset: const Offset(0, 4),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+
+          // =====================================================
+          // CABECERA
+          // =====================================================
+
+          Row(
+            children: [
+              Container(
+                width: 42,
+                height: 42,
+                decoration: const BoxDecoration(
+                  color: Color(0xffDBEAFE),
+                  shape: BoxShape.circle,
+                ),
+                child: const Icon(
+                  Icons.business,
+                  color: Color(0xff2563EB),
+                  size: 22,
+                ),
+              ),
+
+              const SizedBox(width: 10),
+
+              Expanded(
+                child: Text(
+                  cliente.cliente,
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    fontSize: 17,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+              ),
+
+              IconButton(
+                tooltip: 'Cerrar cliente',
+                icon: const Icon(Icons.close),
+                onPressed: onCerrar,
+              ),
+            ],
+          ),
+
+          const SizedBox(height: 16),
+
+          // =====================================================
+          // RESUMEN DEL CLIENTE
+          // =====================================================
+
+          LayoutBuilder(
+            builder: (context, constraints) {
+              final compacto = constraints.maxWidth < 650;
+
+              if (compacto) {
+                return Column(
+                  children: [
+                    _DatoCliente(
+                      titulo: 'Valor Stock',
+                      valor: moneda.format(
+                        cliente.valorStock,
+                      ),
+                      color: Colors.green,
+                      icono: Icons.attach_money,
+                    ),
+
+                    const SizedBox(height: 10),
+
+                    _DatoCliente(
+                      titulo: 'Participación',
+                      valor:
+                          '${porcentaje.toStringAsFixed(1)} %',
+                      color: Colors.blue,
+                      icono: Icons.percent,
+                    ),
+
+                    const SizedBox(height: 10),
+
+                    _DatoCliente(
+                      titulo: 'Peso de Cobre',
+                      valor:
+                          '${toneladas.toStringAsFixed(2)} t',
+                      color: Colors.orange,
+                      icono: Icons.scale,
+                    ),
+                  ],
+                );
+              }
+
+              return Row(
+                children: [
+                  Expanded(
+                    child: _DatoCliente(
+                      titulo: 'Valor Stock',
+                      valor: moneda.format(
+                        cliente.valorStock,
+                      ),
+                      color: Colors.green,
+                      icono: Icons.attach_money,
+                    ),
+                  ),
+
+                  const SizedBox(width: 10),
+
+                  Expanded(
+                    child: _DatoCliente(
+                      titulo: 'Participación',
+                      valor:
+                          '${porcentaje.toStringAsFixed(1)} %',
+                      color: Colors.blue,
+                      icono: Icons.percent,
+                    ),
+                  ),
+
+                  const SizedBox(width: 10),
+
+                  Expanded(
+                    child: _DatoCliente(
+                      titulo: 'Peso de Cobre',
+                      valor:
+                          '${toneladas.toStringAsFixed(2)} t',
+                      color: Colors.orange,
+                      icono: Icons.scale,
+                    ),
+                  ),
+                ],
+              );
+            },
+          ),
+
+          const SizedBox(height: 16),
+
+          // =====================================================
+          // BARRA DE PARTICIPACIÓN
+          // =====================================================
+
+          ClipRRect(
+            borderRadius: BorderRadius.circular(10),
+            child: LinearProgressIndicator(
+              value: progreso,
+              minHeight: 11,
+              backgroundColor:
+                  const Color(0xffE5E7EB),
+              color: const Color(0xff4056B4),
+            ),
+          ),
+
+          const SizedBox(height: 10),
+
+          Row(
+            children: [
+              const Icon(
+                Icons.check_circle,
+                size: 15,
+                color: Color(0xff4056B4),
+              ),
+
+              const SizedBox(width: 6),
+
+              Text(
+                'Cliente seleccionado',
+                style: TextStyle(
+                  color: const Color(0xff4056B4),
+                  fontSize: 11,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+            ],
+          ),
+
+          const SizedBox(height: 14),
+
+          // =====================================================
+          // ARTÍCULOS DEL CLIENTE
+          // =====================================================
+
+          ProductosClienteSection(
+            cliente: cliente.cliente,
+          ),
+        ],
+      ),
+    );
+  }
+}
+// =============================================================
+// DATO CLIENTE
+// =============================================================
+
+class _DatoCliente extends StatelessWidget {
+  final String titulo;
+  final String valor;
+  final Color color;
+  final IconData icono;
+
+  const _DatoCliente({
+    required this.titulo,
+    required this.valor,
+    required this.color,
+    required this.icono,
+  });
+
+  @override
+  Widget build(
+    BuildContext context,
+  ) {
+    return Container(
       padding:
-          const EdgeInsets.all(14),
+          const EdgeInsets.all(12),
 
       decoration:
           BoxDecoration(
-        color: Colors.white,
+        color:
+            Colors.white,
 
         borderRadius:
             BorderRadius.circular(
-          14,
+          12,
         ),
 
         border:
@@ -552,176 +935,345 @@ class _ClienteItem extends StatelessWidget {
         ),
       ),
 
-      child: Column(
+      child: Row(
         children: [
+          Container(
+            width: 34,
+            height: 34,
 
-          Row(
-            children: [
+            decoration:
+                BoxDecoration(
+              color:
+                  color.withOpacity(
+                0.10,
+              ),
+              shape:
+                  BoxShape.circle,
+            ),
 
-              // =================================================
-              // NUMERO
-              // =================================================
+            child: Icon(
+              icono,
+              color:
+                  color,
+              size: 18,
+            ),
+          ),
 
-              Container(
-                width: 32,
-                height: 32,
+          const SizedBox(
+            width: 9,
+          ),
 
-                alignment:
-                    Alignment.center,
+          Expanded(
+            child: Column(
+              crossAxisAlignment:
+                  CrossAxisAlignment
+                      .start,
 
-                decoration:
-                    BoxDecoration(
-                  color:
-                      const Color(
-                    0xff2563EB,
-                  ).withOpacity(
-                    0.08,
+              children: [
+                Text(
+                  titulo,
+                  style:
+                      TextStyle(
+                    fontSize: 10,
+                    color: Colors
+                        .grey
+                        .shade600,
                   ),
+                ),
 
-                  shape:
-                      BoxShape.circle,
+                const SizedBox(
+                  height: 2,
+                ),
 
-                  border:
-                      Border.all(
+                Text(
+                  valor,
+                  overflow:
+                      TextOverflow
+                          .ellipsis,
+
+                  style:
+                      TextStyle(
+                    color:
+                        color,
+                    fontSize: 14,
+                    fontWeight:
+                        FontWeight.bold,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+// =============================================================
+// ITEM CLIENTE
+// =============================================================
+
+class _ClienteItem
+    extends StatelessWidget {
+  final int numero;
+  final ClienteTop cliente;
+  final double porcentaje;
+  final double progreso;
+  final NumberFormat moneda;
+  final bool seleccionado;
+  final VoidCallback onTap;
+
+  const _ClienteItem({
+    required this.numero,
+    required this.cliente,
+    required this.porcentaje,
+    required this.progreso,
+    required this.moneda,
+    required this.seleccionado,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(
+    BuildContext context,
+  ) {
+    final toneladas =
+        cliente.pesoCobre / 1000;
+
+    return InkWell(
+      onTap: onTap,
+
+      borderRadius:
+          BorderRadius.circular(
+        14,
+      ),
+
+      child: Container(
+        margin:
+            const EdgeInsets.only(
+          bottom: 10,
+        ),
+
+        padding:
+            const EdgeInsets.all(
+          14,
+        ),
+
+        decoration:
+            BoxDecoration(
+          color: seleccionado
+              ? const Color(
+                  0xffEEF4FF,
+                )
+              : Colors.white,
+
+          borderRadius:
+              BorderRadius.circular(
+            14,
+          ),
+
+          border:
+              Border.all(
+            color: seleccionado
+                ? const Color(
+                    0xff60A5FA,
+                  )
+                : Colors.grey
+                    .shade200,
+            width:
+                seleccionado
+                    ? 1.5
+                    : 1,
+          ),
+        ),
+
+        child: Column(
+          children: [
+            Row(
+              children: [
+                // ===============================================
+                // NUMERO
+                // ===============================================
+
+                Container(
+                  width: 32,
+                  height: 32,
+
+                  alignment:
+                      Alignment.center,
+
+                  decoration:
+                      BoxDecoration(
                     color:
                         const Color(
                       0xff2563EB,
                     ).withOpacity(
-                      0.35,
-                    ),
-                  ),
-                ),
-
-                child: Text(
-                  '$numero',
-
-                  style:
-                      const TextStyle(
-                    color:
-                        Color(
-                      0xff2563EB,
+                      0.08,
                     ),
 
-                    fontWeight:
-                        FontWeight.bold,
+                    shape:
+                        BoxShape.circle,
 
-                    fontSize: 12,
+                    border:
+                        Border.all(
+                      color:
+                          const Color(
+                        0xff2563EB,
+                      ).withOpacity(
+                        0.35,
+                      ),
+                    ),
                   ),
-                ),
-              ),
 
-              const SizedBox(
-                width: 10,
-              ),
-
-              // =================================================
-              // CLIENTE
-              // =================================================
-
-              Expanded(
-                child: Text(
-                  cliente,
-
-                  maxLines: 2,
-
-                  overflow:
-                      TextOverflow.ellipsis,
-
-                  style:
-                      const TextStyle(
-                    fontWeight:
-                        FontWeight.w600,
-
-                    fontSize: 14,
-                  ),
-                ),
-              ),
-
-              const SizedBox(
-                width: 10,
-              ),
-
-              // =================================================
-              // VALOR + %
-              // =================================================
-
-              Column(
-                crossAxisAlignment:
-                    CrossAxisAlignment.end,
-
-                children: [
-
-                  Text(
-                    'US\$ ${moneda.format(valor)}',
+                  child: Text(
+                    '$numero',
 
                     style:
                         const TextStyle(
                       color:
-                          Colors.green,
+                          Color(
+                        0xff2563EB,
+                      ),
 
                       fontWeight:
                           FontWeight.bold,
 
-                      fontSize: 13,
+                      fontSize: 12,
                     ),
                   ),
+                ),
 
-                  const SizedBox(
-                    height: 3,
-                  ),
+                const SizedBox(
+                  width: 10,
+                ),
 
-                  Text(
-                    '${porcentaje.toStringAsFixed(1)} %',
+                // ===============================================
+                // CLIENTE
+                // ===============================================
+
+                Expanded(
+                  child: Text(
+                    cliente.cliente,
+
+                    maxLines: 2,
+
+                    overflow:
+                        TextOverflow.ellipsis,
 
                     style:
                         const TextStyle(
-                      color:
-                          Colors.blue,
-
                       fontWeight:
-                          FontWeight.bold,
+                          FontWeight.w600,
 
-                      fontSize: 11,
+                      fontSize: 14,
                     ),
                   ),
-                ],
-              ),
-            ],
-          ),
+                ),
 
-          const SizedBox(
-            height: 9,
-          ),
+                const SizedBox(
+                  width: 10,
+                ),
 
-          // =================================================
-          // BARRA
-          // =================================================
+                // ===============================================
+                // DATOS
+                // ===============================================
 
-          ClipRRect(
-            borderRadius:
-                BorderRadius.circular(
-              8,
+                Column(
+                  crossAxisAlignment:
+                      CrossAxisAlignment.end,
+
+                  children: [
+                    Text(
+                      'US\$ ${moneda.format(cliente.valorStock)}',
+
+                      style:
+                          const TextStyle(
+                        color:
+                            Colors.green,
+
+                        fontWeight:
+                            FontWeight.bold,
+
+                        fontSize: 13,
+                      ),
+                    ),
+
+                    const SizedBox(
+                      height: 3,
+                    ),
+
+                    Text(
+                      '${porcentaje.toStringAsFixed(1)} %',
+
+                      style:
+                          const TextStyle(
+                        color:
+                            Colors.blue,
+
+                        fontWeight:
+                            FontWeight.bold,
+
+                        fontSize: 11,
+                      ),
+                    ),
+
+                    const SizedBox(
+                      height: 2,
+                    ),
+
+                    Text(
+                      '${toneladas.toStringAsFixed(2)} t',
+
+                      style:
+                          const TextStyle(
+                        color:
+                            Colors.orange,
+
+                        fontWeight:
+                            FontWeight.bold,
+
+                        fontSize: 11,
+                      ),
+                    ),
+                  ],
+                ),
+              ],
             ),
 
-            child:
-                LinearProgressIndicator(
-              value:
-                  progreso,
+            const SizedBox(
+              height: 9,
+            ),
 
-              minHeight: 10,
+            // ===============================================
+            // BARRA
+            // ===============================================
 
-              backgroundColor:
-                  const Color(
-                0xffE5E7EB,
+            ClipRRect(
+              borderRadius:
+                  BorderRadius.circular(
+                8,
               ),
 
-              color:
-                  const Color(
-                0xff4056B4,
+              child:
+                  LinearProgressIndicator(
+                value:
+                    progreso,
+
+                minHeight: 10,
+
+                backgroundColor:
+                    const Color(
+                  0xffE5E7EB,
+                ),
+
+                color:
+                    const Color(
+                  0xff4056B4,
+                ),
               ),
             ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }

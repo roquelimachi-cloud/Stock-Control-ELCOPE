@@ -34,50 +34,41 @@ class _TodosClientesPageState
   // INICIO
   // =========================================================
 
-  @override
-  void initState() {
-    super.initState();
+// =========================================================
+// INICIALIZAR
+// =========================================================
 
-    _buscarController.addListener(() {
-      setState(() {
-        busqueda =
-            _buscarController.text.trim().toLowerCase();
+@override
+void initState() {
+  super.initState();
 
-        // -----------------------------------------------------
-        // SI EXISTE COINCIDENCIA EXACTA, LA SELECCIONAMOS
-        // -----------------------------------------------------
+  _buscarController.addListener(() {
+    setState(() {
+      busqueda =
+          _buscarController.text.trim().toLowerCase();
 
-        final coincidencia = widget.clientes.where(
-          (cliente) =>
-              cliente.cliente.toLowerCase() ==
-              busqueda,
-        );
+      // =====================================================
+      // IMPORTANTE:
+      // Buscar NO selecciona automáticamente al cliente.
+      //
+      // El cliente solamente se selecciona cuando el usuario
+      // hace clic sobre él.
+      // =====================================================
 
-        if (coincidencia.length == 1) {
-          clienteSeleccionado =
-              coincidencia.first;
-        }
-
-        // -----------------------------------------------------
-        // SI SE BORRA LA BUSQUEDA, QUITAMOS LA SELECCION
-        // -----------------------------------------------------
-
-        if (busqueda.isEmpty) {
-          clienteSeleccionado = null;
-        }
-      });
+      clienteSeleccionado = null;
     });
-  }
+  });
+}
 
-  // =========================================================
-  // CERRAR
-  // =========================================================
+// =========================================================
+// CERRAR
+// =========================================================
 
-  @override
-  void dispose() {
-    _buscarController.dispose();
-    super.dispose();
-  }
+@override
+void dispose() {
+  _buscarController.dispose();
+  super.dispose();
+}
 
   // =========================================================
   // BUILD
@@ -102,26 +93,35 @@ class _TodosClientesPageState
           .contains(busqueda);
     }).toList();
 
-    // =======================================================
-    // TOTAL VALOR
-    // =======================================================
+// =======================================================
+// TOTALES SEGÚN LA BÚSQUEDA
+// =======================================================
+//
+// Si no hay búsqueda:
+//   → suma todos los clientes.
+//
+// Si hay búsqueda:
+//   → suma solamente los clientes encontrados.
+//
+// Esto hace que:
+// - Valor total
+// - Peso total
+// - Cantidad de clientes
+//
+// correspondan siempre a lo que se está mostrando.
+// =======================================================
 
-    final total = todosLosClientes.fold<double>(
-      0,
-      (suma, cliente) =>
-          suma + cliente.valorStock,
-    );
+final total = clientesFiltrados.fold<double>(
+  0,
+  (suma, cliente) =>
+      suma + cliente.valorStock,
+);
 
-    // =======================================================
-    // TOTAL PESO
-    // =======================================================
-
-    final totalPeso = todosLosClientes.fold<double>(
-      0,
-      (suma, cliente) =>
-          suma + cliente.pesoCobre,
-    );
-
+final totalPeso = clientesFiltrados.fold<double>(
+  0,
+  (suma, cliente) =>
+      suma + cliente.pesoCobre,
+);
     return Scaffold(
       backgroundColor:
           const Color(0xffF5F7FB),

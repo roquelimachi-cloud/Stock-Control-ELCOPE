@@ -14,7 +14,9 @@ import '../../widgets/dashboard/top_clientes_card.dart';
 import 'package:intl/intl.dart';
 import '../../widgets/dashboard/cliente_hover.dart';
 import '../../widgets/dashboard/clase_pie_chart.dart';
+import '../../widgets/dashboard/peso_clase_pie_chart.dart';
 import '../../models/dashboard/clase_resumen.dart';
+import '../../models/dashboard/peso_clase_resumen.dart';
 import '../../models/dashboard/producto_top.dart';
 import '../../widgets/dashboard/top_productos_card.dart';
 import '../produccion/produccion_dashboard.dart';
@@ -41,6 +43,7 @@ class _DashboardPageState
 late Future<DashboardSummary> _resumenFuture;
 late Future<List<ClienteTop>> _clientesFuture;
 late Future<List<ClaseResumen>> _clasesFuture;
+late Future<List<PesoClaseResumen>> _pesoClasesFuture;
 late Future<List<ProductoTop>> _productosFuture;
 late Future<List<StockVendedor>> _stockVendedoresFuture;
 @override
@@ -49,6 +52,7 @@ void initState() {
 _resumenFuture = dashboardService.obtenerResumen();
 _clientesFuture = dashboardService.obtenerTopClientes();
 _clasesFuture = dashboardService.obtenerResumenClases();
+_pesoClasesFuture = dashboardService.obtenerPesoPorClase();
 _productosFuture = dashboardService.obtenerTopProductos();
 _stockVendedoresFuture =dashboardService.obtenerStockPorVendedor();
   _scrollController.addListener(() {
@@ -203,6 +207,9 @@ if (Sesion.esAdministrador)
 
         _clasesFuture =
             dashboardService.obtenerResumenClases();
+
+        _pesoClasesFuture =
+            dashboardService.obtenerPesoPorClase();
 
         _productosFuture =
             dashboardService.obtenerTopProductos();
@@ -440,50 +447,108 @@ FutureBuilder<List<ClaseResumen>>(
         return Column(
           children: [
 
-            LayoutBuilder(
-              builder: (context, constraints) {
-
-                if (constraints.maxWidth < 950) {
-
-                  return Column(
-                    children: [
-
-                      ClasePieChart(
-                        datos: clases,
-                      ),
-
-                      const SizedBox(height: 20),
-
-                      TopClientesCard(
-                        clientes: topClientes,
-                      ),
-
-                    ],
+            FutureBuilder<List<PesoClaseResumen>>(
+              future: _pesoClasesFuture,
+              builder: (context, pesoSnapshot) {
+                if (pesoSnapshot.connectionState ==
+                    ConnectionState.waiting) {
+                  return const Center(
+                    child: CircularProgressIndicator(),
                   );
                 }
 
-                return Row(
-                  crossAxisAlignment:
-                      CrossAxisAlignment.start,
-                  children: [
-
-                    Expanded(
-                      flex: 5,
-                      child: ClasePieChart(
-                        datos: clases,
-                      ),
+                if (pesoSnapshot.hasError) {
+                  return Center(
+                    child: Text(
+                      "Error Peso por Clase: ${pesoSnapshot.error}",
                     ),
+                  );
+                }
 
-                    const SizedBox(width: 20),
+                final pesoClases =
+                    pesoSnapshot.data ?? [];
 
-                    Expanded(
-                      flex: 5,
-                      child: TopClientesCard(
-                        clientes: topClientes,
-                      ),
-                    ),
+                return LayoutBuilder(
+                  builder: (context, constraints) {
+                    if (constraints.maxWidth < 950) {
+                      return Column(
+                        children: [
+                          ClasePieChart(
+                            datos: clases,
+                          ),
+                          const SizedBox(height: 20),
+                          PesoClasePieChart(
+                            datos: pesoClases,
+                          ),
+                          const SizedBox(height: 20),
+                          TopClientesCard(
+                            clientes: topClientes,
+                          ),
+                        ],
+                      );
+                    }
 
-                  ],
+            return Column(
+  children: [
+
+    // =========================================================
+    // DONAS - ESCRITORIO
+    // =========================================================
+
+    SizedBox(
+      height: 550,
+
+      child: Row(
+        crossAxisAlignment:
+            CrossAxisAlignment.stretch,
+
+        children: [
+
+          // ===================================================
+          // DONA 1
+          // ===================================================
+
+          Expanded(
+            child: SizedBox(
+              height: double.infinity,
+
+              child: ClasePieChart(
+                datos: clases,
+              ),
+            ),
+          ),
+
+          const SizedBox(width: 20),
+
+          // ===================================================
+          // DONA 2
+          // ===================================================
+
+          Expanded(
+            child: SizedBox(
+              height: double.infinity,
+
+              child: PesoClasePieChart(
+                datos: pesoClases,
+              ),
+            ),
+          ),
+        ],
+      ),
+    ),
+
+    const SizedBox(height: 25),
+
+    // =========================================================
+    // TOP CLIENTES
+    // =========================================================
+
+    TopClientesCard(
+      clientes: topClientes,
+    ),
+  ],
+);
+                  },
                 );
               },
             ),

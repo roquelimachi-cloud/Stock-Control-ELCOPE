@@ -3,6 +3,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../models/dashboard/dashboard_summary.dart';
 import '../../models/dashboard/cliente_top.dart';
 import '../../models/dashboard/clase_resumen.dart';
+import '../../models/dashboard/peso_clase_resumen.dart';
 import '../../models/dashboard/producto_cliente.dart';
 import '../../models/dashboard/producto_top.dart';
 import '../sesion.dart';
@@ -409,6 +410,157 @@ Future<List<ClaseResumen>> obtenerResumenClases() async {
 
   return resultado;
 }
+
+// =========================================================
+// DONA 2
+// PESO DE COBRE POR CLASE
+// =========================================================
+//
+// NO MODIFICA LA DONA 1.
+//
+// La Dona 1 utiliza:
+// obtenerResumenClases()
+//
+// La Dona 2 utiliza:
+// obtenerPesoPorClase()
+//
+// =========================================================
+
+Future<List<PesoClaseResumen>> obtenerPesoPorClase() async {
+  final datos = await _obtenerStockFiltrado();
+
+  // ---------------------------------------------------------
+  // PESO ACUMULADO POR CLASE
+  // ---------------------------------------------------------
+
+  final Map<String, double> pesos = {
+    'CL1': 0,
+    'CL2': 0,
+    'CL5': 0,
+    'CL6': 0,
+  };
+
+  // ---------------------------------------------------------
+  // RECORRER STOCK
+  // ---------------------------------------------------------
+
+  for (final fila in datos) {
+    String clase =
+        fila['clase']
+                ?.toString()
+                .trim()
+                .toUpperCase() ??
+            '';
+
+    // -------------------------------------------------------
+    // NORMALIZAR
+    // -------------------------------------------------------
+
+    clase = clase
+        .replaceAll('CLASE ', 'CL')
+        .replaceAll('CLASE', 'CL')
+        .trim();
+
+    String? claseEncontrada;
+
+    // -------------------------------------------------------
+    // BUSCAR EN COLUMNA CLASE
+    // -------------------------------------------------------
+
+    if (clase == 'CL1' ||
+        clase == 'CL2' ||
+        clase == 'CL5' ||
+        clase == 'CL6') {
+      claseEncontrada = clase;
+    }
+
+    // -------------------------------------------------------
+    // SI NO ESTÁ EN CLASE,
+    // BUSCAR EN DESCRIPCIÓN
+    // -------------------------------------------------------
+
+    if (claseEncontrada == null) {
+      final descripcion =
+          fila['descripcion']
+                  ?.toString()
+                  .trim()
+                  .toUpperCase() ??
+              '';
+
+      final coincidencia = RegExp(
+        r'\bCL[1256]\b',
+      ).firstMatch(descripcion);
+
+      if (coincidencia != null) {
+        claseEncontrada = coincidencia.group(0);
+      }
+    }
+
+    // -------------------------------------------------------
+    // IGNORAR OTRAS CLASES
+    // -------------------------------------------------------
+
+    if (claseEncontrada == null) {
+      continue;
+    }
+
+    // -------------------------------------------------------
+    // OBTENER PESO
+    // -------------------------------------------------------
+
+    final peso = _toDouble(
+      fila['peso'],
+    );
+
+    // -------------------------------------------------------
+    // ACUMULAR
+    // -------------------------------------------------------
+
+    pesos[claseEncontrada] =
+        (pesos[claseEncontrada] ?? 0) + peso;
+  }
+
+  // ---------------------------------------------------------
+  // CREAR LISTA TIPADA
+  // ---------------------------------------------------------
+
+  final List<PesoClaseResumen> resultado = [];
+
+  for (final entrada in pesos.entries) {
+    if (entrada.value <= 0) {
+      continue;
+    }
+
+    resultado.add(
+      PesoClaseResumen(
+        clase: entrada.key,
+        peso: entrada.value,
+      ),
+    );
+  }
+
+  // ---------------------------------------------------------
+  // ORDEN
+  // ---------------------------------------------------------
+
+  const orden = {
+    'CL1': 1,
+    'CL2': 2,
+    'CL5': 3,
+    'CL6': 4,
+  };
+
+  resultado.sort(
+    (a, b) =>
+        (orden[a.clase] ?? 99)
+            .compareTo(
+              orden[b.clase] ?? 99,
+            ),
+  );
+
+  return resultado;
+}
+
 // =========================================================
 // TOP CLIENTES
 // =========================================================

@@ -1,7 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
-import 'package:flutter/foundation.dart';
+
 import '../../services/supabase/dashboard_service.dart';
 import 'cliente_popup.dart';
 
@@ -15,6 +15,10 @@ class ClienteHover extends StatefulWidget {
     required this.child,
   });
 
+  // =========================================================
+  // CERRAR POPUP GLOBAL
+  // =========================================================
+
   static void cerrarPopup() {
     _ClienteHoverState._cerrarPopupGlobal();
   }
@@ -26,11 +30,40 @@ class ClienteHover extends StatefulWidget {
 class _ClienteHoverState extends State<ClienteHover> {
   final DashboardService service = DashboardService();
 
+  // =========================================================
+  // POPUP ACTUAL
+  // =========================================================
+
   static OverlayEntry? _overlayActual;
+
+  // =========================================================
+  // TIMER PARA CIERRE
+  // =========================================================
+
   static Timer? _timerCerrar;
-static int _token = 0;
+
+  // =========================================================
+  // CONTROL DE SOLICITUDES ASÍNCRONAS
+  //
+  // Evita que una consulta vieja muestre el popup después
+  // de que el mouse ya se fue.
+  // =========================================================
+
+  static int _hoverVersion = 0;
+
+  // =========================================================
+  // SABER SI EL MOUSE SIGUE SOBRE EL CLIENTE
+  // =========================================================
+
+  bool _mouseDentro = false;
+
+  // =========================================================
+  // CERRAR POPUP GLOBAL
+  // =========================================================
+
   static void _cerrarPopupGlobal() {
     _timerCerrar?.cancel();
+    _timerCerrar = null;
 
     if (_overlayActual != null) {
       _overlayActual!.remove();
@@ -38,13 +71,17 @@ static int _token = 0;
     }
   }
 
+  // =========================================================
+  // PROGRAMAR CIERRE
+  // =========================================================
+
   void _programarCerrar() {
     _timerCerrar?.cancel();
 
     final overlay = _overlayActual;
 
     _timerCerrar = Timer(
-      const Duration(milliseconds: 180),
+      const Duration(milliseconds: 150),
       () {
         if (_overlayActual == overlay) {
           _cerrarPopupGlobal();
@@ -53,71 +90,113 @@ static int _token = 0;
     );
   }
 
-Future<void> mostrar() async {
-    _timerCerrar?.cancel();
+  // =========================================================
+  // MOSTRAR POPUP
+  // =========================================================
 
-    final int miToken = ++_token;
+  Future<void> mostrar() async {
+    // -------------------------------------------------------
+    // NUEVA VERSIÓN DEL HOVER
+    // -------------------------------------------------------
+
+    final int versionActual = ++_hoverVersion;
+
+    _timerCerrar?.cancel();
 
     _cerrarPopupGlobal();
 
-    if (!mounted) return;
+    if (!mounted) {
+      return;
+    }
 
-    final RenderBox box =
-        context.findRenderObject() as RenderBox;
+    // -------------------------------------------------------
+    // OBTENER POSICIÓN DEL CLIENTE
+    // -------------------------------------------------------
+
+    final RenderObject? renderObject =
+        context.findRenderObject();
+
+    if (renderObject is! RenderBox) {
+      return;
+    }
+
+    final RenderBox box = renderObject;
 
     final Offset posicion =
         box.localToGlobal(Offset.zero);
 
- final productos =
-    await service.obtenerProductosCliente(
-  widget.cliente,
-);
+    // -------------------------------------------------------
+    // OBTENER PRODUCTOS
+    // -------------------------------------------------------
 
-if (!mounted) return;
+    final productos =
+        await service.obtenerProductosCliente(
+      widget.cliente,
+    );
 
-// Si mientras esperaba ya se abrió otro popup,
-// este ya no debe mostrarse.
-if (miToken != _token) {
-  return;
-}
-// Android / iPhone
-if (!kIsWeb &&
-    (defaultTargetPlatform == TargetPlatform.android ||
-     defaultTargetPlatform == TargetPlatform.iOS)) {
+    // =======================================================
+    // IMPORTANTE
+    //
+    // Después del await verificamos nuevamente:
+    //
+    // 1. Que el widget siga montado.
+    // 2. Que esta siga siendo la solicitud vigente.
+    // 3. Que el mouse todavía esté sobre el cliente.
+    //
+    // Si cualquiera falla, NO mostramos el popup.
+    // =======================================================
 
-  await showModalBottomSheet(
-    context: context,
-    isScrollControlled: true,
-    showDragHandle: true,
-    backgroundColor: Colors.transparent,
-    builder: (_) {
-      return SafeArea(
-        child: ClientePopup(
-          cliente: widget.cliente,
-          productos: productos,
-        ),
-      );
-    },
-  );
+    if (!mounted) {
+      return;
+    }
 
-  return;
-}
+    if (versionActual != _hoverVersion) {
+      return;
+    }
+
+    if (!_mouseDentro) {
+      return;
+    }
+
+    // -------------------------------------------------------
+    // DIMENSIONES DEL POPUP
+    // -------------------------------------------------------
+
     const double popupWidth = 420;
     const double popupHeight = 430;
     const double margen = 12;
 
-    final pantalla = MediaQuery.of(context).size;
+    final pantalla =
+        MediaQuery.of(context).size;
+
+    // -------------------------------------------------------
+    // POSICIÓN HORIZONTAL
+    // -------------------------------------------------------
 
     double left =
-        posicion.dx + box.size.width + margen;
+        posicion.dx +
+        box.size.width +
+        margen;
+
+    // Si no entra a la derecha,
+    // mostrar a la izquierda.
 
     if (left + popupWidth > pantalla.width) {
-      left = posicion.dx - popupWidth - margen;
+      left =
+          posicion.dx -
+          popupWidth -
+          margen;
     }
+
+    // Nunca salir de la pantalla.
 
     if (left < margen) {
       left = margen;
     }
+
+    // -------------------------------------------------------
+    // POSICIÓN VERTICAL
+    // -------------------------------------------------------
 
     double top = posicion.dy;
 
@@ -132,6 +211,10 @@ if (!kIsWeb &&
       top = margen;
     }
 
+    // -------------------------------------------------------
+    // CREAR OVERLAY
+    // -------------------------------------------------------
+
     late OverlayEntry entry;
 
     entry = OverlayEntry(
@@ -139,18 +222,31 @@ if (!kIsWeb &&
         return Positioned(
           left: left,
           top: top,
+
           child: MouseRegion(
+            // -------------------------------------------------
+            // ENTRA AL POPUP
+            // -------------------------------------------------
+
             onEnter: (_) {
               _timerCerrar?.cancel();
             },
+
+            // -------------------------------------------------
+            // SALE DEL POPUP
+            // -------------------------------------------------
+
             onExit: (_) {
               _programarCerrar();
             },
+
             child: Material(
               color: Colors.transparent,
               elevation: 12,
+
               borderRadius:
                   BorderRadius.circular(16),
+
               child: ClientePopup(
                 cliente: widget.cliente,
                 productos: productos,
@@ -160,47 +256,64 @@ if (!kIsWeb &&
         );
       },
     );
-if (miToken != _token) {
-  return;
-}
 
-_overlayActual = entry;
+    // -------------------------------------------------------
+    // ASEGURAR QUE NO HAYA OTRO POPUP
+    // -------------------------------------------------------
 
-Overlay.of(context).insert(entry);
+    _cerrarPopupGlobal();
 
+    _overlayActual = entry;
+
+    Overlay.of(context).insert(entry);
   }
 
-@override
-Widget build(BuildContext context) {
+  // =========================================================
+  // BUILD
+  // =========================================================
 
-  // Android / iPhone
-  if (!kIsWeb &&
-      (defaultTargetPlatform == TargetPlatform.android ||
-       defaultTargetPlatform == TargetPlatform.iOS)) {
+  @override
+  Widget build(BuildContext context) {
+    return MouseRegion(
+      // -------------------------------------------------------
+      // ENTRA AL CLIENTE
+      // -------------------------------------------------------
 
-    return InkWell(
-      onTap: () {
+      onEnter: (_) {
+        _mouseDentro = true;
+
         mostrar();
       },
+
+      // -------------------------------------------------------
+      // SALE DEL CLIENTE
+      // -------------------------------------------------------
+
+      onExit: (_) {
+        _mouseDentro = false;
+
+        // Invalidamos cualquier consulta pendiente.
+        _hoverVersion++;
+
+        _programarCerrar();
+      },
+
       child: widget.child,
     );
   }
 
-  // Windows / Web
-  return MouseRegion(
-    onEnter: (_) {
-      mostrar();
-    },
-    onExit: (_) {
-      _programarCerrar();
-    },
-    child: widget.child,
-  );
-}
+  // =========================================================
+  // DISPOSE
+  // =========================================================
 
   @override
   void dispose() {
+    _mouseDentro = false;
+
+    _hoverVersion++;
+
     _programarCerrar();
+
     super.dispose();
   }
 }

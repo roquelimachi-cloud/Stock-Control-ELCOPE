@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
-
 import '../../models/dashboard/cliente_top.dart';
+import '../../services/pdf/cliente_pdf_service.dart';
 import '../../widgets/dashboard/productos_cliente_section.dart';
 class TodosClientesPage extends StatefulWidget {
   final List<ClienteTop> clientes;
@@ -856,38 +856,44 @@ class _ClienteSeleccionadoCard extends StatelessWidget {
             ),
           ),
 
-          const SizedBox(height: 10),
+          const SizedBox(height: 12),
 
-          Row(
-            children: [
-              const Icon(
-                Icons.check_circle,
-                size: 15,
-                color: Color(0xff4056B4),
-              ),
 
-              const SizedBox(width: 6),
 
-              Text(
-                'Cliente seleccionado',
-                style: TextStyle(
-                  color: const Color(0xff4056B4),
-                  fontSize: 11,
-                  fontWeight: FontWeight.bold,
-                ),
-              ),
-            ],
-          ),
+// =====================================================
+// CLIENTE SELECCIONADO
+// =====================================================
 
-          const SizedBox(height: 14),
+const Row(
+  children: [
+    Icon(
+      Icons.check_circle,
+      size: 15,
+      color: Color(0xff4056B4),
+    ),
 
-          // =====================================================
-          // ARTÍCULOS DEL CLIENTE
-          // =====================================================
+    SizedBox(width: 6),
 
-          ProductosClienteSection(
-            cliente: cliente.cliente,
-          ),
+    Text(
+      'Cliente seleccionado',
+      style: TextStyle(
+        color: Color(0xff4056B4),
+        fontSize: 11,
+        fontWeight: FontWeight.bold,
+      ),
+    ),
+  ],
+),
+
+const SizedBox(height: 14),
+
+// =====================================================
+// ARTÍCULOS DEL CLIENTE
+// =====================================================
+
+ProductosClienteSection(
+  cliente: cliente.cliente,
+),
         ],
       ),
     );

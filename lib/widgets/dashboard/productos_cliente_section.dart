@@ -3,6 +3,7 @@ import 'package:intl/intl.dart';
 
 import '../../models/dashboard/producto_cliente.dart';
 import '../../services/supabase/dashboard_service.dart';
+import '../../services/pdf/cliente_pdf_service.dart';
 
 class ProductosClienteSection extends StatefulWidget {
   final String cliente;
@@ -27,6 +28,10 @@ class _ProductosClienteSectionState
 
   String busqueda = '';
 
+  // =========================================================
+  // PRODUCTOS COMPLETOS DEL CLIENTE SELECCIONADO
+  // =========================================================
+
   List<ProductoCliente> productos = [];
 
   bool cargando = true;
@@ -38,19 +43,33 @@ class _ProductosClienteSectionState
     'en_US',
   );
 
+  // =========================================================
+  // INIT
+  // =========================================================
+
   @override
   void initState() {
     super.initState();
 
     _buscarController.addListener(() {
+      if (!mounted) {
+        return;
+      }
+
       setState(() {
         busqueda =
-            _buscarController.text.trim().toLowerCase();
+            _buscarController.text
+                .trim()
+                .toLowerCase();
       });
     });
 
     _cargarProductos();
   }
+
+  // =========================================================
+  // CARGAR PRODUCTOS DEL CLIENTE
+  // =========================================================
 
   Future<void> _cargarProductos() async {
     try {
@@ -84,14 +103,26 @@ class _ProductosClienteSectionState
     }
   }
 
+  // =========================================================
+  // DISPOSE
+  // =========================================================
+
   @override
   void dispose() {
     _buscarController.dispose();
     super.dispose();
   }
 
+  // =========================================================
+  // BUILD
+  // =========================================================
+
   @override
   Widget build(BuildContext context) {
+    // =======================================================
+    // FILTRO PARA LA PANTALLA
+    // =======================================================
+
     final productosFiltrados =
         productos.where((producto) {
       if (busqueda.isEmpty) {
@@ -101,7 +132,7 @@ class _ProductosClienteSectionState
       final texto =
           '${producto.descripcion} '
           '${producto.fechaIngreso}'
-          .toLowerCase();
+              .toLowerCase();
 
       return texto.contains(busqueda);
     }).toList();
@@ -130,7 +161,8 @@ class _ProductosClienteSectionState
         padding: const EdgeInsets.all(15),
         decoration: BoxDecoration(
           color: Colors.red.withOpacity(0.06),
-          borderRadius: BorderRadius.circular(12),
+          borderRadius:
+              BorderRadius.circular(12),
         ),
         child: Text(
           'Error al cargar artículos:\n$error',
@@ -142,7 +174,7 @@ class _ProductosClienteSectionState
     }
 
     // =======================================================
-    // TOTALES
+    // TOTALES DE LA VISTA
     // =======================================================
 
     double totalCantidad = 0;
@@ -155,6 +187,10 @@ class _ProductosClienteSectionState
       totalValor += producto.valor;
     }
 
+    // =======================================================
+    // CONTENEDOR PRINCIPAL
+    // =======================================================
+
     return Container(
       width: double.infinity,
 
@@ -163,7 +199,8 @@ class _ProductosClienteSectionState
       decoration: BoxDecoration(
         color: Colors.white,
 
-        borderRadius: BorderRadius.circular(16),
+        borderRadius:
+            BorderRadius.circular(16),
 
         border: Border.all(
           color: Colors.grey.shade200,
@@ -175,9 +212,9 @@ class _ProductosClienteSectionState
             CrossAxisAlignment.start,
 
         children: [
-          // =================================================
+          // ===================================================
           // TITULO
-          // =================================================
+          // ===================================================
 
           Row(
             children: [
@@ -194,7 +231,8 @@ class _ProductosClienteSectionState
                   'Artículos del cliente',
                   style: TextStyle(
                     fontSize: 17,
-                    fontWeight: FontWeight.bold,
+                    fontWeight:
+                        FontWeight.bold,
                   ),
                 ),
               ),
@@ -202,7 +240,8 @@ class _ProductosClienteSectionState
               Text(
                 '${productos.length} artículos',
                 style: TextStyle(
-                  color: Colors.grey.shade600,
+                  color:
+                      Colors.grey.shade600,
                   fontSize: 12,
                 ),
               ),
@@ -211,14 +250,83 @@ class _ProductosClienteSectionState
 
           const SizedBox(height: 12),
 
-          // =================================================
-          // BUSCADOR DE ARTICULOS
-          // =================================================
+          // ===================================================
+          // BOTÓN REPORTE PDF
+          // ===================================================
+          //
+          // IMPORTANTE:
+          //
+          // Se envía "productos", NO "productosFiltrados".
+          //
+          // Así el PDF contiene TODO el stock del cliente,
+          // aunque se esté utilizando el buscador.
+          //
+          // ===================================================
+
+          SizedBox(
+            width: double.infinity,
+
+            child: ElevatedButton.icon(
+              icon: const Icon(
+                Icons.picture_as_pdf_outlined,
+              ),
+
+              label: const Text(
+                'Generar reporte PDF',
+              ),
+
+              style:
+                  ElevatedButton.styleFrom(
+                backgroundColor:
+                    const Color(
+                  0xff4056B4,
+                ),
+
+                foregroundColor:
+                    Colors.white,
+
+                padding:
+                    const EdgeInsets.symmetric(
+                  vertical: 13,
+                ),
+
+                shape:
+                    RoundedRectangleBorder(
+                  borderRadius:
+                      BorderRadius.circular(
+                    10,
+                  ),
+                ),
+              ),
+
+              onPressed: () async {
+                await ClientePdfService
+                    .imprimirReporteStock(
+                  context: context,
+
+                  // Cliente seleccionado
+                  cliente: widget.cliente,
+
+                  // TODOS los productos
+                  // de ese cliente
+                  productos: productos,
+                );
+              },
+            ),
+          ),
+
+          const SizedBox(height: 14),
+
+          // ===================================================
+          // BUSCADOR DE ARTÍCULOS
+          // ===================================================
 
           TextField(
-            controller: _buscarController,
+            controller:
+                _buscarController,
 
-            decoration: InputDecoration(
+            decoration:
+                InputDecoration(
               hintText:
                   'Buscar artículo...',
 
@@ -263,14 +371,15 @@ class _ProductosClienteSectionState
 
           const SizedBox(height: 14),
 
-          // =================================================
-          // TABLA / LISTA
-          // =================================================
+          // ===================================================
+          // LISTA
+          // ===================================================
 
           if (productosFiltrados.isEmpty)
             const Padding(
               padding:
                   EdgeInsets.all(20),
+
               child: Center(
                 child: Text(
                   'No se encontraron artículos.',
@@ -283,6 +392,7 @@ class _ProductosClienteSectionState
           else
             ListView.builder(
               shrinkWrap: true,
+
               physics:
                   const NeverScrollableScrollPhysics(),
 
@@ -296,23 +406,20 @@ class _ProductosClienteSectionState
                         index];
 
                 return _ProductoItem(
-                  numero:
-                      index + 1,
+                  numero: index + 1,
 
-                  producto:
-                      producto,
+                  producto: producto,
 
-                  moneda:
-                      moneda,
+                  moneda: moneda,
                 );
               },
             ),
 
           const SizedBox(height: 10),
 
-          // =================================================
+          // ===================================================
           // TOTALES
-          // =================================================
+          // ===================================================
 
           Container(
             width: double.infinity,
@@ -343,8 +450,10 @@ class _ProductosClienteSectionState
                 _TotalItem(
                   titulo:
                       'Artículos',
+
                   valor:
                       '${productosFiltrados.length}',
+
                   color:
                       Colors.indigo,
                 ),
@@ -352,11 +461,13 @@ class _ProductosClienteSectionState
                 _TotalItem(
                   titulo:
                       'Cantidad',
+
                   valor:
                       totalCantidad
                           .toStringAsFixed(
-                        0,
-                      ),
+                    0,
+                  ),
+
                   color:
                       Colors.blue,
                 ),
@@ -364,8 +475,10 @@ class _ProductosClienteSectionState
                 _TotalItem(
                   titulo:
                       'Monto',
+
                   valor:
                       'US\$ ${moneda.format(totalValor)}',
+
                   color:
                       Colors.green,
                 ),
@@ -373,8 +486,10 @@ class _ProductosClienteSectionState
                 _TotalItem(
                   titulo:
                       'Peso',
+
                   valor:
                       '${(totalPeso / 1000).toStringAsFixed(2)} t',
+
                   color:
                       Colors.orange,
                 ),
@@ -394,7 +509,9 @@ class _ProductosClienteSectionState
 class _ProductoItem
     extends StatelessWidget {
   final int numero;
+
   final ProductoCliente producto;
+
   final NumberFormat moneda;
 
   const _ProductoItem({
@@ -439,9 +556,9 @@ class _ProductoItem
             CrossAxisAlignment.start,
 
         children: [
-          // =================================================
-          // DESCRIPCION
-          // =================================================
+          // ===================================================
+          // DESCRIPCIÓN
+          // ===================================================
 
           Row(
             crossAxisAlignment:
@@ -474,8 +591,10 @@ class _ProductoItem
                       const TextStyle(
                     color:
                         Colors.indigo,
+
                     fontWeight:
                         FontWeight.bold,
+
                     fontSize: 11,
                   ),
                 ),
@@ -498,6 +617,7 @@ class _ProductoItem
                       const TextStyle(
                     fontWeight:
                         FontWeight.w600,
+
                     fontSize: 13,
                   ),
                 ),
@@ -509,9 +629,9 @@ class _ProductoItem
             height: 10,
           ),
 
-          // =================================================
+          // ===================================================
           // DATOS
-          // =================================================
+          // ===================================================
 
           Wrap(
             spacing: 15,
@@ -521,6 +641,7 @@ class _ProductoItem
               _DatoProducto(
                 titulo:
                     'Fecha ingreso',
+
                 valor:
                     _formatearFecha(
                   producto.fechaIngreso,
@@ -530,16 +651,18 @@ class _ProductoItem
               _DatoProducto(
                 titulo:
                     'Cantidad',
+
                 valor:
                     producto.stock
                         .toStringAsFixed(
-                      0,
-                    ),
+                  0,
+                ),
               ),
 
               _DatoProducto(
                 titulo:
                     'Monto',
+
                 valor:
                     'US\$ ${moneda.format(producto.valor)}',
               ),
@@ -547,6 +670,7 @@ class _ProductoItem
               _DatoProducto(
                 titulo:
                     'Peso',
+
                 valor:
                     '${producto.peso.toStringAsFixed(2)} Kg',
               ),
@@ -556,6 +680,10 @@ class _ProductoItem
       ),
     );
   }
+
+  // ===========================================================
+  // FORMATEAR FECHA
+  // ===========================================================
 
   String _formatearFecha(
     String fecha,
@@ -584,6 +712,7 @@ class _ProductoItem
 class _DatoProducto
     extends StatelessWidget {
   final String titulo;
+
   final String valor;
 
   const _DatoProducto({
@@ -609,6 +738,7 @@ class _DatoProducto
             style: TextStyle(
               color:
                   Colors.grey.shade600,
+
               fontSize: 10,
             ),
           ),
@@ -623,6 +753,7 @@ class _DatoProducto
             style:
                 const TextStyle(
               fontSize: 12,
+
               fontWeight:
                   FontWeight.bold,
             ),
@@ -640,7 +771,9 @@ class _DatoProducto
 class _TotalItem
     extends StatelessWidget {
   final String titulo;
+
   final String valor;
+
   final Color color;
 
   const _TotalItem({
@@ -664,6 +797,7 @@ class _TotalItem
           style: TextStyle(
             color:
                 Colors.grey.shade600,
+
             fontSize: 10,
           ),
         ),
@@ -678,8 +812,10 @@ class _TotalItem
           style:
               TextStyle(
             color: color,
+
             fontWeight:
                 FontWeight.bold,
+
             fontSize: 14,
           ),
         ),

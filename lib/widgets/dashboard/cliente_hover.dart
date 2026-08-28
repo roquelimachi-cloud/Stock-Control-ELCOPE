@@ -43,10 +43,7 @@ class _ClienteHoverState extends State<ClienteHover> {
   static Timer? _timerCerrar;
 
   // =========================================================
-  // CONTROL DE SOLICITUDES ASÍNCRONAS
-  //
-  // Evita que una consulta vieja muestre el popup después
-  // de que el mouse ya se fue.
+  // CONTROL DE SOLICITUDES
   // =========================================================
 
   static int _hoverVersion = 0;
@@ -92,13 +89,16 @@ class _ClienteHoverState extends State<ClienteHover> {
 
   // =========================================================
   // MOSTRAR POPUP
+  //
+  // mantenerAbierto:
+  //
+  // true  = celular / toque
+  // false = mouse / hover
   // =========================================================
 
-  Future<void> mostrar() async {
-    // -------------------------------------------------------
-    // NUEVA VERSIÓN DEL HOVER
-    // -------------------------------------------------------
-
+  Future<void> mostrar({
+    bool mantenerAbierto = false,
+  }) async {
     final int versionActual = ++_hoverVersion;
 
     _timerCerrar?.cancel();
@@ -109,9 +109,9 @@ class _ClienteHoverState extends State<ClienteHover> {
       return;
     }
 
-    // -------------------------------------------------------
-    // OBTENER POSICIÓN DEL CLIENTE
-    // -------------------------------------------------------
+    // =======================================================
+    // OBTENER POSICIÓN
+    // =======================================================
 
     final RenderObject? renderObject =
         context.findRenderObject();
@@ -125,9 +125,9 @@ class _ClienteHoverState extends State<ClienteHover> {
     final Offset posicion =
         box.localToGlobal(Offset.zero);
 
-    // -------------------------------------------------------
+    // =======================================================
     // OBTENER PRODUCTOS
-    // -------------------------------------------------------
+    // =======================================================
 
     final productos =
         await service.obtenerProductosCliente(
@@ -135,15 +135,7 @@ class _ClienteHoverState extends State<ClienteHover> {
     );
 
     // =======================================================
-    // IMPORTANTE
-    //
-    // Después del await verificamos nuevamente:
-    //
-    // 1. Que el widget siga montado.
-    // 2. Que esta siga siendo la solicitud vigente.
-    // 3. Que el mouse todavía esté sobre el cliente.
-    //
-    // Si cualquiera falla, NO mostramos el popup.
+    // VALIDACIONES DESPUÉS DEL AWAIT
     // =======================================================
 
     if (!mounted) {
@@ -154,32 +146,33 @@ class _ClienteHoverState extends State<ClienteHover> {
       return;
     }
 
-    if (!_mouseDentro) {
+    // En PC necesitamos que el mouse siga encima.
+    //
+    // En celular mantenerAbierto = true,
+    // por lo tanto no dependemos del hover.
+    if (!mantenerAbierto && !_mouseDentro) {
       return;
     }
 
-    // -------------------------------------------------------
+    // =======================================================
     // DIMENSIONES DEL POPUP
-    // -------------------------------------------------------
+    // =======================================================
+
+    final pantalla =
+        MediaQuery.of(context).size;
 
     const double popupWidth = 420;
     const double popupHeight = 430;
     const double margen = 12;
 
-    final pantalla =
-        MediaQuery.of(context).size;
-
-    // -------------------------------------------------------
+    // =======================================================
     // POSICIÓN HORIZONTAL
-    // -------------------------------------------------------
+    // =======================================================
 
     double left =
         posicion.dx +
         box.size.width +
         margen;
-
-    // Si no entra a la derecha,
-    // mostrar a la izquierda.
 
     if (left + popupWidth > pantalla.width) {
       left =
@@ -188,15 +181,13 @@ class _ClienteHoverState extends State<ClienteHover> {
           margen;
     }
 
-    // Nunca salir de la pantalla.
-
     if (left < margen) {
       left = margen;
     }
 
-    // -------------------------------------------------------
+    // =======================================================
     // POSICIÓN VERTICAL
-    // -------------------------------------------------------
+    // =======================================================
 
     double top = posicion.dy;
 
@@ -211,55 +202,131 @@ class _ClienteHoverState extends State<ClienteHover> {
       top = margen;
     }
 
-    // -------------------------------------------------------
+    // =======================================================
+    // AJUSTE PARA CELULAR
+    //
+    // En pantallas pequeñas el popup ocupa casi todo
+    // el ancho disponible.
+    // =======================================================
+
+    final bool esMovil =
+        pantalla.width < 700;
+
+    if (esMovil) {
+      const double margenMovil = 10;
+
+      left = margenMovil;
+
+      top = 70;
+
+      // No permitir que salga por abajo.
+      if (top + popupHeight >
+          pantalla.height - margenMovil) {
+        top =
+            pantalla.height -
+            popupHeight -
+            margenMovil;
+      }
+
+      if (top < margenMovil) {
+        top = margenMovil;
+      }
+    }
+
+    // =======================================================
+    // ANCHO FINAL
+    // =======================================================
+
+    final double anchoPopup =
+        esMovil
+            ? pantalla.width - 20
+            : popupWidth;
+
+    // =======================================================
     // CREAR OVERLAY
-    // -------------------------------------------------------
+    // =======================================================
 
     late OverlayEntry entry;
 
     entry = OverlayEntry(
       builder: (_) {
-        return Positioned(
-          left: left,
-          top: top,
+        return Stack(
+          children: [
 
-          child: MouseRegion(
-            // -------------------------------------------------
-            // ENTRA AL POPUP
-            // -------------------------------------------------
+            // =================================================
+            // FONDO TRANSPARENTE
+            //
+            // Permite cerrar el popup tocando fuera.
+            // Especialmente útil en celular.
+            // =================================================
 
-            onEnter: (_) {
-              _timerCerrar?.cancel();
-            },
-
-            // -------------------------------------------------
-            // SALE DEL POPUP
-            // -------------------------------------------------
-
-            onExit: (_) {
-              _programarCerrar();
-            },
-
-            child: Material(
-              color: Colors.transparent,
-              elevation: 12,
-
-              borderRadius:
-                  BorderRadius.circular(16),
-
-              child: ClientePopup(
-                cliente: widget.cliente,
-                productos: productos,
+            Positioned.fill(
+              child: GestureDetector(
+                behavior:
+                    HitTestBehavior.translucent,
+                onTap: () {
+                  _cerrarPopupGlobal();
+                },
+                child:
+                    const SizedBox.expand(),
               ),
             ),
-          ),
+
+            // =================================================
+            // POPUP
+            // =================================================
+
+            Positioned(
+              left: esMovil ? 10 : left,
+              top: top,
+              width: anchoPopup,
+
+              child: MouseRegion(
+                // ---------------------------------------------
+                // ENTRA AL POPUP
+                // ---------------------------------------------
+
+                onEnter: (_) {
+                  _timerCerrar?.cancel();
+                },
+
+                // ---------------------------------------------
+                // SALE DEL POPUP
+                // ---------------------------------------------
+
+                onExit: (_) {
+                  if (!esMovil) {
+                    _programarCerrar();
+                  }
+                },
+
+                child: GestureDetector(
+                  // Evita que el tap dentro del popup
+                  // llegue al fondo transparente.
+                  onTap: () {},
+
+                  child: Material(
+                    color: Colors.transparent,
+                    elevation: 12,
+                    borderRadius:
+                        BorderRadius.circular(16),
+
+                    child: ClientePopup(
+                      cliente: widget.cliente,
+                      productos: productos,
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ],
         );
       },
     );
 
-    // -------------------------------------------------------
-    // ASEGURAR QUE NO HAYA OTRO POPUP
-    // -------------------------------------------------------
+    // =======================================================
+    // ASEGURAR UN SOLO POPUP
+    // =======================================================
 
     _cerrarPopupGlobal();
 
@@ -274,31 +341,52 @@ class _ClienteHoverState extends State<ClienteHover> {
 
   @override
   Widget build(BuildContext context) {
-    return MouseRegion(
-      // -------------------------------------------------------
-      // ENTRA AL CLIENTE
-      // -------------------------------------------------------
+    return GestureDetector(
+      // =======================================================
+      // CELULAR
+      //
+      // Al tocar el cliente mostramos el popup y lo dejamos
+      // abierto hasta que toque fuera.
+      // =======================================================
 
-      onEnter: (_) {
-        _mouseDentro = true;
-
-        mostrar();
+      onTap: () {
+        mostrar(
+          mantenerAbierto: true,
+        );
       },
 
-      // -------------------------------------------------------
-      // SALE DEL CLIENTE
-      // -------------------------------------------------------
+      child: MouseRegion(
+        // =====================================================
+        // WINDOWS / PC
+        //
+        // Al pasar el mouse aparece el popup.
+        // =====================================================
 
-      onExit: (_) {
-        _mouseDentro = false;
+        onEnter: (_) {
+          _mouseDentro = true;
 
-        // Invalidamos cualquier consulta pendiente.
-        _hoverVersion++;
+          mostrar(
+            mantenerAbierto: false,
+          );
+        },
 
-        _programarCerrar();
-      },
+        // =====================================================
+        // WINDOWS / PC
+        //
+        // Al salir del cliente empieza el cierre.
+        // =====================================================
 
-      child: widget.child,
+        onExit: (_) {
+          _mouseDentro = false;
+
+          // Invalidamos consultas pendientes.
+          _hoverVersion++;
+
+          _programarCerrar();
+        },
+
+        child: widget.child,
+      ),
     );
   }
 

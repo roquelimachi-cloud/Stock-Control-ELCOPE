@@ -651,6 +651,9 @@ Future<List<ClienteTop>> obtenerTopClientes() async {
   // ---------------------------------------------------------
   // ORDENAR DE MAYOR A MENOR
   // ---------------------------------------------------------
+  // ---------------------------------------------------------
+  // ORDENAR DE MAYOR A MENOR
+  // ---------------------------------------------------------
 
   resultado.sort(
     (a, b) => b.valorStock.compareTo(
@@ -665,7 +668,6 @@ Future<List<ClienteTop>> obtenerTopClientes() async {
 
   return resultado;
 }
-  
 // =========================================================
 // PRODUCTOS POR CLIENTE
 // =========================================================
@@ -856,14 +858,28 @@ Future<List<ProductoCliente>> obtenerProductosCliente(
 
     return resultado.take(10).toList();
   }
-  // =========================================================
+ // =========================================================
 // STOCK POR VENDEDOR
 // =========================================================
 
 Future<List<StockVendedor>> obtenerStockPorVendedor() async {
   final datos = await _obtenerStockFiltrado();
 
+  // ---------------------------------------------------------
+  // VALOR DEL STOCK POR VENDEDOR
+  // ---------------------------------------------------------
+
   final Map<String, double> vendedores = {};
+
+  // ---------------------------------------------------------
+  // PESO POR VENDEDOR
+  // ---------------------------------------------------------
+
+  final Map<String, double> pesos = {};
+
+  // ---------------------------------------------------------
+  // RECORRER STOCK
+  // ---------------------------------------------------------
 
   for (final fila in datos) {
     final nombre =
@@ -872,6 +888,10 @@ Future<List<StockVendedor>> obtenerStockPorVendedor() async {
     if (nombre.isEmpty) {
       continue;
     }
+
+    // -------------------------------------------------------
+    // VALOR
+    // -------------------------------------------------------
 
     final valor = _toDouble(
       fila['valor_lista_precio_dolar'],
@@ -882,13 +902,32 @@ Future<List<StockVendedor>> obtenerStockPorVendedor() async {
       (actual) => actual + valor,
       ifAbsent: () => valor,
     );
+
+    // -------------------------------------------------------
+    // PESO
+    // -------------------------------------------------------
+
+    final peso = _toDouble(
+      fila['peso'],
+    );
+
+    pesos.update(
+      nombre,
+      (actual) => actual + peso,
+      ifAbsent: () => peso,
+    );
   }
+
+  // ---------------------------------------------------------
+  // CREAR RESULTADO
+  // ---------------------------------------------------------
 
   final resultado = vendedores.entries
       .map(
         (e) => StockVendedor(
           vendedor: e.key,
           valorStock: e.value,
+          peso: pesos[e.key] ?? 0,
         ),
       )
       .where(
@@ -896,10 +935,15 @@ Future<List<StockVendedor>> obtenerStockPorVendedor() async {
       )
       .toList();
 
+  // ---------------------------------------------------------
+  // ORDENAR DE MAYOR A MENOR POR VALOR
+  // ---------------------------------------------------------
+
   resultado.sort(
     (a, b) => b.valorStock.compareTo(a.valorStock),
   );
 
   return resultado;
 }
+
 }

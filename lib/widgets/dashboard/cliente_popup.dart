@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 
 import '../../models/dashboard/producto_cliente.dart';
+import '../../services/pdf/cliente_pdf_service.dart';
 
 class ClientePopup extends StatelessWidget {
   final String cliente;
@@ -179,6 +180,29 @@ class ClientePopup extends StatelessWidget {
                           ],
                         ),
                       ),
+
+                      // ==================================================
+                      // IMPRIMIR PDF
+                      // ==================================================
+
+                      IconButton(
+                        tooltip: 'Imprimir PDF',
+                        onPressed: () async {
+                          await ClientePdfService.imprimirReporteStock(
+                            context: context,
+                            cliente: cliente,
+                            productos: productos,
+                          );
+                        },
+                        icon: const Icon(
+                          Icons.picture_as_pdf_outlined,
+                          color: Color(0xFF1F4E79),
+                        ),
+                      ),
+
+                      // ==================================================
+                      // CERRAR
+                      // ==================================================
 
                       IconButton(
                         tooltip: 'Cerrar',

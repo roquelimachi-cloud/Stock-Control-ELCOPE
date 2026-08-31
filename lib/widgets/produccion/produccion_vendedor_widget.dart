@@ -15,16 +15,16 @@ class ProduccionVendedorWidget extends StatelessWidget {
   // ============================================================
 
   static const List<Color> colores = [
-    Color(0xff2563EB), // Azul
-    Color(0xff7C3AED), // Violeta
-    Color(0xffF59E0B), // Ámbar
-    Color(0xff10B981), // Verde
-    Color(0xff06B6D4), // Cyan
-    Color(0xffEF4444), // Rojo
-    Color(0xffEC4899), // Rosa
-    Color(0xff8B5CF6), // Morado
-    Color(0xff14B8A6), // Turquesa
-    Color(0xffF97316), // Naranja
+    Color(0xff2563EB),
+    Color(0xff7C3AED),
+    Color(0xffF59E0B),
+    Color(0xff10B981),
+    Color(0xff06B6D4),
+    Color(0xffEF4444),
+    Color(0xffEC4899),
+    Color(0xff8B5CF6),
+    Color(0xff14B8A6),
+    Color(0xffF97316),
   ];
 
   // ============================================================
@@ -91,7 +91,10 @@ class ProduccionVendedorWidget extends StatelessWidget {
     }
 
     return double.tryParse(
-          valor.toString().replaceAll(',', '').trim(),
+          valor
+              .toString()
+              .replaceAll(',', '')
+              .trim(),
         ) ??
         0.0;
   }
@@ -108,7 +111,27 @@ class ProduccionVendedorWidget extends StatelessWidget {
   }
 
   // ============================================================
-  // BARRA DE VENDEDOR
+  // FORMATO DE PESO
+  //
+  // Ejemplo:
+  // 48765.17  -> 48,765.17
+  // 12942.33  -> 12,942.33
+  // 493.98    -> 493.98
+  // ============================================================
+
+  String _formatearPeso(double peso) {
+    final partes = peso.toStringAsFixed(2).split('.');
+
+    final entero = partes[0].replaceAllMapped(
+      RegExp(r'\B(?=(\d{3})+(?!\d))'),
+      (match) => ',',
+    );
+
+    return '$entero.${partes[1]}';
+  }
+
+  // ============================================================
+  // ITEM DEL VENDEDOR
   // ============================================================
 
   Widget _vendedorItem({
@@ -123,7 +146,9 @@ class ProduccionVendedorWidget extends StatelessWidget {
         colores[index % colores.length];
 
     final porcentaje =
-        maximo <= 0 ? 0.0 : valor / maximo;
+        maximo <= 0
+            ? 0.0
+            : valor / maximo;
 
     return Padding(
       padding: EdgeInsets.only(
@@ -148,9 +173,11 @@ class ProduccionVendedorWidget extends StatelessWidget {
                 height: esMovil ? 30 : 32,
                 decoration: BoxDecoration(
                   shape: BoxShape.circle,
-                  color: color.withOpacity(0.10),
+                  color:
+                      color.withOpacity(0.10),
                   border: Border.all(
-                    color: color.withOpacity(0.65),
+                    color:
+                        color.withOpacity(0.65),
                     width: 1.5,
                   ),
                 ),
@@ -159,8 +186,10 @@ class ProduccionVendedorWidget extends StatelessWidget {
                   '${index + 1}',
                   style: TextStyle(
                     color: color,
-                    fontWeight: FontWeight.bold,
-                    fontSize: esMovil ? 12 : 13,
+                    fontWeight:
+                        FontWeight.bold,
+                    fontSize:
+                        esMovil ? 12 : 13,
                   ),
                 ),
               ),
@@ -175,11 +204,15 @@ class ProduccionVendedorWidget extends StatelessWidget {
                 child: Text(
                   vendedor,
                   maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
+                  overflow:
+                      TextOverflow.ellipsis,
                   style: TextStyle(
-                    fontSize: esMovil ? 14 : 15,
-                    fontWeight: FontWeight.w500,
-                    color: const Color(0xff202124),
+                    fontSize:
+                        esMovil ? 14 : 15,
+                    fontWeight:
+                        FontWeight.w500,
+                    color:
+                        const Color(0xff202124),
                   ),
                 ),
               ),
@@ -198,19 +231,24 @@ class ProduccionVendedorWidget extends StatelessWidget {
                     _formatear(valor),
                     style: TextStyle(
                       color: color,
-                      fontSize: esMovil ? 12 : 13,
-                      fontWeight: FontWeight.bold,
+                      fontSize:
+                          esMovil ? 12 : 13,
+                      fontWeight:
+                          FontWeight.bold,
                     ),
                   ),
 
                   const SizedBox(height: 2),
 
                   Text(
-                    '${peso.toStringAsFixed(2)} Kg',
+                    '${_formatearPeso(peso)} Kg',
                     style: TextStyle(
-                      color: color.withOpacity(0.85),
-                      fontSize: esMovil ? 10 : 11,
-                      fontWeight: FontWeight.w600,
+                      color:
+                          color.withOpacity(0.85),
+                      fontSize:
+                          esMovil ? 10 : 11,
+                      fontWeight:
+                          FontWeight.w600,
                     ),
                   ),
                 ],
@@ -228,22 +266,32 @@ class ProduccionVendedorWidget extends StatelessWidget {
             height: esMovil ? 9 : 10,
             width: double.infinity,
             decoration: BoxDecoration(
-              color: const Color(0xffE9EDF5),
+              color:
+                  const Color(0xffE9EDF5),
               borderRadius:
                   BorderRadius.circular(20),
             ),
             child: FractionallySizedBox(
-              alignment: Alignment.centerLeft,
+              alignment:
+                  Alignment.centerLeft,
               widthFactor:
-                  porcentaje.clamp(0.0, 1.0),
+                  porcentaje.clamp(
+                0.0,
+                1.0,
+              ),
               child: Container(
                 decoration: BoxDecoration(
                   color: color,
                   borderRadius:
-                      BorderRadius.circular(20),
+                      BorderRadius.circular(
+                    20,
+                  ),
                   boxShadow: [
                     BoxShadow(
-                      color: color.withOpacity(0.25),
+                      color:
+                          color.withOpacity(
+                        0.25,
+                      ),
                       blurRadius: 5,
                       offset:
                           const Offset(0, 2),
@@ -264,7 +312,8 @@ class ProduccionVendedorWidget extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final datos = _agruparPorVendedor();
+    final datos =
+        _agruparPorVendedor();
 
     // ==========================================================
     // SIN DATOS
@@ -319,8 +368,9 @@ class ProduccionVendedorWidget extends StatelessWidget {
           shape: RoundedRectangleBorder(
             borderRadius:
                 BorderRadius.circular(18),
-            side: BorderSide(
-              color: const Color(0xffE3E8F2),
+            side: const BorderSide(
+              color:
+                  Color(0xffE3E8F2),
             ),
           ),
           child: Padding(
@@ -340,19 +390,24 @@ class ProduccionVendedorWidget extends StatelessWidget {
                     Container(
                       width: 40,
                       height: 40,
-                      decoration: BoxDecoration(
-                        shape: BoxShape.circle,
+                      decoration:
+                          BoxDecoration(
+                        shape:
+                            BoxShape.circle,
                         color:
-                            const Color(0xff2563EB)
-                                .withOpacity(0.10),
+                            const Color(
+                          0xff2563EB,
+                        ).withOpacity(0.10),
                         border: Border.all(
-                          color: const Color(
+                          color:
+                              const Color(
                             0xff2563EB,
                           ).withOpacity(0.35),
                         ),
                       ),
                       child: const Icon(
-                        Icons.factory_outlined,
+                        Icons
+                            .factory_outlined,
                         color:
                             Color(0xff2563EB),
                         size: 22,
@@ -366,16 +421,18 @@ class ProduccionVendedorWidget extends StatelessWidget {
                         'Producción por Vendedor',
                         style: TextStyle(
                           fontSize:
-                              esMovil ? 18 : 20,
+                              esMovil
+                                  ? 18
+                                  : 20,
                           fontWeight:
                               FontWeight.bold,
                         ),
                       ),
                     ),
 
-                    // ==================================================
+                    // ==============================================
                     // VER TODOS
-                    // ==================================================
+                    // ==============================================
 
                     if (datos.length > 8)
                       TextButton.icon(
@@ -386,18 +443,22 @@ class ProduccionVendedorWidget extends StatelessWidget {
                             maximo,
                           );
                         },
-                        icon: const Icon(
+                        icon:
+                            const Icon(
                           Icons.arrow_forward,
                           size: 18,
                         ),
                         label:
-                            const Text('Ver todos'),
+                            const Text(
+                          'Ver todos',
+                        ),
                       ),
                   ],
                 ),
 
                 SizedBox(
-                  height: esMovil ? 16 : 20,
+                  height:
+                      esMovil ? 16 : 20,
                 ),
 
                 // ==================================================
@@ -421,8 +482,10 @@ class ProduccionVendedorWidget extends StatelessWidget {
                       peso:
                           item['peso']
                               as double,
-                      maximo: maximo,
-                      esMovil: esMovil,
+                      maximo:
+                          maximo,
+                      esMovil:
+                          esMovil,
                     );
                   },
                 ),
@@ -447,7 +510,9 @@ class ProduccionVendedorWidget extends StatelessWidget {
       context: context,
       builder: (context) {
         final ancho =
-            MediaQuery.of(context).size.width;
+            MediaQuery.of(context)
+                .size
+                .width;
 
         return AlertDialog(
           title: const Text(
@@ -466,8 +531,10 @@ class ProduccionVendedorWidget extends StatelessWidget {
                         .height *
                     0.65,
 
-            child: ListView.builder(
-              itemCount: datos.length,
+            child:
+                ListView.builder(
+              itemCount:
+                  datos.length,
 
               itemBuilder:
                   (context, index) {
@@ -485,8 +552,10 @@ class ProduccionVendedorWidget extends StatelessWidget {
                   peso:
                       item['peso']
                           as double,
-                  maximo: maximo,
-                  esMovil: ancho < 700,
+                  maximo:
+                      maximo,
+                  esMovil:
+                      ancho < 700,
                 );
               },
             ),
@@ -494,8 +563,11 @@ class ProduccionVendedorWidget extends StatelessWidget {
 
           actions: [
             TextButton(
-              onPressed: () =>
-                  Navigator.pop(context),
+              onPressed: () {
+                Navigator.pop(
+                  context,
+                );
+              },
               child:
                   const Text('Cerrar'),
             ),

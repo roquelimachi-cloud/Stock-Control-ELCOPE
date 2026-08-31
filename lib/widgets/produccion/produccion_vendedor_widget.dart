@@ -32,43 +32,68 @@ class ProduccionVendedorWidget extends StatelessWidget {
   // ============================================================
 
   List<Map<String, dynamic>> _agruparPorVendedor() {
-    final Map<String, double> mapa = {};
+    final Map<String, Map<String, double>> mapa = {};
 
     for (final produccion in producciones) {
-      final vendedor =
-          produccion.representante.trim();
+      final vendedor = produccion.representante.trim();
 
       if (vendedor.isEmpty) {
         continue;
       }
 
-      final valor =
-          produccion.valorNeto ?? 0;
+      final valor = _toDouble(produccion.valorNeto);
+      final peso = _toDouble(produccion.pesoCobre);
 
-      mapa.update(
-        vendedor,
-        (actual) => actual + valor,
-        ifAbsent: () => valor,
-      );
+      if (!mapa.containsKey(vendedor)) {
+        mapa[vendedor] = {
+          'valor': 0.0,
+          'peso': 0.0,
+        };
+      }
+
+      mapa[vendedor]!['valor'] =
+          mapa[vendedor]!['valor']! + valor;
+
+      mapa[vendedor]!['peso'] =
+          mapa[vendedor]!['peso']! + peso;
     }
 
-    final resultado = mapa.entries
-        .map(
-          (e) => {
-            'vendedor': e.key,
-            'valor': e.value,
-          },
-        )
-        .toList();
+    final resultado = mapa.entries.map((e) {
+      return {
+        'vendedor': e.key,
+        'valor': e.value['valor'] ?? 0.0,
+        'peso': e.value['peso'] ?? 0.0,
+      };
+    }).toList();
 
-    // Mayor producción primero
+    // Ordenar de mayor a menor valor
     resultado.sort(
       (a, b) =>
-          (b['valor'] as double)
-              .compareTo(a['valor'] as double),
+          (b['valor'] as double).compareTo(
+        a['valor'] as double,
+      ),
     );
 
     return resultado;
+  }
+
+  // ============================================================
+  // CONVERTIR A DOUBLE
+  // ============================================================
+
+  double _toDouble(dynamic valor) {
+    if (valor == null) {
+      return 0.0;
+    }
+
+    if (valor is num) {
+      return valor.toDouble();
+    }
+
+    return double.tryParse(
+          valor.toString().replaceAll(',', '').trim(),
+        ) ??
+        0.0;
   }
 
   // ============================================================
@@ -90,6 +115,7 @@ class ProduccionVendedorWidget extends StatelessWidget {
     required int index,
     required String vendedor,
     required double valor,
+    required double peso,
     required double maximo,
     required bool esMovil,
   }) {
@@ -108,11 +134,15 @@ class ProduccionVendedorWidget extends StatelessWidget {
             CrossAxisAlignment.start,
         children: [
           // ======================================================
-          // NOMBRE + VALOR
+          // NOMBRE + VALOR + PESO
           // ======================================================
 
           Row(
             children: [
+              // --------------------------------------------------
+              // NUMERO
+              // --------------------------------------------------
+
               Container(
                 width: esMovil ? 30 : 32,
                 height: esMovil ? 30 : 32,
@@ -137,12 +167,15 @@ class ProduccionVendedorWidget extends StatelessWidget {
 
               const SizedBox(width: 10),
 
+              // --------------------------------------------------
+              // NOMBRE DEL VENDEDOR
+              // --------------------------------------------------
+
               Expanded(
                 child: Text(
                   vendedor,
                   maxLines: 1,
-                  overflow:
-                      TextOverflow.ellipsis,
+                  overflow: TextOverflow.ellipsis,
                   style: TextStyle(
                     fontSize: esMovil ? 14 : 15,
                     fontWeight: FontWeight.w500,
@@ -153,13 +186,34 @@ class ProduccionVendedorWidget extends StatelessWidget {
 
               const SizedBox(width: 8),
 
-              Text(
-                _formatear(valor),
-                style: TextStyle(
-                  color: color,
-                  fontSize: esMovil ? 12 : 13,
-                  fontWeight: FontWeight.bold,
-                ),
+              // --------------------------------------------------
+              // VALOR + PESO
+              // --------------------------------------------------
+
+              Column(
+                crossAxisAlignment:
+                    CrossAxisAlignment.end,
+                children: [
+                  Text(
+                    _formatear(valor),
+                    style: TextStyle(
+                      color: color,
+                      fontSize: esMovil ? 12 : 13,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+
+                  const SizedBox(height: 2),
+
+                  Text(
+                    '${peso.toStringAsFixed(2)} Kg',
+                    style: TextStyle(
+                      color: color.withOpacity(0.85),
+                      fontSize: esMovil ? 10 : 11,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ],
               ),
             ],
           ),
@@ -204,9 +258,17 @@ class ProduccionVendedorWidget extends StatelessWidget {
     );
   }
 
+  // ============================================================
+  // BUILD
+  // ============================================================
+
   @override
   Widget build(BuildContext context) {
     final datos = _agruparPorVendedor();
+
+    // ==========================================================
+    // SIN DATOS
+    // ==========================================================
 
     if (datos.isEmpty) {
       return Card(
@@ -230,8 +292,16 @@ class ProduccionVendedorWidget extends StatelessWidget {
       );
     }
 
+    // ==========================================================
+    // VALOR MÁXIMO
+    // ==========================================================
+
     final maximo =
         datos.first['valor'] as double;
+
+    // ==========================================================
+    // RESPONSIVE
+    // ==========================================================
 
     return LayoutBuilder(
       builder: (context, constraints) {
@@ -303,6 +373,10 @@ class ProduccionVendedorWidget extends StatelessWidget {
                       ),
                     ),
 
+                    // ==================================================
+                    // VER TODOS
+                    // ==================================================
+
                     if (datos.length > 8)
                       TextButton.icon(
                         onPressed: () {
@@ -344,6 +418,9 @@ class ProduccionVendedorWidget extends StatelessWidget {
                       valor:
                           item['valor']
                               as double,
+                      peso:
+                          item['peso']
+                              as double,
                       maximo: maximo,
                       esMovil: esMovil,
                     );
@@ -376,17 +453,24 @@ class ProduccionVendedorWidget extends StatelessWidget {
           title: const Text(
             'Producción por Vendedor',
           ),
+
           content: SizedBox(
             width:
-                ancho > 700 ? 650 : double.infinity,
+                ancho > 700
+                    ? 650
+                    : double.infinity,
+
             height:
                 MediaQuery.of(context)
                         .size
                         .height *
                     0.65,
+
             child: ListView.builder(
               itemCount: datos.length,
-              itemBuilder: (context, index) {
+
+              itemBuilder:
+                  (context, index) {
                 final item =
                     datos[index];
 
@@ -398,17 +482,22 @@ class ProduccionVendedorWidget extends StatelessWidget {
                   valor:
                       item['valor']
                           as double,
+                  peso:
+                      item['peso']
+                          as double,
                   maximo: maximo,
                   esMovil: ancho < 700,
                 );
               },
             ),
           ),
+
           actions: [
             TextButton(
               onPressed: () =>
                   Navigator.pop(context),
-              child: const Text('Cerrar'),
+              child:
+                  const Text('Cerrar'),
             ),
           ],
         );

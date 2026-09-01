@@ -1,10 +1,7 @@
 import 'package:flutter/material.dart';
-import 'package:intl/intl.dart';
-import 'package:pdf/pdf.dart';
-import 'package:pdf/widgets.dart' as pw;
-import 'package:printing/printing.dart';
 
 import '../../models/produccion/top_cliente_model.dart';
+import '../../services/produccion/top_clientes_pdf_service.dart';
 
 class TopClientesWidget extends StatelessWidget {
   final List<TopClienteModel> clientes;
@@ -19,10 +16,14 @@ class TopClientesWidget extends StatelessWidget {
   // ==========================================================
 
   String _valor(double valor) {
-    return NumberFormat(
-      '#,##0',
-      'en_US',
-    ).format(valor);
+    final valorRedondeado = valor.round();
+
+    return valorRedondeado
+        .toString()
+        .replaceAllMapped(
+          RegExp(r'(\d)(?=(\d{3})+(?!\d))'),
+          (match) => '${match.group(1)},',
+        );
   }
 
   // ==========================================================
@@ -30,10 +31,14 @@ class TopClientesWidget extends StatelessWidget {
   // ==========================================================
 
   String _peso(double peso) {
-    return NumberFormat(
-      '#,##0.00',
-      'en_US',
-    ).format(peso);
+    final partes = peso.toStringAsFixed(2).split('.');
+
+    final entero = partes[0].replaceAllMapped(
+      RegExp(r'(\d)(?=(\d{3})+(?!\d))'),
+      (match) => '${match.group(1)},',
+    );
+
+    return '$entero.${partes[1]}';
   }
 
   // ==========================================================
@@ -137,17 +142,16 @@ class TopClientesWidget extends StatelessWidget {
 
               Expanded(
                 child: Padding(
-                  padding:
-                      const EdgeInsets.only(top: 4),
+                  padding: const EdgeInsets.only(
+                    top: 4,
+                  ),
                   child: Text(
                     item.cliente,
                     maxLines: 1,
-                    overflow:
-                        TextOverflow.ellipsis,
+                    overflow: TextOverflow.ellipsis,
                     style: const TextStyle(
                       fontSize: 14,
-                      fontWeight:
-                          FontWeight.bold,
+                      fontWeight: FontWeight.bold,
                     ),
                   ),
                 ),
@@ -167,37 +171,28 @@ class TopClientesWidget extends StatelessWidget {
                   children: [
                     Text(
                       'US\$ ${_valor(item.valor)}',
-                      textAlign:
-                          TextAlign.right,
+                      textAlign: TextAlign.right,
                       style: const TextStyle(
                         fontSize: 14,
-                        fontWeight:
-                            FontWeight.bold,
+                        fontWeight: FontWeight.bold,
                       ),
                     ),
-
                     Text(
                       '${(porcentaje * 100).toStringAsFixed(1)} %',
-                      textAlign:
-                          TextAlign.right,
+                      textAlign: TextAlign.right,
                       style: TextStyle(
                         color: color,
                         fontSize: 12,
-                        fontWeight:
-                            FontWeight.bold,
+                        fontWeight: FontWeight.bold,
                       ),
                     ),
-
                     Text(
                       '${_peso(item.pesoCobre)} Kg',
-                      textAlign:
-                          TextAlign.right,
+                      textAlign: TextAlign.right,
                       style: const TextStyle(
                         fontSize: 12,
-                        color:
-                            Colors.black87,
-                        fontWeight:
-                            FontWeight.w600,
+                        color: Colors.black87,
+                        fontWeight: FontWeight.w600,
                       ),
                     ),
                   ],
@@ -213,26 +208,22 @@ class TopClientesWidget extends StatelessWidget {
           // =====================================================
 
           Padding(
-            padding:
-                const EdgeInsets.only(
+            padding: const EdgeInsets.only(
               left: 46,
             ),
             child: ClipRRect(
               borderRadius:
                   BorderRadius.circular(30),
-              child:
-                  LinearProgressIndicator(
+              child: LinearProgressIndicator(
                 minHeight: 14,
-                value:
-                    progreso.clamp(
+                value: progreso.clamp(
                   0.0,
                   1.0,
                 ),
                 backgroundColor:
                     Colors.grey.shade300,
                 valueColor:
-                    AlwaysStoppedAnimation<
-                        Color>(
+                    AlwaysStoppedAnimation<Color>(
                   color,
                 ),
               ),
@@ -254,14 +245,12 @@ class TopClientesWidget extends StatelessWidget {
 
     final total = clientes.fold<double>(
       0,
-      (suma, item) =>
-          suma + item.valor,
+      (suma, item) => suma + item.valor,
     );
 
-    final maximo =
-        clientes.isEmpty
-            ? 0.0
-            : clientes.first.valor;
+    final maximo = clientes.isEmpty
+        ? 0.0
+        : clientes.first.valor;
 
     showDialog(
       context: context,
@@ -269,8 +258,7 @@ class TopClientesWidget extends StatelessWidget {
         return Dialog(
           insetPadding:
               const EdgeInsets.all(20),
-          shape:
-              RoundedRectangleBorder(
+          shape: RoundedRectangleBorder(
             borderRadius:
                 BorderRadius.circular(20),
           ),
@@ -289,32 +277,26 @@ class TopClientesWidget extends StatelessWidget {
                   Row(
                     children: [
                       const Icon(
-                        Icons
-                            .emoji_events,
-                        color:
-                            Colors.amber,
+                        Icons.emoji_events,
+                        color: Colors.amber,
                         size: 30,
                       ),
 
-                      const SizedBox(
-                        width: 10,
-                      ),
+                      const SizedBox(width: 10),
 
                       const Expanded(
                         child: Text(
                           'Todos los Clientes',
-                          style:
-                              TextStyle(
+                          style: TextStyle(
                             fontSize: 22,
                             fontWeight:
-                                FontWeight
-                                    .bold,
+                                FontWeight.bold,
                           ),
                         ),
                       ),
 
                       // =================================================
-                      // IMPRIMIR DENTRO DE VER TODOS
+                      // IMPRIMIR
                       // =================================================
 
                       ElevatedButton.icon(
@@ -323,18 +305,15 @@ class TopClientesWidget extends StatelessWidget {
                             dialogContext,
                           );
                         },
-                        icon:
-                            const Icon(
+                        icon: const Icon(
                           Icons.print,
                           size: 18,
                         ),
-                        label:
-                            const Text(
+                        label: const Text(
                           'Imprimir',
                         ),
                         style:
-                            ElevatedButton
-                                .styleFrom(
+                            ElevatedButton.styleFrom(
                           backgroundColor:
                               const Color(
                             0xff2855C5,
@@ -345,17 +324,18 @@ class TopClientesWidget extends StatelessWidget {
                           shape:
                               RoundedRectangleBorder(
                             borderRadius:
-                                BorderRadius
-                                    .circular(
+                                BorderRadius.circular(
                               10,
                             ),
                           ),
                         ),
                       ),
 
-                      const SizedBox(
-                        width: 8,
-                      ),
+                      const SizedBox(width: 8),
+
+                      // =================================================
+                      // CERRAR
+                      // =================================================
 
                       IconButton(
                         tooltip: 'Cerrar',
@@ -364,8 +344,7 @@ class TopClientesWidget extends StatelessWidget {
                             dialogContext,
                           ).pop();
                         },
-                        icon:
-                            const Icon(
+                        icon: const Icon(
                           Icons.close,
                         ),
                       ),
@@ -374,24 +353,20 @@ class TopClientesWidget extends StatelessWidget {
 
                   const Divider(),
 
-                  const SizedBox(
-                    height: 8,
-                  ),
+                  const SizedBox(height: 8),
 
                   // =================================================
                   // LISTA COMPLETA
                   // =================================================
 
                   Expanded(
-                    child:
-                        ListView.builder(
+                    child: ListView.builder(
                       itemCount:
                           clientes.length,
                       itemBuilder:
                           (context, index) {
                         return _item(
-                          item:
-                              clientes[index],
+                          item: clientes[index],
                           index: index,
                           total: total,
                           maximo: maximo,
@@ -409,7 +384,7 @@ class TopClientesWidget extends StatelessWidget {
   }
 
   // ==========================================================
-  // IMPRIMIR
+  // IMPRIMIR REPORTE PDF
   // ==========================================================
 
   Future<void> _imprimir(
@@ -419,383 +394,13 @@ class TopClientesWidget extends StatelessWidget {
       return;
     }
 
-    try {
-      final pdf = pw.Document();
+    final TopClientesPdfService servicio =
+        TopClientesPdfService();
 
-      final total = clientes.fold<double>(
-        0,
-        (suma, item) =>
-            suma + item.valor,
-      );
-
-      final pesoTotal =
-          clientes.fold<double>(
-        0,
-        (suma, item) =>
-            suma + item.pesoCobre,
-      );
-
-      final moneda = NumberFormat(
-        '#,##0',
-        'en_US',
-      );
-
-      final pesoFormato = NumberFormat(
-        '#,##0.00',
-        'en_US',
-      );
-
-      final fecha =
-          DateFormat(
-        'dd/MM/yyyy',
-      ).format(DateTime.now());
-
-      pdf.addPage(
-        pw.MultiPage(
-          pageFormat:
-              PdfPageFormat.a4,
-          margin:
-              const pw.EdgeInsets.all(
-            28,
-          ),
-          build: (context) {
-            return [
-              // ====================================================
-              // TITULO
-              // ====================================================
-
-              pw.Text(
-                'REPORTE DE PRODUCCIÓN',
-                style:
-                    pw.TextStyle(
-                  fontSize: 18,
-                  fontWeight:
-                      pw.FontWeight.bold,
-                  color:
-                      PdfColors.blue900,
-                ),
-              ),
-
-              pw.SizedBox(height: 4),
-
-              pw.Text(
-                'TOP CLIENTES',
-                style:
-                    pw.TextStyle(
-                  fontSize: 12,
-                  fontWeight:
-                      pw.FontWeight.bold,
-                ),
-              ),
-
-              pw.SizedBox(height: 4),
-
-              pw.Text(
-                'Fecha: $fecha',
-                style:
-                    const pw.TextStyle(
-                  fontSize: 9,
-                  color:
-                      PdfColors.grey600,
-                ),
-              ),
-
-              pw.SizedBox(height: 10),
-
-              pw.Divider(
-                color:
-                    PdfColors.blue800,
-                thickness: 1.5,
-              ),
-
-              pw.SizedBox(height: 12),
-
-              // ====================================================
-              // RESUMEN
-              // ====================================================
-
-              pw.Container(
-                padding:
-                    const pw.EdgeInsets.all(
-                  12,
-                ),
-                decoration:
-                    pw.BoxDecoration(
-                  color:
-                      PdfColors.grey100,
-                  border:
-                      pw.Border.all(
-                    color:
-                        PdfColors.grey300,
-                  ),
-                  borderRadius:
-                      pw.BorderRadius
-                          .circular(
-                    8,
-                  ),
-                ),
-                child: pw.Row(
-                  mainAxisAlignment:
-                      pw.MainAxisAlignment
-                          .spaceAround,
-                  children: [
-                    pw.Column(
-                      children: [
-                        pw.Text(
-                          'Clientes',
-                          style:
-                              const pw.TextStyle(
-                            fontSize: 9,
-                            color:
-                                PdfColors
-                                    .grey600,
-                          ),
-                        ),
-                        pw.SizedBox(
-                            height: 3),
-                        pw.Text(
-                          '${clientes.length}',
-                          style:
-                              pw.TextStyle(
-                            fontSize: 14,
-                            fontWeight:
-                                pw.FontWeight
-                                    .bold,
-                          ),
-                        ),
-                      ],
-                    ),
-
-                    pw.Column(
-                      children: [
-                        pw.Text(
-                          'Valor Neto',
-                          style:
-                              const pw.TextStyle(
-                            fontSize: 9,
-                            color:
-                                PdfColors
-                                    .grey600,
-                          ),
-                        ),
-                        pw.SizedBox(
-                            height: 3),
-                        pw.Text(
-                          'US\$ ${moneda.format(total)}',
-                          style:
-                              pw.TextStyle(
-                            fontSize: 14,
-                            fontWeight:
-                                pw.FontWeight
-                                    .bold,
-                          ),
-                        ),
-                      ],
-                    ),
-
-                    pw.Column(
-                      children: [
-                        pw.Text(
-                          'Peso Cobre',
-                          style:
-                              const pw.TextStyle(
-                            fontSize: 9,
-                            color:
-                                PdfColors
-                                    .grey600,
-                          ),
-                        ),
-                        pw.SizedBox(
-                            height: 3),
-                        pw.Text(
-                          '${pesoFormato.format(pesoTotal)} Kg',
-                          style:
-                              pw.TextStyle(
-                            fontSize: 14,
-                            fontWeight:
-                                pw.FontWeight
-                                    .bold,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ],
-                ),
-              ),
-
-              pw.SizedBox(height: 18),
-
-              // ====================================================
-              // TABLA
-              // ====================================================
-
-              pw.Text(
-                'DETALLE DE CLIENTES',
-                style:
-                    pw.TextStyle(
-                  fontSize: 11,
-                  fontWeight:
-                      pw.FontWeight.bold,
-                  color:
-                      PdfColors.blue900,
-                ),
-              ),
-
-              pw.SizedBox(height: 8),
-
-              pw.TableHelper
-                  .fromTextArray(
-                headers: [
-                  'N°',
-                  'Cliente',
-                  'Valor Neto',
-                  'Avance',
-                  'Peso Cobre',
-                ],
-                data: List.generate(
-                  clientes.length,
-                  (index) {
-                    final item =
-                        clientes[index];
-
-                    final avance =
-                        total == 0
-                            ? 0.0
-                            : item.valor /
-                                total *
-                                100;
-
-                    return [
-                      '${index + 1}',
-                      item.cliente,
-                      'US\$ ${moneda.format(item.valor)}',
-                      '${avance.toStringAsFixed(1)} %',
-                      '${pesoFormato.format(item.pesoCobre)} Kg',
-                    ];
-                  },
-                ),
-                headerStyle:
-                    pw.TextStyle(
-                  fontSize: 8,
-                  fontWeight:
-                      pw.FontWeight.bold,
-                  color:
-                      PdfColors.white,
-                ),
-                headerDecoration:
-                    const pw.BoxDecoration(
-                  color:
-                      PdfColors.blue800,
-                ),
-                cellStyle:
-                    const pw.TextStyle(
-                  fontSize: 7.5,
-                ),
-                cellPadding:
-                    const pw.EdgeInsets
-                        .symmetric(
-                  horizontal: 5,
-                  vertical: 5,
-                ),
-                border:
-                    pw.TableBorder.all(
-                  color:
-                      PdfColors.grey300,
-                  width: .5,
-                ),
-              ),
-
-              pw.SizedBox(height: 18),
-
-              // ====================================================
-              // TOTAL
-              // ====================================================
-
-              pw.Align(
-                alignment:
-                    pw.Alignment
-                        .centerRight,
-                child: pw.Container(
-                  width: 250,
-                  padding:
-                      const pw.EdgeInsets
-                          .all(
-                    12,
-                  ),
-                  decoration:
-                      pw.BoxDecoration(
-                    border:
-                        pw.Border.all(
-                      color:
-                          PdfColors.blue800,
-                    ),
-                    borderRadius:
-                        pw.BorderRadius
-                            .circular(
-                      7,
-                    ),
-                  ),
-                  child: pw.Column(
-                    crossAxisAlignment:
-                        pw.CrossAxisAlignment
-                            .start,
-                    children: [
-                      pw.Text(
-                        'TOTAL',
-                        style:
-                            pw.TextStyle(
-                          fontSize: 11,
-                          fontWeight:
-                              pw.FontWeight
-                                  .bold,
-                        ),
-                      ),
-                      pw.SizedBox(
-                          height: 5),
-                      pw.Text(
-                        'Clientes: ${clientes.length}',
-                      ),
-                      pw.Text(
-                        'Valor Neto: US\$ ${moneda.format(total)}',
-                      ),
-                      pw.Text(
-                        'Peso Cobre: ${pesoFormato.format(pesoTotal)} Kg',
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-            ];
-          },
-        ),
-      );
-
-      // ==========================================================
-      // ABRIR IMPRESIÓN
-      // ==========================================================
-
-      await Printing.layoutPdf(
-        onLayout: (format) async {
-          return pdf.save();
-        },
-      );
-    } catch (e) {
-      if (!context.mounted) {
-        return;
-      }
-
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(
-        SnackBar(
-          backgroundColor:
-              Colors.red,
-          content: Text(
-            'Error al imprimir: $e',
-          ),
-        ),
-      );
-    }
+    await servicio.imprimirReporte(
+      clientes: clientes,
+      context: context,
+    );
   }
 
   // ==========================================================
@@ -808,8 +413,7 @@ class TopClientesWidget extends StatelessWidget {
       return Card(
         child: const Center(
           child: Padding(
-            padding:
-                EdgeInsets.all(30),
+            padding: EdgeInsets.all(30),
             child: Text(
               'No existen clientes.',
             ),
@@ -827,23 +431,19 @@ class TopClientesWidget extends StatelessWidget {
 
     final total = clientes.fold<double>(
       0,
-      (suma, item) =>
-          suma + item.valor,
+      (suma, item) => suma + item.valor,
     );
 
-    final maximo =
-        clientes.first.valor;
+    final maximo = clientes.first.valor;
 
     return Card(
       elevation: 8,
-      shape:
-          RoundedRectangleBorder(
+      shape: RoundedRectangleBorder(
         borderRadius:
             BorderRadius.circular(22),
       ),
       child: Padding(
-        padding:
-            const EdgeInsets.all(22),
+        padding: const EdgeInsets.all(22),
         child: Column(
           crossAxisAlignment:
               CrossAxisAlignment.start,
@@ -881,13 +481,11 @@ class TopClientesWidget extends StatelessWidget {
                   onPressed: () {
                     _verTodos(context);
                   },
-                  icon:
-                      const Icon(
+                  icon: const Icon(
                     Icons.visibility,
                     size: 18,
                   ),
-                  label:
-                      const Text(
+                  label: const Text(
                     'Ver todos',
                   ),
                 ),
@@ -902,18 +500,15 @@ class TopClientesWidget extends StatelessWidget {
                   onPressed: () {
                     _imprimir(context);
                   },
-                  icon:
-                      const Icon(
+                  icon: const Icon(
                     Icons.print,
                     size: 18,
                   ),
-                  label:
-                      const Text(
+                  label: const Text(
                     'Imprimir',
                   ),
                   style:
-                      ElevatedButton
-                          .styleFrom(
+                      ElevatedButton.styleFrom(
                     backgroundColor:
                         const Color(
                       0xff2855C5,
@@ -924,8 +519,7 @@ class TopClientesWidget extends StatelessWidget {
                     shape:
                         RoundedRectangleBorder(
                       borderRadius:
-                          BorderRadius
-                              .circular(
+                          BorderRadius.circular(
                         10,
                       ),
                     ),
@@ -941,15 +535,12 @@ class TopClientesWidget extends StatelessWidget {
             // ====================================================
 
             Expanded(
-              child:
-                  ListView.builder(
-                itemCount:
-                    top10.length,
+              child: ListView.builder(
+                itemCount: top10.length,
                 itemBuilder:
                     (context, index) {
                   return _item(
-                    item:
-                        top10[index],
+                    item: top10[index],
                     index: index,
                     total: total,
                     maximo: maximo,

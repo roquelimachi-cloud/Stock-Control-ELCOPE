@@ -5,6 +5,7 @@ import '../../models/produccion/produccion_model.dart';
 import '../../services/produccion/produccion_mis_op_service.dart';
 import '../../services/sesion.dart';
 import 'produccion_mis_op_datasource.dart';
+import 'mis_producciones_preview.dart';
 
 class MisProduccionesWidget extends StatefulWidget {
   const MisProduccionesWidget({
@@ -40,6 +41,10 @@ class _MisProduccionesWidgetState
 
     await future;
   }
+
+  // =========================================================
+  // VISTA
+  // =========================================================
 
   @override
   Widget build(BuildContext context) {
@@ -132,8 +137,10 @@ class _MisProduccionesWidgetState
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(18),
           ),
+
           child: SizedBox(
             height: 500,
+
             child: Column(
               children: [
                 const SizedBox(height: 15),
@@ -146,8 +153,13 @@ class _MisProduccionesWidgetState
                   padding: const EdgeInsets.symmetric(
                     horizontal: 20,
                   ),
+
                   child: Row(
                     children: [
+                      // ===========================================
+                      // ICONO
+                      // ===========================================
+
                       const Icon(
                         Icons.factory_outlined,
                         color: Colors.indigo,
@@ -155,6 +167,10 @@ class _MisProduccionesWidgetState
                       ),
 
                       const SizedBox(width: 10),
+
+                      // ===========================================
+                      // TITULO
+                      // ===========================================
 
                       Expanded(
                         child: Text(
@@ -167,12 +183,71 @@ class _MisProduccionesWidgetState
                       ),
 
                       // ===========================================
+                      // VISTA PRELIMINAR
+                      // ===========================================
+
+                      ElevatedButton.icon(
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor:
+                              const Color(0xFF007A45),
+                          foregroundColor:
+                              Colors.white,
+
+                          padding:
+                              const EdgeInsets.symmetric(
+                            horizontal: 16,
+                            vertical: 12,
+                          ),
+
+                          shape:
+                              RoundedRectangleBorder(
+                            borderRadius:
+                                BorderRadius.circular(
+                              10,
+                            ),
+                          ),
+                        ),
+
+                        icon: const Icon(
+                          Icons.visibility_outlined,
+                          size: 20,
+                        ),
+
+                        label: const Text(
+                          "Vista preliminar",
+                          style: TextStyle(
+                            fontWeight:
+                                FontWeight.bold,
+                          ),
+                        ),
+
+                        onPressed: lista.isEmpty
+                            ? null
+                            : () {
+                                Navigator.of(context)
+                                    .push(
+                                  MaterialPageRoute(
+                                    builder: (_) =>
+                                        MisProduccionesPreview(
+                                      producciones:
+                                          lista,
+                                    ),
+                                  ),
+                                );
+                              },
+                      ),
+
+                      const SizedBox(width: 8),
+
+                      // ===========================================
                       // ACTUALIZAR
                       // ===========================================
 
                       IconButton(
                         tooltip: "Actualizar",
+
                         onPressed: _actualizar,
+
                         icon: const Icon(
                           Icons.refresh,
                           color: Colors.indigo,
@@ -191,15 +266,22 @@ class _MisProduccionesWidgetState
                 Expanded(
                   child: SfDataGrid(
                     source:
-                        ProduccionMisOpDataSource(lista),
+                        ProduccionMisOpDataSource(
+                      lista,
+                    ),
 
                     columnWidthMode:
                         ColumnWidthMode.none,
 
                     columns: [
+                      // ==========================================
+                      // OP
+                      // ==========================================
+
                       GridColumn(
                         width: 150,
                         columnName: 'op',
+
                         label: const Center(
                           child: Text(
                             "OP",
@@ -211,9 +293,14 @@ class _MisProduccionesWidgetState
                         ),
                       ),
 
+                      // ==========================================
+                      // CLIENTE
+                      // ==========================================
+
                       GridColumn(
                         width: 280,
                         columnName: 'cliente',
+
                         label: const Center(
                           child: Text(
                             "Cliente",
@@ -225,9 +312,14 @@ class _MisProduccionesWidgetState
                         ),
                       ),
 
+                      // ==========================================
+                      // ARTÍCULO
+                      // ==========================================
+
                       GridColumn(
                         width: 450,
                         columnName: 'articulo',
+
                         label: const Center(
                           child: Text(
                             "Artículo",
@@ -239,9 +331,14 @@ class _MisProduccionesWidgetState
                         ),
                       ),
 
+                      // ==========================================
+                      // FECHA PRODUCCIÓN
+                      // ==========================================
+
                       GridColumn(
                         width: 120,
                         columnName: 'entrega',
+
                         label: const Center(
                           child: Text(
                             "Fecha Prod",
@@ -253,9 +350,14 @@ class _MisProduccionesWidgetState
                         ),
                       ),
 
+                      // ==========================================
+                      // RETRASO
+                      // ==========================================
+
                       GridColumn(
                         width: 90,
                         columnName: 'retraso',
+
                         label: const Center(
                           child: Text(
                             "Retraso",
@@ -267,9 +369,14 @@ class _MisProduccionesWidgetState
                         ),
                       ),
 
+                      // ==========================================
+                      // CANTIDAD
+                      // ==========================================
+
                       GridColumn(
                         width: 120,
                         columnName: 'cantidad',
+
                         label: const Center(
                           child: Text(
                             "Cantidad",
@@ -281,9 +388,14 @@ class _MisProduccionesWidgetState
                         ),
                       ),
 
+                      // ==========================================
+                      // VALOR NETO
+                      // ==========================================
+
                       GridColumn(
                         width: 140,
                         columnName: 'valor',
+
                         label: const Center(
                           child: Text(
                             "Valor Neto",
@@ -302,6 +414,7 @@ class _MisProduccionesWidgetState
                       GridColumn(
                         width: 130,
                         columnName: 'cobre',
+
                         label: const Center(
                           child: Text(
                             "Peso Cobre",
@@ -313,9 +426,14 @@ class _MisProduccionesWidgetState
                         ),
                       ),
 
+                      // ==========================================
+                      // CANAL
+                      // ==========================================
+
                       GridColumn(
                         width: 120,
                         columnName: 'canal',
+
                         label: const Center(
                           child: Text(
                             "Canal",
@@ -327,9 +445,14 @@ class _MisProduccionesWidgetState
                         ),
                       ),
 
+                      // ==========================================
+                      // CLASE
+                      // ==========================================
+
                       GridColumn(
                         width: 90,
                         columnName: 'clase',
+
                         label: const Center(
                           child: Text(
                             "Clase",
@@ -341,9 +464,14 @@ class _MisProduccionesWidgetState
                         ),
                       ),
 
+                      // ==========================================
+                      // FAMILIA
+                      // ==========================================
+
                       GridColumn(
                         width: 150,
                         columnName: 'familia',
+
                         label: const Center(
                           child: Text(
                             "Familia",
@@ -355,9 +483,14 @@ class _MisProduccionesWidgetState
                         ),
                       ),
 
+                      // ==========================================
+                      // ESTADO
+                      // ==========================================
+
                       GridColumn(
                         width: 130,
                         columnName: 'estado',
+
                         label: const Center(
                           child: Text(
                             "Estado",

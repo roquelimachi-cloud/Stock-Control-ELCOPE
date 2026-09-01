@@ -11,23 +11,27 @@ dependencies:
   flutter:
     sdk: flutter
 
+  # ==========================
+  # GENERAL
+  # ==========================
+
   cupertino_icons: ^1.0.8
 
   # ==========================
-  # Base de Datos
+  # BASE DE DATOS
   # ==========================
 
   supabase_flutter: ^2.9.1
 
   # ==========================
-  # Excel
+  # EXCEL
   # ==========================
 
   excel: ^4.0.6
   file_picker: ^10.3.2
 
   # ==========================
-  # Utilidades
+  # UTILIDADES
   # ==========================
 
   intl: ^0.20.2
@@ -35,7 +39,7 @@ dependencies:
   provider: ^6.1.5
 
   # ==========================
-  # Dashboard
+  # DASHBOARD
   # ==========================
 
   syncfusion_flutter_charts: ^30.2.7
@@ -43,19 +47,19 @@ dependencies:
   fl_chart: ^0.69.0
 
   # ==========================
-  # Tooltip
+  # TOOLTIP
   # ==========================
 
   super_tooltip: ^2.0.9
 
   # ==========================
-  # Notificaciones
+  # NOTIFICACIONES
   # ==========================
 
   fluttertoast: ^8.2.12
 
   # ==========================
-  # PDF
+  # PDF E IMPRESIÓN
   # ==========================
 
   pdf: ^3.11.3
@@ -68,12 +72,24 @@ dev_dependencies:
   flutter_lints: ^6.0.0
   flutter_launcher_icons: ^0.13.1
 
+# ==========================
+# FLUTTER
+# ==========================
+
 flutter:
   uses-material-design: true
+
+  # ==========================
+  # ASSETS
+  # ==========================
 
   assets:
     - .env
     - assets/images/
+
+# ==========================
+# ICONO DE LA APLICACIÓN
+# ==========================
 
 flutter_launcher_icons:
   android: true

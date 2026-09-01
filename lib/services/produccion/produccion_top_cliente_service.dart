@@ -2,83 +2,99 @@ import '../../models/produccion/produccion_model.dart';
 import '../../models/produccion/top_cliente_model.dart';
 
 class ProduccionTopClienteService {
+  // ==========================================================
+  // OBTENER CLIENTES
+  // ==========================================================
+  //
+  // IMPORTANTE:
+  // Este método devuelve TODOS los clientes.
+  //
+  // NO usar take(10) aquí.
+  //
+  // El TOP 10 se controla únicamente en el Widget.
+  // Así "Ver todos" puede mostrar la lista completa.
+  // ==========================================================
+
   List<TopClienteModel> obtener(
     List<ProduccionModel> lista,
   ) {
-    // ==========================================================
-    // AGRUPAR POR CLIENTE
-    // ==========================================================
-
-    final Map<String, Map<String, double>> mapa = {};
+    final Map<String, double> mapaValor = {};
+    final Map<String, double> mapaPeso = {};
 
     for (final item in lista) {
-      final cliente = item.cliente.trim();
+      final String cliente =
+          item.cliente.trim();
 
       if (cliente.isEmpty) {
         continue;
       }
 
-      final valor =
+      final double valor =
           (item.valorNeto ?? 0).toDouble();
 
-      final peso =
+      final double peso =
           (item.pesoCobre ?? 0).toDouble();
 
-      // ========================================================
-      // CREAR CLIENTE
-      // ========================================================
+      // --------------------------------------------------------
+      // VALOR NETO
+      // --------------------------------------------------------
 
-      if (!mapa.containsKey(cliente)) {
-        mapa[cliente] = {
-          'valor': 0.0,
-          'peso': 0.0,
-        };
-      }
+      mapaValor.update(
+        cliente,
+        (valorAnterior) =>
+            valorAnterior + valor,
+        ifAbsent: () => valor,
+      );
 
-      // ========================================================
-      // SUMAR VALOR NETO
-      // ========================================================
+      // --------------------------------------------------------
+      // PESO COBRE
+      // --------------------------------------------------------
 
-      mapa[cliente]!['valor'] =
-          mapa[cliente]!['valor']! + valor;
-
-      // ========================================================
-      // SUMAR PESO COBRE
-      // ========================================================
-
-      mapa[cliente]!['peso'] =
-          mapa[cliente]!['peso']! + peso;
+      mapaPeso.update(
+        cliente,
+        (pesoAnterior) =>
+            pesoAnterior + peso,
+        ifAbsent: () => peso,
+      );
     }
 
     // ==========================================================
-    // CREAR MODELOS
+    // CREAR RESULTADO
     // ==========================================================
 
-    final resultado = mapa.entries
-        .map(
-          (e) => TopClienteModel(
-            cliente: e.key,
-            valor: e.value['valor'] ?? 0.0,
-            pesoCobre: e.value['peso'] ?? 0.0,
-          ),
-        )
-        .toList();
+    final List<TopClienteModel> resultado =
+        mapaValor.entries.map(
+      (entry) {
+        final String cliente =
+            entry.key;
+
+        return TopClienteModel(
+          cliente: cliente,
+          valor: entry.value,
+          pesoCobre:
+              mapaPeso[cliente] ?? 0.0,
+        );
+      },
+    ).toList();
 
     // ==========================================================
     // ORDENAR DE MAYOR A MENOR
     // ==========================================================
 
     resultado.sort(
-      (a, b) => b.valor.compareTo(a.valor),
+      (a, b) =>
+          b.valor.compareTo(a.valor),
     );
 
     // ==========================================================
-    // IMPORTANTE
+    // MUY IMPORTANTE
+    // ==========================================================
     //
-    // YA NO HACEMOS take(10)
+    // NO HACER:
     //
-    // El widget mostrará los primeros 10,
-    // pero "Ver todos" podrá mostrar todos.
+    // return resultado.take(10).toList();
+    //
+    // Debemos devolver TODOS.
     // ==========================================================
 
     return resultado;

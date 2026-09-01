@@ -11,10 +11,6 @@ class TopClientesWidget extends StatelessWidget {
     required this.clientes,
   });
 
-  // ==========================================================
-  // FORMATO MONEDA
-  // ==========================================================
-
   String _valor(double valor) {
     final valorRedondeado = valor.round();
 
@@ -26,10 +22,6 @@ class TopClientesWidget extends StatelessWidget {
         );
   }
 
-  // ==========================================================
-  // FORMATO PESO
-  // ==========================================================
-
   String _peso(double peso) {
     final partes = peso.toStringAsFixed(2).split('.');
 
@@ -40,10 +32,6 @@ class TopClientesWidget extends StatelessWidget {
 
     return '$entero.${partes[1]}';
   }
-
-  // ==========================================================
-  // COLORES
-  // ==========================================================
 
   Color _color(int index) {
     return switch (index) {
@@ -59,10 +47,6 @@ class TopClientesWidget extends StatelessWidget {
       _ => const Color(0xff7C4DFF),
     };
   }
-
-  // ==========================================================
-  // RANKING
-  // ==========================================================
 
   Widget _ranking(int index) {
     if (index == 0) {
@@ -95,15 +79,12 @@ class TopClientesWidget extends StatelessWidget {
     );
   }
 
-  // ==========================================================
-  // ITEM
-  // ==========================================================
-
   Widget _item({
     required TopClienteModel item,
     required int index,
     required double total,
     required double maximo,
+    required bool mobile,
   }) {
     final color = _color(index);
 
@@ -115,65 +96,51 @@ class TopClientesWidget extends StatelessWidget {
         ? 0.0
         : item.valor / maximo;
 
+    final double metricWidth = mobile ? 128 : 155;
+
     return Padding(
-      padding: const EdgeInsets.only(
-        bottom: 18,
-      ),
+      padding: const EdgeInsets.only(bottom: 18),
       child: Column(
         children: [
           Row(
-            crossAxisAlignment:
-                CrossAxisAlignment.start,
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              // =================================================
-              // NUMERO
-              // =================================================
-
               SizedBox(
-                width: 38,
+                width: mobile ? 34 : 38,
                 child: _ranking(index),
               ),
 
               const SizedBox(width: 8),
 
-              // =================================================
-              // CLIENTE
-              // =================================================
-
               Expanded(
                 child: Padding(
-                  padding: const EdgeInsets.only(
-                    top: 4,
-                  ),
+                  padding: const EdgeInsets.only(top: 4),
                   child: Text(
                     item.cliente,
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(
-                      fontSize: 14,
+                    style: TextStyle(
+                      fontSize: mobile ? 14 : 14,
                       fontWeight: FontWeight.bold,
                     ),
                   ),
                 ),
               ),
 
-              const SizedBox(width: 10),
-
-              // =================================================
-              // VALOR / AVANCE / PESO
-              // =================================================
+              const SizedBox(width: 8),
 
               SizedBox(
-                width: 155,
+                width: metricWidth,
                 child: Column(
-                  crossAxisAlignment:
-                      CrossAxisAlignment.end,
+                  crossAxisAlignment: CrossAxisAlignment.end,
                   children: [
                     Text(
                       'US\$ ${_valor(item.valor)}',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
                       textAlign: TextAlign.right,
-                      style: const TextStyle(
-                        fontSize: 14,
+                      style: TextStyle(
+                        fontSize: mobile ? 13 : 14,
                         fontWeight: FontWeight.bold,
                       ),
                     ),
@@ -188,6 +155,8 @@ class TopClientesWidget extends StatelessWidget {
                     ),
                     Text(
                       '${_peso(item.pesoCobre)} Kg',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
                       textAlign: TextAlign.right,
                       style: const TextStyle(
                         fontSize: 12,
@@ -203,29 +172,18 @@ class TopClientesWidget extends StatelessWidget {
 
           const SizedBox(height: 8),
 
-          // =====================================================
-          // BARRA
-          // =====================================================
-
           Padding(
-            padding: const EdgeInsets.only(
-              left: 46,
+            padding: EdgeInsets.only(
+              left: mobile ? 42 : 46,
             ),
             child: ClipRRect(
-              borderRadius:
-                  BorderRadius.circular(30),
+              borderRadius: BorderRadius.circular(30),
               child: LinearProgressIndicator(
-                minHeight: 14,
-                value: progreso.clamp(
-                  0.0,
-                  1.0,
-                ),
-                backgroundColor:
-                    Colors.grey.shade300,
+                minHeight: mobile ? 12 : 14,
+                value: progreso.clamp(0.0, 1.0),
+                backgroundColor: Colors.grey.shade300,
                 valueColor:
-                    AlwaysStoppedAnimation<Color>(
-                  color,
-                ),
+                    AlwaysStoppedAnimation<Color>(color),
               ),
             ),
           ),
@@ -234,142 +192,169 @@ class TopClientesWidget extends StatelessWidget {
     );
   }
 
-  // ==========================================================
-  // VER TODOS
-  // ==========================================================
-
   void _verTodos(BuildContext context) {
-    if (clientes.isEmpty) {
-      return;
-    }
+    if (clientes.isEmpty) return;
 
     final total = clientes.fold<double>(
       0,
       (suma, item) => suma + item.valor,
     );
 
-    final maximo = clientes.isEmpty
-        ? 0.0
-        : clientes.first.valor;
+    final maximo = clientes.first.valor;
+
+    final size = MediaQuery.sizeOf(context);
+    final mobile = size.width < 650;
 
     showDialog(
       context: context,
       builder: (dialogContext) {
         return Dialog(
-          insetPadding:
-              const EdgeInsets.all(20),
+          insetPadding: EdgeInsets.all(
+            mobile ? 10 : 20,
+          ),
           shape: RoundedRectangleBorder(
-            borderRadius:
-                BorderRadius.circular(20),
+            borderRadius: BorderRadius.circular(20),
           ),
           child: SizedBox(
-            width: 900,
-            height: 700,
+            width: mobile
+                ? size.width - 20
+                : 900,
+            height: mobile
+                ? size.height - 80
+                : 700,
             child: Padding(
-              padding:
-                  const EdgeInsets.all(22),
+              padding: EdgeInsets.all(
+                mobile ? 14 : 22,
+              ),
               child: Column(
                 children: [
-                  // =================================================
-                  // ENCABEZADO
-                  // =================================================
-
-                  Row(
-                    children: [
-                      const Icon(
-                        Icons.emoji_events,
-                        color: Colors.amber,
-                        size: 30,
-                      ),
-
-                      const SizedBox(width: 10),
-
-                      const Expanded(
-                        child: Text(
-                          'Todos los Clientes',
-                          style: TextStyle(
-                            fontSize: 22,
-                            fontWeight:
-                                FontWeight.bold,
-                          ),
+                  if (mobile)
+                    Column(
+                      children: [
+                        Row(
+                          children: [
+                            const Icon(
+                              Icons.emoji_events,
+                              color: Colors.amber,
+                              size: 28,
+                            ),
+                            const SizedBox(width: 8),
+                            const Expanded(
+                              child: Text(
+                                'Todos los Clientes',
+                                style: TextStyle(
+                                  fontSize: 20,
+                                  fontWeight: FontWeight.bold,
+                                ),
+                              ),
+                            ),
+                            IconButton(
+                              tooltip: 'Cerrar',
+                              onPressed: () {
+                                Navigator.of(dialogContext).pop();
+                              },
+                              icon: const Icon(Icons.close),
+                            ),
+                          ],
                         ),
-                      ),
-
-                      // =================================================
-                      // IMPRIMIR
-                      // =================================================
-
-                      ElevatedButton.icon(
-                        onPressed: () {
-                          _imprimir(
-                            dialogContext,
-                          );
-                        },
-                        icon: const Icon(
-                          Icons.print,
-                          size: 18,
-                        ),
-                        label: const Text(
-                          'Imprimir',
-                        ),
-                        style:
-                            ElevatedButton.styleFrom(
-                          backgroundColor:
-                              const Color(
-                            0xff2855C5,
-                          ),
-                          foregroundColor:
-                              Colors.white,
-                          elevation: 0,
-                          shape:
-                              RoundedRectangleBorder(
-                            borderRadius:
-                                BorderRadius.circular(
-                              10,
+                        const SizedBox(height: 4),
+                        SizedBox(
+                          width: double.infinity,
+                          child: ElevatedButton.icon(
+                            onPressed: () {
+                              _imprimir(dialogContext);
+                            },
+                            icon: const Icon(
+                              Icons.print,
+                              size: 18,
+                            ),
+                            label: const Text(
+                              'Imprimir',
+                              style: TextStyle(
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor:
+                                  const Color(0xff2855C5),
+                              foregroundColor: Colors.white,
+                              padding:
+                                  const EdgeInsets.symmetric(
+                                vertical: 12,
+                              ),
+                              shape:
+                                  RoundedRectangleBorder(
+                                borderRadius:
+                                    BorderRadius.circular(10),
+                              ),
                             ),
                           ),
                         ),
-                      ),
-
-                      const SizedBox(width: 8),
-
-                      // =================================================
-                      // CERRAR
-                      // =================================================
-
-                      IconButton(
-                        tooltip: 'Cerrar',
-                        onPressed: () {
-                          Navigator.of(
-                            dialogContext,
-                          ).pop();
-                        },
-                        icon: const Icon(
-                          Icons.close,
+                      ],
+                    )
+                  else
+                    Row(
+                      children: [
+                        const Icon(
+                          Icons.emoji_events,
+                          color: Colors.amber,
+                          size: 30,
                         ),
-                      ),
-                    ],
-                  ),
+                        const SizedBox(width: 10),
+                        const Expanded(
+                          child: Text(
+                            'Todos los Clientes',
+                            style: TextStyle(
+                              fontSize: 22,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                        ),
+                        ElevatedButton.icon(
+                          onPressed: () {
+                            _imprimir(dialogContext);
+                          },
+                          icon: const Icon(
+                            Icons.print,
+                            size: 18,
+                          ),
+                          label: const Text('Imprimir'),
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor:
+                                const Color(0xff2855C5),
+                            foregroundColor: Colors.white,
+                            elevation: 0,
+                            shape:
+                                RoundedRectangleBorder(
+                              borderRadius:
+                                  BorderRadius.circular(10),
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        IconButton(
+                          tooltip: 'Cerrar',
+                          onPressed: () {
+                            Navigator.of(dialogContext).pop();
+                          },
+                          icon: const Icon(Icons.close),
+                        ),
+                      ],
+                    ),
 
                   const Divider(),
-
                   const SizedBox(height: 8),
-
-                  // =================================================
-                  // LISTA COMPLETA
-                  // =================================================
 
                   Expanded(
                     child: ListView.builder(
-                      itemCount:
-                          clientes.length,
-                      itemBuilder:
-                          (context, index) {
+                      itemCount: clientes.length,
+                      itemBuilder: (context, index) {
                         return _item(
                           item: clientes[index],
                           index: index,
                           total: total,
                           maximo: maximo,
+                          mobile: mobile,
                         );
                       },
                     ),
@@ -383,16 +368,8 @@ class TopClientesWidget extends StatelessWidget {
     );
   }
 
-  // ==========================================================
-  // IMPRIMIR REPORTE PDF
-  // ==========================================================
-
-  Future<void> _imprimir(
-    BuildContext context,
-  ) async {
-    if (clientes.isEmpty) {
-      return;
-    }
+  Future<void> _imprimir(BuildContext context) async {
+    if (clientes.isEmpty) return;
 
     final TopClientesPdfService servicio =
         TopClientesPdfService();
@@ -403,10 +380,6 @@ class TopClientesWidget extends StatelessWidget {
     );
   }
 
-  // ==========================================================
-  // BUILD
-  // ==========================================================
-
   @override
   Widget build(BuildContext context) {
     if (clientes.isEmpty) {
@@ -414,20 +387,16 @@ class TopClientesWidget extends StatelessWidget {
         child: const Center(
           child: Padding(
             padding: EdgeInsets.all(30),
-            child: Text(
-              'No existen clientes.',
-            ),
+            child: Text('No existen clientes.'),
           ),
         ),
       );
     }
 
-    // ==========================================================
-    // SOLO TOP 10
-    // ==========================================================
+    final size = MediaQuery.sizeOf(context);
+    final mobile = size.width < 650;
 
-    final top10 =
-        clientes.take(10).toList();
+    final top10 = clientes.take(10).toList();
 
     final total = clientes.fold<double>(
       0,
@@ -439,111 +408,167 @@ class TopClientesWidget extends StatelessWidget {
     return Card(
       elevation: 8,
       shape: RoundedRectangleBorder(
-        borderRadius:
-            BorderRadius.circular(22),
+        borderRadius: BorderRadius.circular(22),
       ),
       child: Padding(
-        padding: const EdgeInsets.all(22),
+        padding: EdgeInsets.all(
+          mobile ? 14 : 22,
+        ),
         child: Column(
-          crossAxisAlignment:
-              CrossAxisAlignment.start,
+          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             // ====================================================
-            // CABECERA
+            // CABECERA RESPONSIVE
             // ====================================================
 
-            Row(
-              children: [
-                const Icon(
-                  Icons.emoji_events,
-                  color: Colors.amber,
-                  size: 30,
-                ),
-
-                const SizedBox(width: 10),
-
-                const Expanded(
-                  child: Text(
-                    'Top 10 Clientes',
-                    style: TextStyle(
-                      fontSize: 24,
-                      fontWeight:
-                          FontWeight.bold,
-                    ),
+            if (mobile)
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      const Icon(
+                        Icons.emoji_events,
+                        color: Colors.amber,
+                        size: 28,
+                      ),
+                      const SizedBox(width: 8),
+                      const Expanded(
+                        child: Text(
+                          'Top 10 Clientes',
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                            fontSize: 21,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                      ),
+                    ],
                   ),
-                ),
 
-                // =================================================
-                // VER TODOS
-                // =================================================
+                  const SizedBox(height: 12),
 
-                TextButton.icon(
-                  onPressed: () {
-                    _verTodos(context);
-                  },
-                  icon: const Icon(
-                    Icons.visibility,
-                    size: 18,
+                  Row(
+                    children: [
+                      Expanded(
+                        child: TextButton.icon(
+                          onPressed: () {
+                            _verTodos(context);
+                          },
+                          icon: const Icon(
+                            Icons.visibility,
+                            size: 18,
+                          ),
+                          label: const Text(
+                            'Ver todos',
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                      ),
+
+                      const SizedBox(width: 6),
+
+                      Expanded(
+                        child: ElevatedButton.icon(
+                          onPressed: () {
+                            _imprimir(context);
+                          },
+                          icon: const Icon(
+                            Icons.print,
+                            size: 18,
+                          ),
+                          label: const Text(
+                            'Imprimir',
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                          style:
+                              ElevatedButton.styleFrom(
+                            backgroundColor:
+                                const Color(0xff2855C5),
+                            foregroundColor:
+                                Colors.white,
+                            elevation: 0,
+                            padding:
+                                const EdgeInsets.symmetric(
+                              vertical: 11,
+                            ),
+                            shape:
+                                RoundedRectangleBorder(
+                              borderRadius:
+                                  BorderRadius.circular(10),
+                            ),
+                          ),
+                        ),
+                      ),
+                    ],
                   ),
-                  label: const Text(
-                    'Ver todos',
+                ],
+              )
+            else
+              Row(
+                children: [
+                  const Icon(
+                    Icons.emoji_events,
+                    color: Colors.amber,
+                    size: 30,
                   ),
-                ),
-
-                const SizedBox(width: 6),
-
-                // =================================================
-                // IMPRIMIR
-                // =================================================
-
-                ElevatedButton.icon(
-                  onPressed: () {
-                    _imprimir(context);
-                  },
-                  icon: const Icon(
-                    Icons.print,
-                    size: 18,
-                  ),
-                  label: const Text(
-                    'Imprimir',
-                  ),
-                  style:
-                      ElevatedButton.styleFrom(
-                    backgroundColor:
-                        const Color(
-                      0xff2855C5,
-                    ),
-                    foregroundColor:
-                        Colors.white,
-                    elevation: 0,
-                    shape:
-                        RoundedRectangleBorder(
-                      borderRadius:
-                          BorderRadius.circular(
-                        10,
+                  const SizedBox(width: 10),
+                  const Expanded(
+                    child: Text(
+                      'Top 10 Clientes',
+                      style: TextStyle(
+                        fontSize: 24,
+                        fontWeight: FontWeight.bold,
                       ),
                     ),
                   ),
-                ),
-              ],
-            ),
+                  TextButton.icon(
+                    onPressed: () {
+                      _verTodos(context);
+                    },
+                    icon: const Icon(
+                      Icons.visibility,
+                      size: 18,
+                    ),
+                    label: const Text('Ver todos'),
+                  ),
+                  const SizedBox(width: 6),
+                  ElevatedButton.icon(
+                    onPressed: () {
+                      _imprimir(context);
+                    },
+                    icon: const Icon(
+                      Icons.print,
+                      size: 18,
+                    ),
+                    label: const Text('Imprimir'),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor:
+                          const Color(0xff2855C5),
+                      foregroundColor: Colors.white,
+                      elevation: 0,
+                      shape: RoundedRectangleBorder(
+                        borderRadius:
+                            BorderRadius.circular(10),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
 
-            const SizedBox(height: 25),
-
-            // ====================================================
-            // TOP 10
-            // ====================================================
+            const SizedBox(height: 20),
 
             Expanded(
               child: ListView.builder(
                 itemCount: top10.length,
-                itemBuilder:
-                    (context, index) {
+                itemBuilder: (context, index) {
                   return _item(
                     item: top10[index],
                     index: index,
                     total: total,
                     maximo: maximo,
+                    mobile: mobile,
                   );
                 },
               ),

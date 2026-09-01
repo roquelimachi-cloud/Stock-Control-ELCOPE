@@ -26,13 +26,8 @@ class _MisProduccionesWidgetState
   @override
   void initState() {
     super.initState();
-
     future = service.obtener();
   }
-
-  // =========================================================
-  // ACTUALIZAR
-  // =========================================================
 
   Future<void> _actualizar() async {
     setState(() {
@@ -42,19 +37,11 @@ class _MisProduccionesWidgetState
     await future;
   }
 
-  // =========================================================
-  // VISTA
-  // =========================================================
-
   @override
   Widget build(BuildContext context) {
     return FutureBuilder<List<ProduccionModel>>(
       future: future,
       builder: (context, snapshot) {
-        // =====================================================
-        // CARGANDO
-        // =====================================================
-
         if (snapshot.connectionState ==
             ConnectionState.waiting) {
           return const Card(
@@ -66,10 +53,6 @@ class _MisProduccionesWidgetState
             ),
           );
         }
-
-        // =====================================================
-        // ERROR
-        // =====================================================
 
         if (snapshot.hasError) {
           return Card(
@@ -90,178 +73,214 @@ class _MisProduccionesWidgetState
 
         final lista = snapshot.data ?? [];
 
-        // =====================================================
-        // DEBUG
-        // =====================================================
-
-        debugPrint(
-          "=================================",
-        );
-
         debugPrint(
           "Usuario   : ${Sesion.usuario}",
         );
-
         debugPrint(
           "Nombre    : ${Sesion.nombre}",
         );
-
         debugPrint(
           "Rol       : ${Sesion.rol}",
         );
-
         debugPrint(
           "Vendedor  : ${Sesion.vendedor}",
         );
-
         debugPrint(
           "Cantidad OP: ${lista.length}",
         );
 
-        debugPrint(
-          "=================================",
-        );
-
-        for (final op in lista) {
-          debugPrint(
-            "${op.numeroProduccion} - ${op.representante}",
-          );
-        }
-
-        // =====================================================
-        // TARJETA
-        // =====================================================
+        final mobile =
+            MediaQuery.sizeOf(context).width < 650;
 
         return Card(
           elevation: 5,
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(18),
           ),
-
           child: SizedBox(
-            height: 500,
-
+            height: mobile ? 560 : 500,
             child: Column(
               children: [
-                const SizedBox(height: 15),
-
-                // =================================================
-                // ENCABEZADO
-                // =================================================
+                SizedBox(height: mobile ? 12 : 15),
 
                 Padding(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 20,
+                  padding: EdgeInsets.symmetric(
+                    horizontal: mobile ? 14 : 20,
                   ),
-
-                  child: Row(
-                    children: [
-                      // ===========================================
-                      // ICONO
-                      // ===========================================
-
-                      const Icon(
-                        Icons.factory_outlined,
-                        color: Colors.indigo,
-                        size: 28,
-                      ),
-
-                      const SizedBox(width: 10),
-
-                      // ===========================================
-                      // TITULO
-                      // ===========================================
-
-                      Expanded(
-                        child: Text(
-                          "Mis Producciones (${lista.length})",
-                          style: const TextStyle(
-                            fontSize: 22,
-                            fontWeight: FontWeight.bold,
-                          ),
-                        ),
-                      ),
-
-                      // ===========================================
-                      // VISTA PRELIMINAR
-                      // ===========================================
-
-                      ElevatedButton.icon(
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor:
-                              const Color(0xFF007A45),
-                          foregroundColor:
-                              Colors.white,
-
-                          padding:
-                              const EdgeInsets.symmetric(
-                            horizontal: 16,
-                            vertical: 12,
-                          ),
-
-                          shape:
-                              RoundedRectangleBorder(
-                            borderRadius:
-                                BorderRadius.circular(
-                              10,
-                            ),
-                          ),
-                        ),
-
-                        icon: const Icon(
-                          Icons.visibility_outlined,
-                          size: 20,
-                        ),
-
-                        label: const Text(
-                          "Vista preliminar",
-                          style: TextStyle(
-                            fontWeight:
-                                FontWeight.bold,
-                          ),
-                        ),
-
-                        onPressed: lista.isEmpty
-                            ? null
-                            : () {
-                                Navigator.of(context)
-                                    .push(
-                                  MaterialPageRoute(
-                                    builder: (_) =>
-                                        MisProduccionesPreview(
-                                      producciones:
-                                          lista,
+                  child: mobile
+                      ? Column(
+                          crossAxisAlignment:
+                              CrossAxisAlignment.stretch,
+                          children: [
+                            Row(
+                              children: [
+                                const Icon(
+                                  Icons.factory_outlined,
+                                  color: Colors.indigo,
+                                  size: 27,
+                                ),
+                                const SizedBox(width: 8),
+                                Expanded(
+                                  child: Text(
+                                    "Mis Producciones (${lista.length})",
+                                    maxLines: 1,
+                                    overflow:
+                                        TextOverflow.ellipsis,
+                                    style: const TextStyle(
+                                      fontSize: 20,
+                                      fontWeight:
+                                          FontWeight.bold,
                                     ),
                                   ),
-                                );
-                              },
-                      ),
+                                ),
+                                IconButton(
+                                  tooltip: "Actualizar",
+                                  onPressed: _actualizar,
+                                  icon: const Icon(
+                                    Icons.refresh,
+                                    color: Colors.indigo,
+                                  ),
+                                ),
+                              ],
+                            ),
 
-                      const SizedBox(width: 8),
+                            const SizedBox(height: 8),
 
-                      // ===========================================
-                      // ACTUALIZAR
-                      // ===========================================
-
-                      IconButton(
-                        tooltip: "Actualizar",
-
-                        onPressed: _actualizar,
-
-                        icon: const Icon(
-                          Icons.refresh,
-                          color: Colors.indigo,
+                            SizedBox(
+                              width: double.infinity,
+                              child:
+                                  ElevatedButton.icon(
+                                style:
+                                    ElevatedButton.styleFrom(
+                                  backgroundColor:
+                                      const Color(
+                                    0xFF007A45,
+                                  ),
+                                  foregroundColor:
+                                      Colors.white,
+                                  padding:
+                                      const EdgeInsets.symmetric(
+                                    vertical: 12,
+                                  ),
+                                  shape:
+                                      RoundedRectangleBorder(
+                                    borderRadius:
+                                        BorderRadius.circular(
+                                      10,
+                                    ),
+                                  ),
+                                ),
+                                icon: const Icon(
+                                  Icons.visibility_outlined,
+                                  size: 20,
+                                ),
+                                label: const Text(
+                                  "Vista preliminar",
+                                  style: TextStyle(
+                                    fontWeight:
+                                        FontWeight.bold,
+                                  ),
+                                ),
+                                onPressed: lista.isEmpty
+                                    ? null
+                                    : () {
+                                        Navigator.of(
+                                          context,
+                                        ).push(
+                                          MaterialPageRoute(
+                                            builder: (_) =>
+                                                MisProduccionesPreview(
+                                              producciones:
+                                                  lista,
+                                            ),
+                                          ),
+                                        );
+                                      },
+                              ),
+                            ),
+                          ],
+                        )
+                      : Row(
+                          children: [
+                            const Icon(
+                              Icons.factory_outlined,
+                              color: Colors.indigo,
+                              size: 28,
+                            ),
+                            const SizedBox(width: 10),
+                            Expanded(
+                              child: Text(
+                                "Mis Producciones (${lista.length})",
+                                style: const TextStyle(
+                                  fontSize: 22,
+                                  fontWeight:
+                                      FontWeight.bold,
+                                ),
+                              ),
+                            ),
+                            ElevatedButton.icon(
+                              style:
+                                  ElevatedButton.styleFrom(
+                                backgroundColor:
+                                    const Color(
+                                  0xFF007A45,
+                                ),
+                                foregroundColor:
+                                    Colors.white,
+                                padding:
+                                    const EdgeInsets.symmetric(
+                                  horizontal: 16,
+                                  vertical: 12,
+                                ),
+                                shape:
+                                    RoundedRectangleBorder(
+                                  borderRadius:
+                                      BorderRadius.circular(
+                                    10,
+                                  ),
+                                ),
+                              ),
+                              icon: const Icon(
+                                Icons.visibility_outlined,
+                                size: 20,
+                              ),
+                              label: const Text(
+                                "Vista preliminar",
+                                style: TextStyle(
+                                  fontWeight:
+                                      FontWeight.bold,
+                                ),
+                              ),
+                              onPressed: lista.isEmpty
+                                  ? null
+                                  : () {
+                                      Navigator.of(
+                                        context,
+                                      ).push(
+                                        MaterialPageRoute(
+                                          builder: (_) =>
+                                              MisProduccionesPreview(
+                                            producciones:
+                                                lista,
+                                          ),
+                                        ),
+                                      );
+                                    },
+                            ),
+                            const SizedBox(width: 8),
+                            IconButton(
+                              tooltip: "Actualizar",
+                              onPressed: _actualizar,
+                              icon: const Icon(
+                                Icons.refresh,
+                                color: Colors.indigo,
+                              ),
+                            ),
+                          ],
                         ),
-                      ),
-                    ],
-                  ),
                 ),
 
                 const Divider(),
-
-                // =================================================
-                // TABLA
-                // =================================================
 
                 Expanded(
                   child: SfDataGrid(
@@ -269,19 +288,12 @@ class _MisProduccionesWidgetState
                         ProduccionMisOpDataSource(
                       lista,
                     ),
-
                     columnWidthMode:
                         ColumnWidthMode.none,
-
                     columns: [
-                      // ==========================================
-                      // OP
-                      // ==========================================
-
                       GridColumn(
                         width: 150,
                         columnName: 'op',
-
                         label: const Center(
                           child: Text(
                             "OP",
@@ -292,15 +304,9 @@ class _MisProduccionesWidgetState
                           ),
                         ),
                       ),
-
-                      // ==========================================
-                      // CLIENTE
-                      // ==========================================
-
                       GridColumn(
                         width: 280,
                         columnName: 'cliente',
-
                         label: const Center(
                           child: Text(
                             "Cliente",
@@ -311,15 +317,9 @@ class _MisProduccionesWidgetState
                           ),
                         ),
                       ),
-
-                      // ==========================================
-                      // ARTÍCULO
-                      // ==========================================
-
                       GridColumn(
                         width: 450,
                         columnName: 'articulo',
-
                         label: const Center(
                           child: Text(
                             "Artículo",
@@ -330,15 +330,9 @@ class _MisProduccionesWidgetState
                           ),
                         ),
                       ),
-
-                      // ==========================================
-                      // FECHA PRODUCCIÓN
-                      // ==========================================
-
                       GridColumn(
                         width: 120,
                         columnName: 'entrega',
-
                         label: const Center(
                           child: Text(
                             "Fecha Prod",
@@ -349,15 +343,9 @@ class _MisProduccionesWidgetState
                           ),
                         ),
                       ),
-
-                      // ==========================================
-                      // RETRASO
-                      // ==========================================
-
                       GridColumn(
                         width: 90,
                         columnName: 'retraso',
-
                         label: const Center(
                           child: Text(
                             "Retraso",
@@ -368,15 +356,9 @@ class _MisProduccionesWidgetState
                           ),
                         ),
                       ),
-
-                      // ==========================================
-                      // CANTIDAD
-                      // ==========================================
-
                       GridColumn(
                         width: 120,
                         columnName: 'cantidad',
-
                         label: const Center(
                           child: Text(
                             "Cantidad",
@@ -387,15 +369,9 @@ class _MisProduccionesWidgetState
                           ),
                         ),
                       ),
-
-                      // ==========================================
-                      // VALOR NETO
-                      // ==========================================
-
                       GridColumn(
                         width: 140,
                         columnName: 'valor',
-
                         label: const Center(
                           child: Text(
                             "Valor Neto",
@@ -406,15 +382,9 @@ class _MisProduccionesWidgetState
                           ),
                         ),
                       ),
-
-                      // ==========================================
-                      // PESO COBRE
-                      // ==========================================
-
                       GridColumn(
                         width: 130,
                         columnName: 'cobre',
-
                         label: const Center(
                           child: Text(
                             "Peso Cobre",
@@ -425,15 +395,9 @@ class _MisProduccionesWidgetState
                           ),
                         ),
                       ),
-
-                      // ==========================================
-                      // CANAL
-                      // ==========================================
-
                       GridColumn(
                         width: 120,
                         columnName: 'canal',
-
                         label: const Center(
                           child: Text(
                             "Canal",
@@ -444,15 +408,9 @@ class _MisProduccionesWidgetState
                           ),
                         ),
                       ),
-
-                      // ==========================================
-                      // CLASE
-                      // ==========================================
-
                       GridColumn(
                         width: 90,
                         columnName: 'clase',
-
                         label: const Center(
                           child: Text(
                             "Clase",
@@ -463,15 +421,9 @@ class _MisProduccionesWidgetState
                           ),
                         ),
                       ),
-
-                      // ==========================================
-                      // FAMILIA
-                      // ==========================================
-
                       GridColumn(
                         width: 150,
                         columnName: 'familia',
-
                         label: const Center(
                           child: Text(
                             "Familia",
@@ -482,15 +434,9 @@ class _MisProduccionesWidgetState
                           ),
                         ),
                       ),
-
-                      // ==========================================
-                      // ESTADO
-                      // ==========================================
-
                       GridColumn(
                         width: 130,
                         columnName: 'estado',
-
                         label: const Center(
                           child: Text(
                             "Estado",

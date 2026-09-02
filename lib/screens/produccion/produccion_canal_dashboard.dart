@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
-import 'package:syncfusion_flutter_charts/charts.dart';
 
 import '../../models/produccion/produccion_model.dart';
+import '../../services/pdf/pdf_canal_dashboard_service.dart';
 import '../../services/sesion.dart';
 
 class CanalResumen {
@@ -27,7 +27,10 @@ class ProduccionCanalDashboard extends StatelessWidget {
     required this.producciones,
   });
 
-  static const _ordenCanales = <String>[
+  static const Color verdeElcope = Color(0xFF08783B);
+  static const Color verdeClaro = Color(0xFFEAF5EE);
+
+  static const List<String> _ordenCanales = [
     'LIMA',
     'PROVINCIA',
     'LICITACION',
@@ -62,9 +65,11 @@ class ProduccionCanalDashboard extends StatelessWidget {
     resultado.sort((a, b) {
       final ia = _ordenCanales.indexOf(a.canal);
       final ib = _ordenCanales.indexOf(b.canal);
+
       if (ia != -1 && ib != -1) return ia.compareTo(ib);
       if (ia != -1) return -1;
       if (ib != -1) return 1;
+
       return b.monto.compareTo(a.monto);
     });
 
@@ -80,6 +85,7 @@ class ProduccionCanalDashboard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final data = _resumen();
+
     final totalProducciones = producciones.length;
     final totalMonto = producciones.fold<double>(
       0,
@@ -90,53 +96,111 @@ class ProduccionCanalDashboard extends StatelessWidget {
       (suma, op) => suma + (op.pesoCobre ?? 0),
     );
 
+    final nombre = Sesion.nombre.trim().isEmpty ? 'USUARIO' : Sesion.nombre;
+    final rol = Sesion.rol.trim().isEmpty ? 'USUARIO' : Sesion.rol;
+
     return Scaffold(
+      backgroundColor: Colors.white,
       appBar: AppBar(
+        backgroundColor: Colors.white,
+        foregroundColor: verdeElcope,
+        elevation: 0,
+        surfaceTintColor: Colors.white,
         leading: const BackButton(),
-        title: const Text('PRODUCCIÓN POR CANAL'),
+        title: const Text(
+          'PRODUCCIÓN POR CANAL',
+          style: TextStyle(
+            fontWeight: FontWeight.w800,
+            letterSpacing: .3,
+          ),
+        ),
         centerTitle: true,
-        backgroundColor: Colors.indigo,
-        foregroundColor: Colors.white,
+        actions: [
+          IconButton(
+            tooltip: 'Imprimir reporte',
+            icon: const Icon(Icons.print_outlined),
+            onPressed: () async {
+              final servicio = PdfCanalDashboardService();
+
+              await servicio.imprimir(
+                canales: data
+                    .map(
+                      (e) => CanalResumenPdf(
+                        canal: e.canal,
+                        producciones: e.producciones,
+                        monto: e.monto,
+                        peso: e.peso,
+                      ),
+                    )
+                    .toList(),
+                totalProducciones: totalProducciones,
+                totalMonto: totalMonto,
+                totalPeso: totalPeso,
+                usuario: nombre,
+                rol: rol,
+              );
+            },
+          ),
+          const SizedBox(width: 8),
+        ],
       ),
       body: LayoutBuilder(
         builder: (context, constraints) {
-          final movil = constraints.maxWidth < 800;
+          final ancho = constraints.maxWidth;
+          final movil = ancho < 760;
+          final tablet = ancho >= 760 && ancho < 1150;
 
           return SingleChildScrollView(
-            padding: EdgeInsets.all(movil ? 12 : 20),
+            padding: EdgeInsets.fromLTRB(
+              movil ? 12 : 28,
+              8,
+              movil ? 12 : 28,
+              24,
+            ),
             child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                Text(
-                  'Dashboard preliminar',
-                  style: TextStyle(
-                    fontSize: movil ? 24 : 30,
-                    fontWeight: FontWeight.bold,
-                  ),
+                _cabecera(
+                  movil: movil,
+                  nombre: nombre,
+                  rol: rol,
                 ),
-                const SizedBox(height: 4),
-                Text(
-                  '${Sesion.rol} • ${Sesion.nombre}',
-                  style: const TextStyle(
-                    fontSize: 15,
-                    color: Colors.grey,
-                  ),
-                ),
-                const SizedBox(height: 20),
+                const SizedBox(height: 18),
                 _kpis(
-                  movil,
-                  totalProducciones,
-                  totalMonto,
-                  totalPeso,
-                  data.length,
+                  movil: movil,
+                  tablet: tablet,
+                  totalProducciones: totalProducciones,
+                  totalMonto: totalMonto,
+                  totalPeso: totalPeso,
+                  canales: data.length,
                 ),
-                const SizedBox(height: 20),
+                const SizedBox(height: 18),
                 if (movil)
                   Column(
                     children: [
-                      _graficoMonto(data, totalMonto, 430),
-                      const SizedBox(height: 16),
-                      _graficoPeso(data, totalPeso, 430),
+                      _panelBarras(
+                        titulo: 'MONTO POR CANAL',
+                        canales: data,
+                        maximo: data.isEmpty
+                            ? 0
+                            : data
+                                .map((e) => e.monto)
+                                .reduce((a, b) => a > b ? a : b),
+                        obtenerValor: (e) => e.monto,
+                        formatear: (e) => _moneda(e),
+                      ),
+                      const SizedBox(height: 14),
+                      _panelBarras(
+                        titulo: 'PESO POR CANAL',
+                        canales: data,
+                        maximo: data.isEmpty
+                            ? 0
+                            : data
+                                .map((e) => e.peso)
+                                .reduce((a, b) => a > b ? a : b),
+                        obtenerValor: (e) => e.peso,
+                        formatear: (e) => '${_numero(e)} Kg',
+                      ),
                     ],
                   )
                 else
@@ -144,21 +208,64 @@ class ProduccionCanalDashboard extends StatelessWidget {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Expanded(
-                        child: _graficoMonto(data, totalMonto, 470),
+                        child: _panelBarras(
+                          titulo: 'MONTO POR CANAL',
+                          canales: data,
+                          maximo: data.isEmpty
+                              ? 0
+                              : data
+                                  .map((e) => e.monto)
+                                  .reduce((a, b) => a > b ? a : b),
+                          obtenerValor: (e) => e.monto,
+                          formatear: (e) => _moneda(e),
+                        ),
                       ),
                       const SizedBox(width: 16),
                       Expanded(
-                        child: _graficoPeso(data, totalPeso, 470),
+                        child: _panelBarras(
+                          titulo: 'PESO POR CANAL',
+                          canales: data,
+                          maximo: data.isEmpty
+                              ? 0
+                              : data
+                                  .map((e) => e.peso)
+                                  .reduce((a, b) => a > b ? a : b),
+                          obtenerValor: (e) => e.peso,
+                          formatear: (e) => '${_numero(e)} Kg',
+                        ),
                       ),
                     ],
                   ),
-                const SizedBox(height: 20),
-                _detalle(data, totalMonto, totalPeso, movil),
-                const SizedBox(height: 16),
-                const Center(
-                  child: Text(
+                const SizedBox(height: 18),
+                _detalle(
+                  data: data,
+                  totalMonto: totalMonto,
+                  totalPeso: totalPeso,
+                  movil: movil,
+                ),
+                const SizedBox(height: 14),
+                Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 14,
+                    vertical: 11,
+                  ),
+                  decoration: const BoxDecoration(
+                    color: verdeClaro,
+                    border: Border(
+                      top: BorderSide(
+                        color: verdeElcope,
+                        width: 1.2,
+                      ),
+                    ),
+                  ),
+                  child: const Text(
                     'Los datos mostrados son preliminares y pueden variar.',
-                    style: TextStyle(color: Colors.grey),
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                      color: verdeElcope,
+                      fontStyle: FontStyle.italic,
+                      fontWeight: FontWeight.w600,
+                    ),
                   ),
                 ),
               ],
@@ -169,57 +276,383 @@ class ProduccionCanalDashboard extends StatelessWidget {
     );
   }
 
-  Widget _kpis(
-    bool movil,
-    int producciones,
-    double monto,
-    double peso,
-    int canales,
-  ) {
-    final cards = [
-      _KpiData(Icons.assignment, 'Total Producciones', '$producciones'),
-      _KpiData(Icons.attach_money, 'Monto Total', _moneda(monto)),
-      _KpiData(Icons.scale, 'Peso Total', '${_numero(peso)} Kg'),
-      _KpiData(Icons.groups, 'Canales', '$canales'),
+  Widget _cabecera({
+    required bool movil,
+    required String nombre,
+    required String rol,
+  }) {
+    if (movil) {
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Row(
+            children: [
+              _logoElcope(size: 48),
+              const SizedBox(width: 10),
+              const Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'ELCOPE',
+                      style: TextStyle(
+                        color: verdeElcope,
+                        fontSize: 25,
+                        fontWeight: FontWeight.w900,
+                        letterSpacing: .5,
+                      ),
+                    ),
+                    Text(
+                      'EXCELENCIA EN CONDUCTORES ELÉCTRICOS',
+                      style: TextStyle(
+                        color: verdeElcope,
+                        fontSize: 7.5,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          const Text(
+            'PRODUCCIÓN POR CANAL',
+            style: TextStyle(
+              color: verdeElcope,
+              fontSize: 23,
+              fontWeight: FontWeight.w900,
+            ),
+          ),
+          const Text(
+            'Dashboard preliminar',
+            style: TextStyle(
+              fontSize: 14,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+          const SizedBox(height: 7),
+          Text(
+            'Usuario: $nombre  •  Rol: $rol',
+            style: const TextStyle(
+              color: Colors.black54,
+              fontSize: 12,
+            ),
+          ),
+          const SizedBox(height: 12),
+          Container(height: 3, color: verdeElcope),
+        ],
+      );
+    }
+
+    return Column(
+      children: [
+        Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            _logoElcope(size: 62),
+            const SizedBox(width: 14),
+            const Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'ELCOPE',
+                    style: TextStyle(
+                      color: verdeElcope,
+                      fontSize: 34,
+                      fontWeight: FontWeight.w900,
+                      letterSpacing: .7,
+                    ),
+                  ),
+                  Text(
+                    'EXCELENCIA EN CONDUCTORES ELÉCTRICOS',
+                    style: TextStyle(
+                      color: verdeElcope,
+                      fontSize: 10,
+                      fontWeight: FontWeight.w600,
+                      letterSpacing: .3,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.end,
+              children: [
+                Text(
+                  DateFormat('dd/MM/yyyy HH:mm').format(DateTime.now()),
+                  style: const TextStyle(
+                    fontSize: 12,
+                    color: Colors.black87,
+                  ),
+                ),
+                const SizedBox(height: 3),
+                Text(
+                  'Usuario: $nombre',
+                  style: const TextStyle(fontSize: 12),
+                ),
+                Text(
+                  'Rol: $rol',
+                  style: const TextStyle(fontSize: 12),
+                ),
+              ],
+            ),
+          ],
+        ),
+        const SizedBox(height: 8),
+        const Center(
+          child: Text(
+            'PRODUCCIÓN POR CANAL',
+            style: TextStyle(
+              color: verdeElcope,
+              fontSize: 29,
+              fontWeight: FontWeight.w900,
+              letterSpacing: .4,
+            ),
+          ),
+        ),
+        const Center(
+          child: Text(
+            'Dashboard preliminar',
+            style: TextStyle(
+              fontSize: 16,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+        ),
+        const SizedBox(height: 12),
+        Container(height: 3, color: verdeElcope),
+      ],
+    );
+  }
+
+  Widget _logoElcope({required double size}) {
+    return Container(
+      width: size,
+      height: size,
+      decoration: BoxDecoration(
+        color: verdeElcope,
+        borderRadius: BorderRadius.circular(size * .08),
+      ),
+      alignment: Alignment.center,
+      child: Text(
+        'E',
+        style: TextStyle(
+          color: Colors.white,
+          fontSize: size * .62,
+          fontWeight: FontWeight.w900,
+          fontStyle: FontStyle.italic,
+        ),
+      ),
+    );
+  }
+
+  Widget _kpis({
+    required bool movil,
+    required bool tablet,
+    required int totalProducciones,
+    required double totalMonto,
+    required double totalPeso,
+    required int canales,
+  }) {
+    final items = [
+      _KpiData(
+        Icons.inventory_2_outlined,
+        'Total Producciones',
+        '$totalProducciones',
+      ),
+      _KpiData(
+        Icons.attach_money,
+        'Monto Total',
+        _moneda(totalMonto),
+      ),
+      _KpiData(
+        Icons.scale_outlined,
+        'Peso Total',
+        '${_numero(totalPeso)} Kg',
+      ),
+      _KpiData(
+        Icons.pie_chart_outline,
+        'Canales',
+        '$canales',
+      ),
     ];
 
-    return Wrap(
-      spacing: 14,
-      runSpacing: 14,
-      children: cards
-          .map(
-            (e) => SizedBox(
-              width: movil ? double.infinity : 250,
-              child: Card(
-                elevation: 3,
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(16),
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final columnas = movil ? 1 : (tablet ? 2 : 4);
+        final espacio = 14.0;
+        final ancho =
+            (constraints.maxWidth - ((columnas - 1) * espacio)) / columnas;
+
+        return Wrap(
+          spacing: espacio,
+          runSpacing: espacio,
+          children: items.map((item) {
+            return SizedBox(
+              width: ancho,
+              child: _kpiCard(item),
+            );
+          }).toList(),
+        );
+      },
+    );
+  }
+
+  Widget _kpiCard(_KpiData item) {
+    return Container(
+      height: 106,
+      padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 14),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        border: Border.all(
+          color: verdeElcope.withOpacity(.30),
+          width: 1.2,
+        ),
+        borderRadius: BorderRadius.circular(10),
+      ),
+      child: Row(
+        children: [
+          Container(
+            width: 52,
+            height: 52,
+            decoration: BoxDecoration(
+              color: verdeClaro,
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: Icon(
+              item.icon,
+              color: verdeElcope,
+              size: 30,
+            ),
+          ),
+          const SizedBox(width: 14),
+          Expanded(
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  item.titulo,
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    color: Colors.black54,
+                    fontSize: 13,
+                  ),
                 ),
-                child: Padding(
-                  padding: const EdgeInsets.all(18),
-                  child: Row(
+                const SizedBox(height: 4),
+                FittedBox(
+                  fit: BoxFit.scaleDown,
+                  alignment: Alignment.centerLeft,
+                  child: Text(
+                    item.valor,
+                    style: const TextStyle(
+                      color: verdeElcope,
+                      fontSize: 22,
+                      fontWeight: FontWeight.w900,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _panelBarras({
+    required String titulo,
+    required List<CanalResumen> canales,
+    required double maximo,
+    required double Function(CanalResumen) obtenerValor,
+    required String Function(double) formatear,
+  }) {
+    return Container(
+      padding: const EdgeInsets.only(bottom: 16),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        border: Border.all(
+          color: verdeElcope.withOpacity(.45),
+          width: 1.1,
+        ),
+        borderRadius: BorderRadius.circular(10),
+      ),
+      clipBehavior: Clip.antiAlias,
+      child: Column(
+        children: [
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.symmetric(
+              horizontal: 14,
+              vertical: 10,
+            ),
+            color: verdeElcope,
+            child: Text(
+              titulo,
+              textAlign: TextAlign.center,
+              style: const TextStyle(
+                color: Colors.white,
+                fontSize: 17,
+                fontWeight: FontWeight.w900,
+                letterSpacing: .2,
+              ),
+            ),
+          ),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(22, 18, 22, 2),
+            child: Column(
+              children: canales.map((e) {
+                final valor = obtenerValor(e);
+                final proporcion = maximo <= 0
+                    ? 0.0
+                    : (valor / maximo).clamp(0.0, 1.0);
+
+                return Padding(
+                  padding: const EdgeInsets.only(bottom: 16),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
-                      CircleAvatar(
-                        radius: 25,
-                        backgroundColor: Colors.indigo.withOpacity(.1),
-                        child: Icon(e.icon, color: Colors.indigo),
+                      Row(
+                        children: [
+                          SizedBox(
+                            width: 110,
+                            child: Text(
+                              e.canal,
+                              style: const TextStyle(
+                                fontWeight: FontWeight.w800,
+                                fontSize: 13,
+                              ),
+                            ),
+                          ),
+                          Expanded(
+                            child: Text(
+                              formatear(valor),
+                              textAlign: TextAlign.right,
+                              style: const TextStyle(
+                                fontSize: 12,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                          ),
+                        ],
                       ),
-                      const SizedBox(width: 12),
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
+                      const SizedBox(height: 6),
+                      ClipRRect(
+                        borderRadius: BorderRadius.circular(5),
+                        child: Stack(
                           children: [
-                            Text(e.titulo, style: const TextStyle(color: Colors.grey)),
-                            const SizedBox(height: 4),
-                            FittedBox(
-                              fit: BoxFit.scaleDown,
-                              alignment: Alignment.centerLeft,
-                              child: Text(
-                                e.valor,
-                                style: const TextStyle(
-                                  fontSize: 21,
-                                  fontWeight: FontWeight.bold,
-                                ),
+                            Container(
+                              height: 12,
+                              color: Colors.grey.shade200,
+                            ),
+                            FractionallySizedBox(
+                              widthFactor: proporcion,
+                              child: Container(
+                                height: 12,
+                                color: verdeElcope,
                               ),
                             ),
                           ],
@@ -227,201 +660,177 @@ class ProduccionCanalDashboard extends StatelessWidget {
                       ),
                     ],
                   ),
-                ),
+                );
+              }).toList(),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _detalle({
+    required List<CanalResumen> data,
+    required double totalMonto,
+    required double totalPeso,
+    required bool movil,
+  }) {
+    return Container(
+      decoration: BoxDecoration(
+        color: Colors.white,
+        border: Border.all(
+          color: verdeElcope.withOpacity(.45),
+          width: 1.1,
+        ),
+        borderRadius: BorderRadius.circular(10),
+      ),
+      clipBehavior: Clip.antiAlias,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Container(
+            color: verdeElcope,
+            padding: const EdgeInsets.symmetric(
+              horizontal: 14,
+              vertical: 10,
+            ),
+            child: const Text(
+              'DETALLE POR CANAL',
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                color: Colors.white,
+                fontSize: 17,
+                fontWeight: FontWeight.w900,
               ),
             ),
-          )
-          .toList(),
-    );
-  }
+          ),
+          if (movil)
+            _detalleMovil(
+              data: data,
+              totalMonto: totalMonto,
+              totalPeso: totalPeso,
+            )
+          else
+            SingleChildScrollView(
+              scrollDirection: Axis.horizontal,
+              child: DataTable(
+                headingRowColor:
+                    WidgetStateProperty.all(verdeClaro),
+                dataRowMinHeight: 42,
+                dataRowMaxHeight: 48,
+                columnSpacing: 28,
+                headingTextStyle: const TextStyle(
+                  color: Colors.black,
+                  fontWeight: FontWeight.w900,
+                  fontSize: 12,
+                ),
+                columns: const [
+                  DataColumn(label: Text('Canal')),
+                  DataColumn(label: Text('OP')),
+                  DataColumn(label: Text('Monto')),
+                  DataColumn(label: Text('% Monto')),
+                  DataColumn(label: Text('Peso')),
+                  DataColumn(label: Text('% Peso')),
+                ],
+                rows: data.map((e) {
+                  final porcentajeMonto =
+                      totalMonto == 0 ? 0 : e.monto / totalMonto * 100;
+                  final porcentajePeso =
+                      totalPeso == 0 ? 0 : e.peso / totalPeso * 100;
 
-  Widget _graficoMonto(List<CanalResumen> data, double total, double alto) {
-    return _chartCard(
-      'Monto por Canal',
-      alto,
-      SfCartesianChart(
-        primaryXAxis: CategoryAxis(),
-        primaryYAxis: NumericAxis(
-          numberFormat: NumberFormat.compactCurrency(
-            symbol: 'US\$ ',
-            decimalDigits: 0,
-          ),
-        ),
-        tooltipBehavior: TooltipBehavior(enable: true),
-        series: <CartesianSeries<CanalResumen, String>>[
-          BarSeries<CanalResumen, String>(
-            dataSource: data,
-            xValueMapper: (e, _) => e.canal,
-            yValueMapper: (e, _) => e.monto,
-            dataLabelSettings: const DataLabelSettings(
-              isVisible: true,
-              labelAlignment: ChartDataLabelAlignment.outer,
+                  return DataRow(
+                    cells: [
+                      DataCell(Text(
+                        e.canal,
+                        style: const TextStyle(fontWeight: FontWeight.w700),
+                      )),
+                      DataCell(Text('${e.producciones}')),
+                      DataCell(Text(_moneda(e.monto))),
+                      DataCell(Text('${porcentajeMonto.toStringAsFixed(1)}%')),
+                      DataCell(Text('${_numero(e.peso)} Kg')),
+                      DataCell(Text('${porcentajePeso.toStringAsFixed(1)}%')),
+                    ],
+                  );
+                }).toList(),
+              ),
             ),
-            borderRadius: const BorderRadius.all(Radius.circular(5)),
-            color: Colors.indigo,
-          ),
         ],
       ),
     );
   }
 
-  Widget _graficoPeso(List<CanalResumen> data, double total, double alto) {
-    return _chartCard(
-      'Peso por Canal',
-      alto,
-      SfCartesianChart(
-        primaryXAxis: CategoryAxis(),
-        primaryYAxis: NumericAxis(
-          numberFormat: NumberFormat('#,##0'),
-          title: AxisTitle(text: 'Kg'),
-        ),
-        tooltipBehavior: TooltipBehavior(enable: true),
-        series: <CartesianSeries<CanalResumen, String>>[
-          BarSeries<CanalResumen, String>(
-            dataSource: data,
-            xValueMapper: (e, _) => e.canal,
-            yValueMapper: (e, _) => e.peso,
-            dataLabelSettings: const DataLabelSettings(
-              isVisible: true,
-              labelAlignment: ChartDataLabelAlignment.outer,
-            ),
-            borderRadius: const BorderRadius.all(Radius.circular(5)),
-            color: Colors.teal,
-          ),
-        ],
-      ),
-    );
-  }
+  Widget _detalleMovil({
+    required List<CanalResumen> data,
+    required double totalMonto,
+    required double totalPeso,
+  }) {
+    return Column(
+      children: data.map((e) {
+        final porcentajeMonto =
+            totalMonto == 0 ? 0 : e.monto / totalMonto * 100;
+        final porcentajePeso =
+            totalPeso == 0 ? 0 : e.peso / totalPeso * 100;
 
-  Widget _chartCard(String titulo, double alto, Widget chart) {
-    return Card(
-      elevation: 3,
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(18),
-      ),
-      child: Padding(
-        padding: const EdgeInsets.fromLTRB(18, 16, 18, 10),
-        child: SizedBox(
-          height: alto,
+        return Container(
+          width: double.infinity,
+          padding: const EdgeInsets.all(14),
+          decoration: const BoxDecoration(
+            border: Border(
+              bottom: BorderSide(color: Color(0xFFE0E0E0)),
+            ),
+          ),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Text(
-                titulo,
+                e.canal,
                 style: const TextStyle(
-                  fontSize: 20,
-                  fontWeight: FontWeight.bold,
+                  color: verdeElcope,
+                  fontSize: 16,
+                  fontWeight: FontWeight.w900,
                 ),
               ),
-              const SizedBox(height: 6),
-              Expanded(child: chart),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-
-  Widget _detalle(
-    List<CanalResumen> data,
-    double totalMonto,
-    double totalPeso,
-    bool movil,
-  ) {
-    final encabezados = [
-      'Canal',
-      'OP',
-      'Monto',
-      '% Monto',
-      'Peso',
-      '% Peso',
-    ];
-
-    if (movil) {
-      return Card(
-        elevation: 3,
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(18),
-        ),
-        child: Padding(
-          padding: const EdgeInsets.all(16),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              const Text(
-                'Detalle por Canal',
-                style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
+              const SizedBox(height: 9),
+              _datoMovil('OP', '${e.producciones}'),
+              _datoMovil('Monto', _moneda(e.monto)),
+              _datoMovil(
+                '% Monto',
+                '${porcentajeMonto.toStringAsFixed(1)}%',
               ),
-              const SizedBox(height: 10),
-              ...data.map(
-                (e) => ListTile(
-                  contentPadding: EdgeInsets.zero,
-                  title: Text(
-                    e.canal,
-                    style: const TextStyle(fontWeight: FontWeight.bold),
-                  ),
-                  subtitle: Text(
-                    '${e.producciones} OP • ${_moneda(e.monto)} • ${_numero(e.peso)} Kg',
-                  ),
-                  trailing: Text(
-                    '${_porcentaje(e.monto, totalMonto)}%',
-                    style: const TextStyle(fontWeight: FontWeight.bold),
-                  ),
-                ),
+              _datoMovil('Peso', '${_numero(e.peso)} Kg'),
+              _datoMovil(
+                '% Peso',
+                '${porcentajePeso.toStringAsFixed(1)}%',
               ),
             ],
           ),
-        ),
-      );
-    }
-
-    return Card(
-      elevation: 3,
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(18),
-      ),
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const Text(
-              'Detalle por Canal',
-              style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
-            ),
-            const SizedBox(height: 12),
-            SingleChildScrollView(
-              scrollDirection: Axis.horizontal,
-              child: DataTable(
-                headingRowColor: MaterialStatePropertyAll(Colors.indigo.shade50),
-                columns: encabezados
-                    .map((e) => DataColumn(label: Text(e)))
-                    .toList(),
-                rows: data
-                    .map(
-                      (e) => DataRow(
-                        cells: [
-                          DataCell(Text(e.canal)),
-                          DataCell(Text('${e.producciones}')),
-                          DataCell(Text(_moneda(e.monto))),
-                          DataCell(Text('${_porcentaje(e.monto, totalMonto)}%')),
-                          DataCell(Text('${_numero(e.peso)} Kg')),
-                          DataCell(Text('${_porcentaje(e.peso, totalPeso)}%')),
-                        ],
-                      ),
-                    )
-                    .toList(),
-              ),
-            ),
-          ],
-        ),
-      ),
+        );
+      }).toList(),
     );
   }
 
-  String _porcentaje(double valor, double total) {
-    if (total == 0) return '0.0';
-    return (valor / total * 100).toStringAsFixed(1);
+  Widget _datoMovil(String titulo, String valor) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 4),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        children: [
+          Text(
+            titulo,
+            style: const TextStyle(color: Colors.black54),
+          ),
+          Flexible(
+            child: Text(
+              valor,
+              textAlign: TextAlign.right,
+              style: const TextStyle(
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
   }
 }
 

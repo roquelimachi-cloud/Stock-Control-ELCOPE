@@ -13,6 +13,9 @@ class DonaProduccion extends StatelessWidget {
   final bool mostrarPesoEnLeyenda;
   final int columnasLeyenda;
 
+  /// Se ejecuta únicamente cuando el usuario toca un segmento de la dona.
+  final ValueChanged<GraficoProduccion>? onSegmentTap;
+
   const DonaProduccion({
     super.key,
     required this.titulo,
@@ -21,6 +24,7 @@ class DonaProduccion extends StatelessWidget {
     this.centroTexto,
     this.mostrarPesoEnLeyenda = false,
     this.columnasLeyenda = 1,
+    this.onSegmentTap,
   });
 
   @override
@@ -174,6 +178,18 @@ class DonaProduccion extends StatelessWidget {
             explode: false,
 
             animationDuration: 1200,
+
+            // El evento de toque pertenece a la serie circular,
+            // no a SfCircularChart.
+            onPointTap: onSegmentTap == null
+                ? null
+                : (ChartPointDetails details) {
+                    final index = details.pointIndex;
+                    if (index == null || index < 0 || index >= datos.length) {
+                      return;
+                    }
+                    onSegmentTap!(datos[index]);
+                  },
           ),
         ],
       );

@@ -15,6 +15,7 @@ import '../../widgets/produccion/mis_producciones_widget.dart';
 
 import 'package:intl/intl.dart';
 import '../../widgets/produccion/produccion_vendedor_widget.dart';
+import 'produccion_canal_dashboard.dart';
 class ProduccionDashboard extends StatefulWidget {
   const ProduccionDashboard({super.key});
 
@@ -39,6 +40,11 @@ class _ProduccionDashboardState
 
     controller.cargar();
   }
+
+  bool get _puedeVerDashboardCanal =>
+      Sesion.rol == 'Gerencia' ||
+      Sesion.rol == 'Jefe Lima' ||
+      Sesion.rol == 'Jefe Provincia';
 
   @override
   Widget build(BuildContext context) {
@@ -271,6 +277,18 @@ Wrap(
                                       .toString(),
                               centroTexto:
                                   "Total",
+                              onSegmentTap: (_) {
+                                  Navigator.push(
+                                    context,
+                                    MaterialPageRoute(
+                                      builder: (_) =>
+                                          ProduccionCanalDashboard(
+                                        producciones:
+                                            controller.producciones,
+                                      ),
+                                    ),
+                                  );
+                                },
                             ),
                           ),
 
@@ -382,6 +400,18 @@ Wrap(
                                                 .toString(),
                                         centroTexto:
                                             "Total",
+                                        onSegmentTap: (_) {
+                                  Navigator.push(
+                                    context,
+                                    MaterialPageRoute(
+                                      builder: (_) =>
+                                          ProduccionCanalDashboard(
+                                        producciones:
+                                            controller.producciones,
+                                      ),
+                                    ),
+                                  );
+                                },
                                       ),
                                     ),
                                   ),

@@ -175,111 +175,212 @@ class _MisProduccionesWidgetState
         // TARJETA
         // ======================================================
 
+        final mobile =
+            MediaQuery.sizeOf(context).width < 650;
+
         return Card(
           elevation: 5,
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(18),
           ),
           child: SizedBox(
-            height: 500,
+            // En celular necesitamos más espacio para que
+            // encabezado + botón no se compriman.
+            height: mobile ? 620 : 500,
             child: Column(
               children: [
-                const SizedBox(height: 15),
+                SizedBox(height: mobile ? 12 : 15),
 
                 // ==================================================
-                // ENCABEZADO
+                // ENCABEZADO RESPONSIVE
                 // ==================================================
 
                 Padding(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 20,
+                  padding: EdgeInsets.symmetric(
+                    horizontal: mobile ? 14 : 20,
                   ),
-                  child: Row(
-                    children: [
-                      const Icon(
-                        Icons.factory_outlined,
-                        color: Colors.indigo,
-                        size: 28,
-                      ),
+                  child: mobile
+                      ? Column(
+                          crossAxisAlignment:
+                              CrossAxisAlignment.stretch,
+                          children: [
+                            // ------------------------------------------
+                            // FILA SUPERIOR
+                            // ------------------------------------------
 
-                      const SizedBox(width: 10),
+                            Row(
+                              children: [
+                                const Icon(
+                                  Icons.factory_outlined,
+                                  color: Colors.indigo,
+                                  size: 27,
+                                ),
 
-                      Expanded(
-                        child: Text(
-                          "Mis Producciones (${lista.length})",
-                          style: const TextStyle(
-                            fontSize: 22,
-                            fontWeight: FontWeight.bold,
-                          ),
-                        ),
-                      ),
+                                const SizedBox(width: 8),
 
-                      // =================================================
-                      // VISTA PRELIMINAR GENERAL
-                      // =================================================
-
-                      ElevatedButton.icon(
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor:
-                              const Color(0xFF007A45),
-                          foregroundColor:
-                              Colors.white,
-                          padding:
-                              const EdgeInsets.symmetric(
-                            horizontal: 16,
-                            vertical: 12,
-                          ),
-                          shape:
-                              RoundedRectangleBorder(
-                            borderRadius:
-                                BorderRadius.circular(
-                              10,
-                            ),
-                          ),
-                        ),
-                        icon: const Icon(
-                          Icons.visibility_outlined,
-                          size: 20,
-                        ),
-                        label: const Text(
-                          "Vista preliminar",
-                          style: TextStyle(
-                            fontWeight: FontWeight.bold,
-                          ),
-                        ),
-                        onPressed: lista.isEmpty
-                            ? null
-                            : () {
-                                Navigator.of(
-                                  context,
-                                ).push(
-                                  MaterialPageRoute(
-                                    builder: (_) =>
-                                        MisProduccionesPreview(
-                                      producciones:
-                                          lista,
+                                Expanded(
+                                  child: Text(
+                                    "Mis Producciones (${lista.length})",
+                                    maxLines: 1,
+                                    overflow:
+                                        TextOverflow.ellipsis,
+                                    style: const TextStyle(
+                                      fontSize: 20,
+                                      fontWeight:
+                                          FontWeight.bold,
                                     ),
                                   ),
-                                );
-                              },
-                      ),
+                                ),
 
-                      const SizedBox(width: 8),
+                                IconButton(
+                                  tooltip: "Actualizar",
+                                  onPressed: _actualizar,
+                                  icon: const Icon(
+                                    Icons.refresh,
+                                    color: Colors.indigo,
+                                  ),
+                                ),
+                              ],
+                            ),
 
-                      // =================================================
-                      // ACTUALIZAR
-                      // =================================================
+                            const SizedBox(height: 8),
 
-                      IconButton(
-                        tooltip: "Actualizar",
-                        onPressed: _actualizar,
-                        icon: const Icon(
-                          Icons.refresh,
-                          color: Colors.indigo,
+                            // ------------------------------------------
+                            // BOTÓN EN SU PROPIA FILA
+                            // ------------------------------------------
+
+                            SizedBox(
+                              width: double.infinity,
+                              child: ElevatedButton.icon(
+                                style:
+                                    ElevatedButton.styleFrom(
+                                  backgroundColor:
+                                      const Color(0xFF007A45),
+                                  foregroundColor:
+                                      Colors.white,
+                                  padding:
+                                      const EdgeInsets.symmetric(
+                                    vertical: 12,
+                                  ),
+                                  shape:
+                                      RoundedRectangleBorder(
+                                    borderRadius:
+                                        BorderRadius.circular(
+                                      10,
+                                    ),
+                                  ),
+                                ),
+                                icon: const Icon(
+                                  Icons.visibility_outlined,
+                                  size: 20,
+                                ),
+                                label: const Text(
+                                  "Vista preliminar",
+                                  style: TextStyle(
+                                    fontWeight:
+                                        FontWeight.bold,
+                                  ),
+                                ),
+                                onPressed: lista.isEmpty
+                                    ? null
+                                    : () {
+                                        Navigator.of(
+                                          context,
+                                        ).push(
+                                          MaterialPageRoute(
+                                            builder: (_) =>
+                                                MisProduccionesPreview(
+                                              producciones:
+                                                  lista,
+                                            ),
+                                          ),
+                                        );
+                                      },
+                              ),
+                            ),
+                          ],
+                        )
+                      : Row(
+                          children: [
+                            const Icon(
+                              Icons.factory_outlined,
+                              color: Colors.indigo,
+                              size: 28,
+                            ),
+
+                            const SizedBox(width: 10),
+
+                            Expanded(
+                              child: Text(
+                                "Mis Producciones (${lista.length})",
+                                style: const TextStyle(
+                                  fontSize: 22,
+                                  fontWeight:
+                                      FontWeight.bold,
+                                ),
+                              ),
+                            ),
+
+                            ElevatedButton.icon(
+                              style:
+                                  ElevatedButton.styleFrom(
+                                backgroundColor:
+                                    const Color(0xFF007A45),
+                                foregroundColor:
+                                    Colors.white,
+                                padding:
+                                    const EdgeInsets.symmetric(
+                                  horizontal: 16,
+                                  vertical: 12,
+                                ),
+                                shape:
+                                    RoundedRectangleBorder(
+                                  borderRadius:
+                                      BorderRadius.circular(
+                                    10,
+                                  ),
+                                ),
+                              ),
+                              icon: const Icon(
+                                Icons.visibility_outlined,
+                                size: 20,
+                              ),
+                              label: const Text(
+                                "Vista preliminar",
+                                style: TextStyle(
+                                  fontWeight:
+                                      FontWeight.bold,
+                                ),
+                              ),
+                              onPressed: lista.isEmpty
+                                  ? null
+                                  : () {
+                                      Navigator.of(
+                                        context,
+                                      ).push(
+                                        MaterialPageRoute(
+                                          builder: (_) =>
+                                              MisProduccionesPreview(
+                                            producciones:
+                                                lista,
+                                          ),
+                                        ),
+                                      );
+                                    },
+                            ),
+
+                            const SizedBox(width: 8),
+
+                            IconButton(
+                              tooltip: "Actualizar",
+                              onPressed: _actualizar,
+                              icon: const Icon(
+                                Icons.refresh,
+                                color: Colors.indigo,
+                              ),
+                            ),
+                          ],
                         ),
-                      ),
-                    ],
-                  ),
                 ),
 
                 const Divider(),

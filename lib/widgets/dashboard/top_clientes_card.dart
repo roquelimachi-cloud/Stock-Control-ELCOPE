@@ -2,8 +2,9 @@ import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 
 import '../../models/dashboard/cliente_top.dart';
+import '../../screens/dashboard/top_clientes_preview_page.dart';
 import '../../screens/dashboard/todos_clientes_page.dart';
-//import '../../services/pdf/cliente_pdf_service.dart';
+import '../../services/pdf/cliente_pdf_service.dart';
 import 'cliente_hover.dart';
 
 class TopClientesCard extends StatelessWidget {
@@ -110,7 +111,7 @@ class TopClientesCard extends StatelessWidget {
                       context,
                       MaterialPageRoute(
                         builder: (context) {
-                          return TodosClientesPage(
+                          return TopClientesPreviewPage(
                             clientes: clientes,
                           );
                         },

@@ -159,6 +159,9 @@ class MisProduccionesPdfService {
         pageFormat:
             PdfPageFormat.a4.landscape,
 
+          // Permite reportes largos sin TooManyPagesException.
+          maxPages: 100,
+
         margin: const pw.EdgeInsets.fromLTRB(
           25,
           20,
@@ -529,18 +532,18 @@ class MisProduccionesPdfService {
         width: 0.45,
       ),
 
-    columnWidths: {
-  0: const pw.FixedColumnWidth(24),   // N°
-  1: const pw.FlexColumnWidth(1.5),   // OP
-  2: const pw.FlexColumnWidth(2.3),   // CLIENTE
-  3: const pw.FlexColumnWidth(3.5),   // ARTÍCULO
-  4: const pw.FlexColumnWidth(1.3),   // FECHA
-  5: const pw.FlexColumnWidth(1.8),   // VENDEDOR
-  6: const pw.FixedColumnWidth(45),   // RETRASO
-  7: const pw.FixedColumnWidth(55),   // CANTIDAD
-  8: const pw.FlexColumnWidth(1.5),   // VALOR
-  9: const pw.FlexColumnWidth(1.5),   // COBRE
-},
+      columnWidths: {
+        0: const pw.FixedColumnWidth(24),
+        1: const pw.FlexColumnWidth(1.5),
+        2: const pw.FlexColumnWidth(2.3),
+        3: const pw.FlexColumnWidth(3.5),
+        4: const pw.FlexColumnWidth(1.3),
+        5: const pw.FixedColumnWidth(45),
+        6: const pw.FixedColumnWidth(55),
+        7: const pw.FlexColumnWidth(1.5),
+        8: const pw.FlexColumnWidth(1.5),
+      },
+
       children: [
         pw.TableRow(
           repeat: true,
@@ -549,16 +552,15 @@ class MisProduccionesPdfService {
             color: verdeElcope,
           ),
           children: [
-          _header("N°"),
-_header("OP"),
-_header("CLIENTE"),
-_header("ARTÍCULO"),
-_header("FECHA PROD."),
-_header("VENDEDOR"),
-_header("RETRASO"),
-_header("CANTIDAD"),
-_header("VALOR NETO"),
-_header("PESO COBRE"),
+            _header("N°"),
+            _header("OP"),
+            _header("CLIENTE"),
+            _header("ARTÍCULO"),
+            _header("FECHA PROD."),
+            _header("RETRASO"),
+            _header("CANTIDAD"),
+            _header("VALOR NETO"),
+            _header("PESO COBRE"),
           ],
         ),
 
@@ -601,20 +603,17 @@ _header("PESO COBRE"),
                   item.articulo ?? "",
                 ),
 
-               _celda(
-  fecha,
-  align: pw.TextAlign.center,
-),
+                _celda(
+                  fecha,
+                  align:
+                      pw.TextAlign.center,
+                ),
 
-_celda(
-  item.representante ?? "-",
-  align: pw.TextAlign.left,
-),
-
-_celda(
-  "${item.diasRetraso ?? 0}",
-  align: pw.TextAlign.center,
-),
+                _celda(
+                  "${item.diasRetraso ?? 0}",
+                  align:
+                      pw.TextAlign.center,
+                ),
 
                 _celda(
                   formatoNumero.format(

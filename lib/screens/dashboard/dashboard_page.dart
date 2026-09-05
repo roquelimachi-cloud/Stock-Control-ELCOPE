@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 
 import '../login/login_page.dart';
 import '../stock/stock_page.dart';
+import 'stock_antiguo_page.dart';
+import 'stock_antiguo_analisis_gerencial.dart';
 import '../sync/sync_page.dart';
 import '../usuarios/usuarios_page.dart';
 import '../../services/sesion.dart';
@@ -20,6 +22,7 @@ import '../../models/dashboard/peso_clase_resumen.dart';
 import '../../models/dashboard/producto_top.dart';
 import '../../widgets/dashboard/top_productos_card.dart';
 import '../produccion/produccion_dashboard.dart';
+import '../produccion/produccion_gerencial_dashboard.dart';
 import '../../models/dashboard/stock_vendedor.dart';
 import '../../widgets/dashboard/stock_vendedor_card.dart';
 
@@ -49,16 +52,18 @@ late Future<List<StockVendedor>> _stockVendedoresFuture;
 @override
 void initState() {
   super.initState();
-_resumenFuture = dashboardService.obtenerResumen();
-_clientesFuture = dashboardService.obtenerTopClientes();
-_clasesFuture = dashboardService.obtenerResumenClases();
-_pesoClasesFuture = dashboardService.obtenerPesoPorClase();
-_productosFuture = dashboardService.obtenerTopProductos();
-_stockVendedoresFuture =dashboardService.obtenerStockPorVendedor();
+
+  _resumenFuture = dashboardService.obtenerResumen();
+  _clientesFuture = dashboardService.obtenerTopClientes();
+  _clasesFuture = dashboardService.obtenerResumenClases();
+  _pesoClasesFuture = dashboardService.obtenerPesoPorClase();
+  _productosFuture = dashboardService.obtenerTopProductos();
+  _stockVendedoresFuture =
+      dashboardService.obtenerStockPorVendedor();
+
   _scrollController.addListener(() {
     ClienteHover.cerrarPopup();
   });
-
 }
 
   @override
@@ -138,31 +143,49 @@ final decimal = NumberFormat("#,##0.00", "en_US");
                       },
                     ),
 
-                    ListTile(
-                      leading: const Icon(Icons.inventory_2),
-                      title: const Text("Control de Stock"),
-                      onTap: () {
-                        Navigator.pop(context);
-
-                        Navigator.push(
-                          context,
-                          MaterialPageRoute(
-                            builder: (_) => const StockPage(),
-                          ),
-                        );
-                      },
-                    ),
-
               ListTile(
+  leading: const Icon(Icons.calendar_month_outlined),
+  title: const Text("Stock Antiguo (> 30 días)"),
+  subtitle: Text(
+    Sesion.rol == 'Gerencia' ||
+            Sesion.rol == 'Jefe Lima' ||
+            Sesion.rol == 'Jefe Provincia'
+        ? "Análisis gerencial"
+        : "Control de permanencia",
+  ),
+  onTap: () {
+    Navigator.pop(context);
+
+    if (Sesion.rol == 'Gerencia' ||
+        Sesion.rol == 'Jefe Lima' ||
+        Sesion.rol == 'Jefe Provincia') {
+      Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (_) => const StockAntiguoAnalisisGerencialPage(),
+        ),
+      );
+    } else {
+      Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (_) => const StockAntiguoPage(),
+        ),
+      );
+    }
+  },
+),
+             ListTile(
   leading: const Icon(Icons.factory),
   title: const Text("Producción Pendiente"),
+  subtitle: const Text("Dashboard de Producción"),
   onTap: () {
     Navigator.pop(context);
 
     Navigator.push(
       context,
       MaterialPageRoute(
-        builder: (_) => const ProduccionDashboard(),
+        builder: (_) => const ProduccionGerencialDashboard(),
       ),
     );
   },

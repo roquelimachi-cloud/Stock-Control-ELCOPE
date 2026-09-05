@@ -95,6 +95,9 @@ final decimal = NumberFormat("#,##0.00", "en_US");
         foregroundColor: Colors.white,
       ),
       drawer: Drawer(
+        width: MediaQuery.sizeOf(context).width < 600
+            ? MediaQuery.sizeOf(context).width * 0.86
+            : 304,
         child: SafeArea(
           child: Column(
             children: [
@@ -137,7 +140,11 @@ final decimal = NumberFormat("#,##0.00", "en_US");
                   children: [
                     ListTile(
                       leading: const Icon(Icons.dashboard),
-                      title: const Text("Dashboard"),
+                      title: const Text(
+                        "Dashboard",
+                        softWrap: false,
+                        overflow: TextOverflow.ellipsis,
+                      ),
                       onTap: () {
                         Navigator.pop(context);
                       },
@@ -152,6 +159,8 @@ final decimal = NumberFormat("#,##0.00", "en_US");
             Sesion.rol == 'Jefe Provincia'
         ? "Análisis gerencial"
         : "Control de permanencia",
+     softWrap: false,
+     overflow: TextOverflow.ellipsis,
   ),
   onTap: () {
     Navigator.pop(context);

@@ -6,13 +6,22 @@ import 'package:syncfusion_flutter_charts/charts.dart';
 import '../../controllers/produccion/produccion_dashboard_controller.dart';
 import '../../models/produccion/produccion_model.dart';
 import '../../services/sesion.dart';
-import '../../services/produccion/mis_producciones_pdf_service.dart';
+import '../../services/produccion/produccion_excel_service.dart';
+import '../../services/produccion/produccion_import_service.dart';
 import '../../services/produccion/produccion_dashboard_pdf_service.dart';
 import '../../widgets/produccion/mis_producciones_preview.dart';
 import '../../widgets/produccion/produccion_productos_preview.dart';
 import '../../services/produccion/produccion_productos_pdf_service.dart';
 import '../../widgets/produccion/produccion_clientes_preview.dart';
 import '../../services/produccion/produccion_clientes_pdf_service.dart';
+import '../../widgets/produccion/produccion_analisis_preview.dart';
+import '../stock/stock_page.dart';
+import '../dashboard/stock_antiguo_page.dart';
+import '../dashboard/stock_antiguo_analisis_gerencial.dart';
+import '../perfil/mi_perfil_page.dart';
+import '../sync/sync_page.dart';
+import '../usuarios/usuarios_page.dart';
+import '../login/login_page.dart';
 
 class ProduccionGerencialDashboard extends StatefulWidget {
   const ProduccionGerencialDashboard({super.key});
@@ -25,6 +34,8 @@ class ProduccionGerencialDashboard extends StatefulWidget {
 class _ProduccionGerencialDashboardState
     extends State<ProduccionGerencialDashboard> {
   final controller = ProduccionDashboardController();
+  final excelService = ProduccionExcelService();
+  final importService = ProduccionImportService();
   final moneda = NumberFormat('#,##0.00', 'en_US');
   final numero = NumberFormat('#,##0.00', 'en_US');
 
@@ -73,6 +84,39 @@ class _ProduccionGerencialDashboardState
 
   double _cobre(List<ProduccionModel> data) =>
       data.fold(0.0, (s, e) => s + (e.pesoCobre ?? 0));
+
+  void _abrirAnalisisPreview(
+    BuildContext context,
+    String titulo,
+    List<_Fila> rows,
+  ) {
+    if (rows.isEmpty) return;
+    // La vista previa siempre recibe todos los registros visibles.
+    // ProduccionMisOpService ya aplica los permisos por usuario/área:
+    // Gerencia/Administrador: todos; Jefe Lima/Provincia: solo su área.
+    final ordenadas = [...rows]..sort((a, b) => b.valor.compareTo(a.valor));
+
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => ProduccionAnalisisPreview(
+          titulo: titulo,
+          items: List.generate(
+            ordenadas.length,
+            (i) {
+              final r = ordenadas[i];
+              return ProduccionAnalisisPreviewItem(
+                posicion: i + 1,
+                nombre: r.nombre,
+                op: r.op,
+                peso: r.cobre,
+                valor: r.valor,
+              );
+            },
+          ),
+        ),
+      ),
+    );
+  }
 
   Map<String, _Acum> _agrupar(
     List<ProduccionModel> data,
@@ -314,14 +358,6 @@ class _ProduccionGerencialDashboardState
     );
   }
 
-  Future<void> _imprimirTodasLasProducciones(List<ProduccionModel> data) async {
-    if (data.isEmpty) return;
-
-    await MisProduccionesPdfService().generar(
-      producciones: data,
-    );
-  }
-
   void _abrirOrden(BuildContext context, List<ProduccionModel> data, String numeroOP) {
     final orden = data
         .where((item) => item.numeroProduccion == numeroOP)
@@ -348,6 +384,7 @@ class _ProduccionGerencialDashboardState
 
     return Scaffold(
       backgroundColor: const Color(0xfff4f8f6),
+      drawer: _menuLateral(context),
       body: AnimatedBuilder(
         animation: controller,
         builder: (context, _) {
@@ -358,6 +395,146 @@ class _ProduccionGerencialDashboardState
           }
           return _buildDashboard(context);
         },
+      ),
+    );
+  }
+
+  Widget _menuLateral(BuildContext context) {
+    return Drawer(
+      child: SafeArea(
+        child: Column(
+          children: [
+            Container(
+              width: double.infinity,
+              color: Colors.indigo,
+              padding: const EdgeInsets.all(20),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Image.asset(
+                    'assets/images/logo_mr.png',
+                    width: 70,
+                    height: 70,
+                    errorBuilder: (_, __, ___) => const Icon(
+                      Icons.business,
+                      color: Colors.white,
+                      size: 60,
+                    ),
+                  ),
+                  const SizedBox(height: 10),
+                  Text(
+                    Sesion.nombre,
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 24,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                  const SizedBox(height: 5),
+                  Text(
+                    Sesion.rol,
+                    style: const TextStyle(color: Colors.white70, fontSize: 15),
+                  ),
+                ],
+              ),
+            ),
+            Expanded(
+              child: ListView(
+                padding: EdgeInsets.zero,
+                children: [
+                  ListTile(
+                    leading: const Icon(Icons.dashboard),
+                    title: const Text('Dashboard'),
+                    onTap: () {
+                      Navigator.pop(context);
+                      if (Navigator.canPop(context)) Navigator.pop(context);
+                    },
+                  ),
+                  ListTile(
+                    leading: const Icon(Icons.inventory_2),
+                    title: const Text('Control de Stock'),
+                    onTap: () {
+                      Navigator.pop(context);
+                      Navigator.push(context, MaterialPageRoute(builder: (_) => const StockPage()));
+                    },
+                  ),
+                  ListTile(
+                    leading: const Icon(Icons.calendar_month_outlined),
+                    title: const Text('Stock Antiguo (> 30 días)'),
+                    subtitle: Text(
+                      Sesion.rol == 'Gerencia' || Sesion.rol == 'Jefe Lima' || Sesion.rol == 'Jefe Provincia'
+                          ? 'Análisis gerencial'
+                          : 'Control de permanencia',
+                    ),
+                    onTap: () {
+                      Navigator.pop(context);
+                      if (Sesion.rol == 'Gerencia' || Sesion.rol == 'Jefe Lima' || Sesion.rol == 'Jefe Provincia') {
+                        Navigator.push(context, MaterialPageRoute(builder: (_) => const StockAntiguoAnalisisGerencialPage()));
+                      } else {
+                        Navigator.push(context, MaterialPageRoute(builder: (_) => const StockAntiguoPage()));
+                      }
+                    },
+                  ),
+                  ListTile(
+                    leading: const Icon(Icons.factory),
+                    title: const Text('Producción Pendiente'),
+                    subtitle: const Text('Dashboard de Producción'),
+                    onTap: () => Navigator.pop(context),
+                  ),
+                  ListTile(
+                    leading: const Icon(Icons.person),
+                    title: const Text('Mi Perfil'),
+                    onTap: () {
+                      Navigator.pop(context);
+                      Navigator.push(context, MaterialPageRoute(builder: (_) => const MiPerfilPage()));
+                    },
+                  ),
+                  if (Sesion.esAdministrador)
+                    ListTile(
+                      leading: const Icon(Icons.sync),
+                      title: const Text('Sincronizar Excel'),
+                      onTap: () async {
+                        Navigator.pop(context);
+                        await Navigator.push(context, MaterialPageRoute(builder: (_) => const SyncPage()));
+                        if (!mounted) return;
+                        await controller.cargar();
+                      },
+                    ),
+                  if (Sesion.esAdministrador)
+                    ListTile(
+                      leading: const Icon(Icons.people),
+                      title: const Text('Usuarios'),
+                      onTap: () {
+                        Navigator.pop(context);
+                        Navigator.push(context, MaterialPageRoute(builder: (_) => const UsuariosPage()));
+                      },
+                    ),
+                  if (Sesion.esAdministrador)
+                    ListTile(
+                      leading: const Icon(Icons.settings),
+                      title: const Text('Configuración'),
+                      onTap: () {
+                        Navigator.pop(context);
+                        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Módulo en desarrollo')));
+                      },
+                    ),
+                ],
+              ),
+            ),
+            const Divider(height: 1),
+            ListTile(
+              leading: const Icon(Icons.logout, color: Colors.red),
+              title: const Text('Cerrar Sesión', style: TextStyle(color: Colors.red, fontWeight: FontWeight.bold)),
+              onTap: () {
+                Sesion.cerrarSesion();
+                Navigator.pushAndRemoveUntil(context, MaterialPageRoute(builder: (_) => const LoginPage()), (route) => false);
+              },
+            ),
+            const SizedBox(height: 10),
+          ],
+        ),
       ),
     );
   }
@@ -400,9 +577,140 @@ class _ProduccionGerencialDashboardState
     );
   }
 
+  Future<void> _importarExcel() async {
+    try {
+      final excel = await excelService.seleccionarExcel();
+
+      if (excel == null) return;
+
+      final lista = excelService.leerProduccion(excel);
+      final cantidad = await importService.importar(lista);
+
+      await controller.cargar();
+
+      if (!mounted) return;
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          backgroundColor: Colors.green,
+          content: Text(
+            'Se importaron $cantidad registros correctamente.',
+          ),
+        ),
+      );
+    } catch (e) {
+      if (!mounted) return;
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          backgroundColor: Colors.red,
+          content: Text('Error al importar Excel: $e'),
+        ),
+      );
+    }
+  }
+
   Widget _header(BuildContext context, bool movil) {
+    final titulo = Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          'PRODUCCIÓN - DASHBOARD',
+          softWrap: true,
+          style: TextStyle(
+            fontSize: movil ? 22 : 28,
+            fontWeight: FontWeight.w800,
+            color: const Color(0xff006b3c),
+          ),
+        ),
+        const SizedBox(height: 3),
+        Text(
+          'Análisis gerencial por asesor, clase, canal, cliente, peso, valor y tiempo.',
+          softWrap: true,
+          style: TextStyle(color: Colors.grey.shade700),
+        ),
+      ],
+    );
+
+    final botonImportarExcel = FilledButton.icon(
+      style: FilledButton.styleFrom(
+        backgroundColor: const Color(0xff00864a),
+      ),
+      onPressed: Sesion.esAdministrador ? _importarExcel : null,
+      icon: const Icon(Icons.upload_file),
+      label: const Text('IMPORTAR EXCEL'),
+    );
+
+    final botonImprimir = FilledButton.icon(
+      style: FilledButton.styleFrom(
+        backgroundColor: const Color(0xff2457c5),
+      ),
+      onPressed: _datosFiltrados.isEmpty
+          ? null
+          : () => _imprimirDashboard(_datosFiltrados),
+      icon: const Icon(Icons.print_outlined),
+      label: const Text('IMPRIMIR DASHBOARD'),
+    );
+
+    if (movil) {
+      return Container(
+        padding: const EdgeInsets.all(14),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(18),
+          border: Border.all(color: const Color(0xffdcebe3)),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                IconButton(
+                  tooltip: 'Volver',
+                  onPressed: () => Navigator.pop(context),
+                  icon: const Icon(
+                    Icons.arrow_back,
+                    color: Color(0xff2457c5),
+                    size: 28,
+                  ),
+                ),
+                const SizedBox(width: 2),
+                Container(
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: const Color(0xffe5f6ed),
+                    borderRadius: BorderRadius.circular(14),
+                  ),
+                  child: const Icon(
+                    Icons.factory_outlined,
+                    color: Color(0xff00864a),
+                    size: 30,
+                  ),
+                ),
+                const SizedBox(width: 14),
+                Expanded(child: titulo),
+              ],
+            ),
+            const SizedBox(height: 14),
+            if (Sesion.esAdministrador) ...[
+              SizedBox(
+                width: double.infinity,
+                child: botonImportarExcel,
+              ),
+              const SizedBox(height: 8),
+            ],
+            SizedBox(
+              width: double.infinity,
+              child: botonImprimir,
+            ),
+          ],
+        ),
+      );
+    }
+
     return Container(
-      padding: EdgeInsets.all(movil ? 14 : 18),
+      padding: const EdgeInsets.all(18),
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(18),
@@ -410,6 +718,16 @@ class _ProduccionGerencialDashboardState
       ),
       child: Row(
         children: [
+          IconButton(
+            tooltip: 'Volver',
+            onPressed: () => Navigator.pop(context),
+            icon: const Icon(
+              Icons.arrow_back,
+              color: Color(0xff2457c5),
+              size: 28,
+            ),
+          ),
+          const SizedBox(width: 2),
           Container(
             padding: const EdgeInsets.all(12),
             decoration: BoxDecoration(
@@ -423,61 +741,21 @@ class _ProduccionGerencialDashboardState
             ),
           ),
           const SizedBox(width: 14),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  'PRODUCCIÓN - DASHBOARD',
-                  style: TextStyle(
-                    fontSize: movil ? 22 : 28,
-                    fontWeight: FontWeight.w800,
-                    color: const Color(0xff006b3c),
-                  ),
-                ),
-                const SizedBox(height: 3),
-                Text(
-                  'Análisis gerencial por asesor, clase, canal, cliente, peso, valor y tiempo.',
-                  style: TextStyle(color: Colors.grey.shade700),
-                ),
-              ],
-            ),
-          ),
-          if (!movil) ...[
-            FilledButton.icon(
-              style: FilledButton.styleFrom(
-                backgroundColor: const Color(0xff00864a),
-              ),
-              onPressed: controller.cargar,
-              icon: const Icon(Icons.refresh),
-              label: const Text('ACTUALIZAR'),
-            ),
+          Expanded(child: titulo),
+          if (Sesion.esAdministrador) ...[
+            botonImportarExcel,
             const SizedBox(width: 8),
-            FilledButton.icon(
-              style: FilledButton.styleFrom(
-                backgroundColor: const Color(0xff2457c5),
-              ),
-              onPressed: _datosFiltrados.isEmpty
-                  ? null
-                  : () => _imprimirDashboard(_datosFiltrados),
-              icon: const Icon(Icons.print_outlined),
-              label: const Text('IMPRIMIR DASHBOARD'),
+          ],
+          FilledButton.icon(
+            style: FilledButton.styleFrom(
+              backgroundColor: const Color(0xff00864a),
             ),
-          ]
-          else
-            SizedBox(
-              width: double.infinity,
-              child: FilledButton.icon(
-                style: FilledButton.styleFrom(
-                  backgroundColor: const Color(0xff2457c5),
-                ),
-                onPressed: _datosFiltrados.isEmpty
-                    ? null
-                    : () => _imprimirDashboard(_datosFiltrados),
-                icon: const Icon(Icons.print_outlined),
-                label: const Text('IMPRIMIR DASHBOARD'),
-              ),
-            ),
+            onPressed: controller.cargar,
+            icon: const Icon(Icons.refresh),
+            label: const Text('ACTUALIZAR'),
+          ),
+          const SizedBox(width: 8),
+          botonImprimir,
         ],
       ),
     );
@@ -706,8 +984,8 @@ class _ProduccionGerencialDashboardState
 
     final cards = [
       _Kpi('ÓRDENES DE PRODUCCIÓN', '${data.length}', 'Total generado', Icons.assignment_outlined),
-      _Kpi('PESO DE COBRE', '${_num(cobre)} kg', 'Peso de cobre', Icons.layers_outlined),
       _Kpi('VALOR DE PRODUCCIÓN', _money(valor), 'Valor neto total', Icons.attach_money),
+      _Kpi('PESO DE COBRE', '${_num(cobre)} kg', 'Peso de cobre', Icons.layers_outlined),
       _Kpi('CLIENTES', '$clientes', 'Clientes atendidos', Icons.groups_outlined),
       _Kpi('ASESORES', '$asesores', 'Representantes', Icons.person_outline),
       _Kpi('CANALES', '$canales', 'Canales registrados', Icons.account_tree_outlined),
@@ -767,31 +1045,67 @@ class _ProduccionGerencialDashboardState
     double totalCobre,
     bool movil,
   ) {
-    final asesores = _ranking(data, (e) => e.representante).take(7).toList();
-    final clases = _ranking(data, (e) => e.clase ?? 'SIN CLASE').take(7).toList();
-    final canales = _ranking(data, (e) => e.canal).take(7).toList();
+    // El dashboard principal conserva Top 5.
+    // La VISTA PREVIA de Asesor recibe el ranking completo mediante _ranking(data,...).
+    final asesores = _ranking(data, (e) => e.representante).take(5).toList();
+    final asesoresTodos = _ranking(data, (e) => e.representante).toList();
+    final clases = _ranking(data, (e) => e.clase ?? 'SIN CLASE').toList();
+    final canales = _ranking(data, (e) => e.canal).toList();
 
     final cards = [
       _panel(
         'PRODUCCIÓN POR ASESOR',
-        'Peso de cobre (kg) + Valor US\$',
+        'Valor Neto (US\$) + Peso de cobre (kg)',
         _barDual(asesores),
         movil,
         height: 330,
+        action: OutlinedButton.icon(
+          icon: const Icon(Icons.visibility_outlined, size: 16),
+          label: const Text('VISTA PREVIA'),
+          onPressed: asesores.isEmpty
+              ? null
+              : () => _abrirAnalisisPreview(
+                    context,
+                    'PRODUCCIÓN POR ASESOR',
+                    asesoresTodos,
+                  ),
+        ),
       ),
       _panel(
         'PRODUCCIÓN POR CLASE',
-        'Peso de cobre (kg) + Valor US\$',
+        'Valor Neto (US\$) + Peso de cobre (kg)',
         _barDual(clases),
         movil,
         height: 330,
+        action: OutlinedButton.icon(
+          icon: const Icon(Icons.visibility_outlined, size: 16),
+          label: const Text('VISTA PREVIA'),
+          onPressed: clases.isEmpty
+              ? null
+              : () => _abrirAnalisisPreview(
+                    context,
+                    'PRODUCCIÓN POR CLASE',
+                    clases,
+                  ),
+        ),
       ),
       _panel(
         'PRODUCCIÓN POR CANAL',
-        'Peso de cobre (kg) + Valor US\$',
+        'Valor Neto (US\$) + Peso de cobre (kg)',
         _barDual(canales),
         movil,
         height: 330,
+        action: OutlinedButton.icon(
+          icon: const Icon(Icons.visibility_outlined, size: 16),
+          label: const Text('VISTA PREVIA'),
+          onPressed: canales.isEmpty
+              ? null
+              : () => _abrirAnalisisPreview(
+                    context,
+                    'PRODUCCIÓN POR CANAL',
+                    canales,
+                  ),
+        ),
       ),
     ];
 
@@ -812,33 +1126,88 @@ class _ProduccionGerencialDashboardState
     final maxValor = data.map((e) => e.valor).fold(0.0, (a, b) => a > b ? a : b);
     final maxCobre = data.map((e) => e.cobre).fold(0.0, (a, b) => a > b ? a : b);
 
+    final miles = NumberFormat('#,##0.00', 'en_US');
+
     return SfCartesianChart(
       primaryXAxis: const CategoryAxis(
         labelRotation: -35,
         majorGridLines: MajorGridLines(width: 0),
       ),
-      primaryYAxis: const NumericAxis(
-        majorGridLines: MajorGridLines(width: .5),
+      primaryYAxis: NumericAxis(
+        majorGridLines: const MajorGridLines(width: .5),
+        numberFormat: NumberFormat('#,##0.00', 'en_US'),
       ),
       legend: const Legend(isVisible: true, position: LegendPosition.bottom),
-      tooltipBehavior: TooltipBehavior(enable: true),
+      tooltipBehavior: TooltipBehavior(
+        enable: true,
+        builder: (
+          dynamic dataPoint,
+          dynamic point,
+          dynamic series,
+          int pointIndex,
+          int seriesIndex,
+        ) {
+          final item = data[pointIndex];
+          return Container(
+            padding: const EdgeInsets.all(10),
+            decoration: BoxDecoration(
+              color: const Color(0xff263238),
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  item.nombre,
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+                const SizedBox(height: 5),
+                Text(
+                  'Valor Neto: US\$ ${miles.format(item.valor)}',
+                  style: const TextStyle(color: Colors.white),
+                ),
+                Text(
+                  'Peso de cobre: ${miles.format(item.cobre)} kg',
+                  style: const TextStyle(color: Colors.white),
+                ),
+              ],
+            ),
+          );
+        },
+      ),
+      // Las etiquetas se definen por serie porque DataLabelRenderArgs
+      // de Syncfusion 30.2.7 no expone seriesIndex.
       series: <CartesianSeries<_Fila, String>>[
+        ColumnSeries<_Fila, String>(
+          name: 'Valor Neto (US\$)',
+          dataSource: data,
+          xValueMapper: (e, _) => e.nombre,
+          yValueMapper: (e, _) =>
+              maxValor == 0 ? 0 : (e.valor / maxValor) * (maxCobre == 0 ? 1 : maxCobre),
+          color: const Color(0xff2457c5),
+          dataLabelMapper: (e, _) => 'US\$ ${miles.format(e.valor)}',
+          dataLabelSettings: const DataLabelSettings(
+            isVisible: true,
+            labelPosition: ChartDataLabelPosition.outside,
+            textStyle: TextStyle(fontSize: 10, fontWeight: FontWeight.bold),
+          ),
+        ),
         ColumnSeries<_Fila, String>(
           name: 'Peso de cobre (kg)',
           dataSource: data,
           xValueMapper: (e, _) => e.nombre,
           yValueMapper: (e, _) => maxCobre == 0 ? 0 : e.cobre,
           color: const Color(0xff00864a),
-          dataLabelSettings: const DataLabelSettings(isVisible: true),
-        ),
-        ColumnSeries<_Fila, String>(
-          name: 'Valor (US\$)',
-          dataSource: data,
-          xValueMapper: (e, _) => e.nombre,
-          yValueMapper: (e, _) =>
-              maxValor == 0 ? 0 : (e.valor / maxValor) * (maxCobre == 0 ? 1 : maxCobre),
-          color: const Color(0xff7bcf9f),
-          dataLabelSettings: const DataLabelSettings(isVisible: false),
+          dataLabelMapper: (e, _) => '${miles.format(e.cobre)} kg',
+          dataLabelSettings: const DataLabelSettings(
+            isVisible: true,
+            labelPosition: ChartDataLabelPosition.outside,
+            textStyle: TextStyle(fontSize: 10, fontWeight: FontWeight.bold),
+          ),
         ),
       ],
     );
@@ -1113,75 +1482,122 @@ class _ProduccionGerencialDashboardState
       return db.compareTo(da);
     });
 
-    return _panel(
-      'ÚLTIMAS ÓRDENES DE PRODUCCIÓN',
-      'Todas las producciones • desplaza vertical y horizontalmente',
-      Scrollbar(
-        thumbVisibility: !movil,
-        child: SingleChildScrollView(
-          scrollDirection: Axis.vertical,
-          child: SingleChildScrollView(
-            scrollDirection: Axis.horizontal,
-            child: DataTable(
-              showCheckboxColumn: false,
-              headingRowColor:
-                  const WidgetStatePropertyAll(Color(0xffe5f6ed)),
-              columns: const [
-                DataColumn(label: Text('OP')),
-                DataColumn(label: Text('Fecha')),
-                DataColumn(label: Text('Cliente')),
-                DataColumn(label: Text('Artículo')),
-                DataColumn(label: Text('Clase')),
-                DataColumn(label: Text('Asesor')),
-                DataColumn(label: Text('Canal')),
-                DataColumn(label: Text('Cantidad')),
-                DataColumn(label: Text('Peso Cobre (kg)')),
-                DataColumn(label: Text('Valor Neto (US\$)')),
-                DataColumn(label: Text('Estado')),
-              ],
-              rows: rows.map((e) {
-                return DataRow(
-                  onSelectChanged: (_) =>
-                      _abrirOrden(context, data, e.numeroProduccion),
-                  cells: [
-                    DataCell(Text(e.numeroProduccion)),
-                    DataCell(
-                      Text(
-                        e.fechaProduccion == null
-                            ? '-'
-                            : DateFormat('dd/MM/yyyy')
-                                .format(e.fechaProduccion!),
+    return Container(
+      padding: const EdgeInsets.fromLTRB(16, 14, 16, 14),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: const Color(0xffdcebe3)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text(
+                      'ÚLTIMAS ÓRDENES DE PRODUCCIÓN',
+                      style: TextStyle(
+                        color: Color(0xff006b3c),
+                        fontSize: 16,
+                        fontWeight: FontWeight.w800,
                       ),
                     ),
-                    DataCell(
-                      SizedBox(
-                        width: 180,
-                        child: Text(e.cliente, maxLines: 2),
+                    const SizedBox(height: 2),
+                    Text(
+                      'Todas las producciones • desplaza vertical y horizontalmente',
+                      style: TextStyle(
+                        fontSize: 11,
+                        color: Colors.grey.shade600,
                       ),
                     ),
-                    DataCell(
-                      SizedBox(
-                        width: 260,
-                        child: Text(e.articulo ?? '-', maxLines: 2),
-                      ),
-                    ),
-                    DataCell(Text(e.clase ?? '-')),
-                    DataCell(Text(e.representante)),
-                    DataCell(Text(e.canal)),
-                    // Sin "metros": solo el valor numérico.
-                    DataCell(Text(_num(e.cantidadTotal ?? 0))),
-                    DataCell(Text(_num(e.pesoCobre ?? 0))),
-                    DataCell(Text(_money(e.valorNeto ?? 0))),
-                    DataCell(_estadoBadge(e.estado)),
                   ],
-                );
-              }).toList(),
+                ),
+              ),
+              const SizedBox(width: 10),
+              OutlinedButton.icon(
+                icon: const Icon(Icons.visibility_outlined, size: 17),
+                label: const Text('VISTA PREVIA'),
+                onPressed: rows.isEmpty
+                    ? null
+                    : () => _abrirTodasLasProducciones(context, rows),
+              ),
+            ],
+          ),
+          const SizedBox(height: 10),
+          SizedBox(
+            height: 420,
+            width: double.infinity,
+            child: Scrollbar(
+              thumbVisibility: !movil,
+              child: SingleChildScrollView(
+                scrollDirection: Axis.vertical,
+                child: SingleChildScrollView(
+                  scrollDirection: Axis.horizontal,
+                  child: DataTable(
+                    showCheckboxColumn: false,
+                    headingRowColor:
+                        const WidgetStatePropertyAll(Color(0xffe5f6ed)),
+                    columns: const [
+                      DataColumn(label: Text('OP')),
+                      DataColumn(label: Text('Fecha')),
+                      DataColumn(label: Text('Cliente')),
+                      DataColumn(label: Text('Artículo')),
+                      DataColumn(label: Text('Clase')),
+                      DataColumn(label: Text('Asesor')),
+                      DataColumn(label: Text('Canal')),
+                      DataColumn(label: Text('Cantidad')),
+                      DataColumn(label: Text('Peso Cobre (kg)')),
+                      DataColumn(label: Text('Valor Neto (US\$)')),
+                      DataColumn(label: Text('Estado')),
+                    ],
+                    rows: rows.map((e) {
+                      return DataRow(
+                        onSelectChanged: (_) =>
+                            _abrirOrden(context, data, e.numeroProduccion),
+                        cells: [
+                          DataCell(Text(e.numeroProduccion)),
+                          DataCell(
+                            Text(
+                              e.fechaProduccion == null
+                                  ? '-'
+                                  : DateFormat('dd/MM/yyyy')
+                                      .format(e.fechaProduccion!),
+                            ),
+                          ),
+                          DataCell(
+                            SizedBox(
+                              width: 180,
+                              child: Text(e.cliente, maxLines: 2),
+                            ),
+                          ),
+                          DataCell(
+                            SizedBox(
+                              width: 260,
+                              child: Text(e.articulo ?? '-', maxLines: 2),
+                            ),
+                          ),
+                          DataCell(Text(e.clase ?? '-')),
+                          DataCell(Text(e.representante)),
+                          DataCell(Text(e.canal)),
+                          DataCell(Text(_num(e.cantidadTotal ?? 0))),
+                          DataCell(Text(_num(e.pesoCobre ?? 0))),
+                          DataCell(Text(_money(e.valorNeto ?? 0))),
+                          DataCell(_estadoBadge(e.estado)),
+                        ],
+                      );
+                    }).toList(),
+                  ),
+                ),
+              ),
             ),
           ),
-        ),
+        ],
       ),
-      false,
-      height: 500,
     );
   }
 
@@ -1282,6 +1698,7 @@ class _ProduccionGerencialDashboardState
     Widget child,
     bool movil, {
     double? height,
+    Widget? action,
   }) {
     return Container(
       padding: EdgeInsets.all(movil ? 12 : 16),
@@ -1293,11 +1710,51 @@ class _ProduccionGerencialDashboardState
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(title, style: const TextStyle(
-            color: Color(0xff006b3c),
-            fontSize: 16,
-            fontWeight: FontWeight.w800,
-          )),
+          if (action == null)
+            Text(
+              title,
+              style: const TextStyle(
+                color: Color(0xff006b3c),
+                fontSize: 16,
+                fontWeight: FontWeight.w800,
+              ),
+            )
+          else if (movil)
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  title,
+                  style: const TextStyle(
+                    color: Color(0xff006b3c),
+                    fontSize: 16,
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+                const SizedBox(height: 6),
+                Align(
+                  alignment: Alignment.centerRight,
+                  child: action,
+                ),
+              ],
+            )
+          else
+            Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    title,
+                    style: const TextStyle(
+                      color: Color(0xff006b3c),
+                      fontSize: 16,
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                action,
+              ],
+            ),
           const SizedBox(height: 2),
           Text(subtitle, style: TextStyle(fontSize: 11, color: Colors.grey.shade600)),
           const SizedBox(height: 8),

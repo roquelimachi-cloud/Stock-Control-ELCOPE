@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../../services/supabase/usuario_service.dart';
 import '../../models/usuario.dart';
-import '../dashboard/dashboard_page.dart';
+import '../dashboard/stock_dashboard_moderno.dart';
 import '../../services/sesion.dart';
 class LoginPage extends StatefulWidget {
   const LoginPage({super.key});

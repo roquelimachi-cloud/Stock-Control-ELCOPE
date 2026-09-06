@@ -70,11 +70,10 @@ class _ProduccionGerencialDashboardState
     if (mounted) setState(() {});
   }
 
-  bool get _esGerencial =>
-      Sesion.rol == 'Administrador' ||
-      Sesion.rol == 'Gerencia' ||
-      Sesion.rol == 'Jefe Lima' ||
-      Sesion.rol == 'Jefe Provincia';
+  // El dashboard de producción está disponible para todos los usuarios.
+  // ProduccionMisOpService controla qué registros puede visualizar cada usuario:
+  // Gerencia = todo; Jefaturas = vendedores autorizados; usuario normal = su vendedor.
+  bool get _esGerencial => true;
 
   String _money(double v) => 'US\$ ${moneda.format(v)}';
   String _num(double v) => numero.format(v);

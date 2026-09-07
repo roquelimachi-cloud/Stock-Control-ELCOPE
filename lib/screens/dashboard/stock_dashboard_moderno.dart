@@ -14,7 +14,7 @@ import '../usuarios/usuarios_page.dart';
 import '../../services/supabase/supabase_service.dart';
 import '../../services/pdf/stock_dashboard_pdf_service.dart';
 import '../produccion/produccion_gerencial_dashboard.dart';
-
+import '../cotizaciones/cotizaciones_page.dart';
 class DashboardPage extends StatefulWidget {
   const DashboardPage({super.key});
 
@@ -1055,6 +1055,21 @@ class _DashboardPageState extends State<DashboardPage> {
                       );
                     },
                   ),
+ListTile(
+  leading: const Icon(Icons.request_quote_outlined),
+  title: const Text('Cotizaciones'),
+  subtitle: const Text('Nueva cotización'),
+  onTap: () {
+    if (!lateral) Navigator.pop(context);
+
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => const CotizacionesPage(),
+      ),
+    );
+  },
+),
                   ListTile(
                     leading: const Icon(Icons.person),
                     title: const Text('Mi Perfil'),

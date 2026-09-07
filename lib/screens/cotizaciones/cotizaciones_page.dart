@@ -970,6 +970,37 @@ class _CotizacionesPageState extends State<CotizacionesPage> {
   }
 
   Widget _productos(bool movil) {
+    // En móvil no ponemos los botones dentro del encabezado de la tarjeta.
+    // Eso evita que "Productos" pierda ancho y termine dibujándose
+    // verticalmente letra por letra.
+    if (movil) {
+      return _card(
+        title: 'Productos',
+        icon: Icons.inventory_2_outlined,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            _botonesProductosMovil(),
+            const SizedBox(height: 12),
+            _campoBusquedaProducto(movil),
+            if (_buscandoProducto) ...[
+              const SizedBox(height: 8),
+              const LinearProgressIndicator(
+                minHeight: 2,
+                color: Color(0xFF16803A),
+              ),
+            ],
+            if (_productosEncontrados.isNotEmpty) ...[
+              const SizedBox(height: 10),
+              _resultadosProductos(movil),
+            ],
+            const SizedBox(height: 12),
+            _contenidoLineasProductos(movil),
+          ],
+        ),
+      );
+    }
+
     return _card(
       title: 'Productos',
       icon: Icons.inventory_2_outlined,
@@ -993,7 +1024,7 @@ class _CotizacionesPageState extends State<CotizacionesPage> {
           OutlinedButton.icon(
             onPressed: _abrirSelectorProducto,
             icon: const Icon(Icons.add, size: 18),
-            label: Text(movil ? 'Agregar' : 'Agregar producto'),
+            label: const Text('Agregar producto'),
             style: OutlinedButton.styleFrom(
               foregroundColor: const Color(0xFF2563EB),
               side: const BorderSide(color: Color(0xFF93C5FD)),
@@ -1006,29 +1037,7 @@ class _CotizacionesPageState extends State<CotizacionesPage> {
       ),
       child: Column(
         children: [
-          Row(
-            children: [
-              Expanded(
-                child: TextField(
-                  controller: _productoController,
-                  decoration: _decoracion(
-                    'Buscar producto por código, modelo o descripción...',
-                    Icons.search,
-                  ),
-                  onChanged: _buscarProductos,
-                ),
-              ),
-              const SizedBox(width: 8),
-              IconButton(
-                tooltip: 'Buscar producto',
-                onPressed: _abrirSelectorProducto,
-                icon: const Icon(
-                  Icons.search,
-                  color: Color(0xFF2563EB),
-                ),
-              ),
-            ],
-          ),
+          _campoBusquedaProducto(movil),
           if (_buscandoProducto) ...[
             const SizedBox(height: 10),
             const LinearProgressIndicator(
@@ -1041,66 +1050,116 @@ class _CotizacionesPageState extends State<CotizacionesPage> {
             _resultadosProductos(movil),
           ],
           const SizedBox(height: 12),
-          if (_lineas.isNotEmpty && !movil) ...[
-            _cabeceraProductos(),
-            const SizedBox(height: 6),
-          ],
-          if (_lineas.isEmpty)
-            Container(
-              width: double.infinity,
-              padding: const EdgeInsets.symmetric(
-                vertical: 28,
-                horizontal: 18,
-              ),
-              decoration: BoxDecoration(
-                color: const Color(0xFFF8FAFC),
-                borderRadius: BorderRadius.circular(10),
-                border: Border.all(
-                  color: const Color(0xFFE2E8F0),
-                ),
-              ),
-              child: Column(
-                children: [
-                  Icon(
-                    Icons.inventory_2_outlined,
-                    size: 40,
-                    color: Colors.grey.shade400,
-                  ),
-                  const SizedBox(height: 9),
-                  const Text(
-                    'No hay productos agregados',
-                    style: TextStyle(
-                      fontWeight: FontWeight.w700,
-                      color: Color(0xFF334155),
-                    ),
-                  ),
-                  const SizedBox(height: 4),
-                  const Text(
-                    'Busque un producto y selecciónelo para comenzar',
-                    textAlign: TextAlign.center,
-                    style: TextStyle(
-                      color: Color(0xFF64748B),
-                    ),
-                  ),
-                ],
-              ),
-            )
-          else
-            Column(
-              children: _lineas
-                  .asMap()
-                  .entries
-                  .map(
-                    (e) => _lineaProducto(
-                      e.key,
-                      e.value,
-                      movil,
-                    ),
-                  )
-                  .toList(),
-            ),
+          _contenidoLineasProductos(movil),
         ],
       ),
+    );
+  }
+
+  Widget _botonesProductosMovil() {
+    return Row(
+      children: [
+        if (Sesion.esAdministrador)
+          Expanded(
+            child: OutlinedButton.icon(
+              onPressed: _abrirImportadorListaPrecios,
+              icon: const Icon(Icons.price_change_outlined, size: 17),
+              label: const Text('Lista de precios'),
+              style: OutlinedButton.styleFrom(
+                foregroundColor: const Color(0xFF16803A),
+                side: const BorderSide(color: Color(0xFF86EFAC)),
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 13),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(8),
+                ),
+              ),
+            ),
+          ),
+        if (Sesion.esAdministrador) const SizedBox(width: 8),
+        Expanded(
+          child: OutlinedButton.icon(
+            onPressed: _abrirSelectorProducto,
+            icon: const Icon(Icons.add, size: 18),
+            label: const Text('Agregar'),
+            style: OutlinedButton.styleFrom(
+              foregroundColor: const Color(0xFF2563EB),
+              side: const BorderSide(color: Color(0xFF93C5FD)),
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 13),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(8),
+              ),
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _campoBusquedaProducto(bool movil) {
+    return Row(
+      children: [
+        Expanded(
+          child: TextField(
+            controller: _productoController,
+            decoration: _decoracion(
+              'Buscar producto por código, modelo o descripción...',
+              Icons.search,
+            ),
+            onChanged: _buscarProductos,
+          ),
+        ),
+        const SizedBox(width: 6),
+        IconButton(
+          tooltip: 'Buscar producto',
+          onPressed: _abrirSelectorProducto,
+          icon: const Icon(
+            Icons.search,
+            color: Color(0xFF2563EB),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _contenidoLineasProductos(bool movil) {
+    if (_lineas.isEmpty) {
+      return Container(
+        width: double.infinity,
+        padding: const EdgeInsets.symmetric(vertical: 28, horizontal: 18),
+        decoration: BoxDecoration(
+          color: const Color(0xFFF8FAFC),
+          borderRadius: BorderRadius.circular(10),
+          border: Border.all(color: const Color(0xFFE2E8F0)),
+        ),
+        child: Column(
+          children: [
+            Icon(Icons.inventory_2_outlined, size: 40, color: Colors.grey.shade400),
+            const SizedBox(height: 9),
+            const Text(
+              'No hay productos agregados',
+              style: TextStyle(fontWeight: FontWeight.w700, color: Color(0xFF334155)),
+            ),
+            const SizedBox(height: 4),
+            const Text(
+              'Busque un producto y selecciónelo para comenzar',
+              textAlign: TextAlign.center,
+              style: TextStyle(color: Color(0xFF64748B)),
+            ),
+          ],
+        ),
+      );
+    }
+
+    return Column(
+      children: [
+        if (!movil) ...[
+          _cabeceraProductos(),
+          const SizedBox(height: 6),
+        ],
+        ..._lineas.asMap().entries.map(
+          (e) => _lineaProducto(e.key, e.value, movil),
+        ),
+      ],
     );
   }
 
@@ -1138,173 +1197,192 @@ class _CotizacionesPageState extends State<CotizacionesPage> {
     bool movil,
   ) {
     final conStock = producto.stock > 0;
-    final stockBajo = producto.stock > 0 &&
-        producto.stock <= 100;
-
-    final Color fondo = conStock
-        ? (stockBajo
-            ? const Color(0xFFFFFBEB)
-            : const Color(0xFFF0FDF4))
-        : const Color(0xFFFEF2F2);
-
-    final Color borde = conStock
-        ? (stockBajo
-            ? const Color(0xFFFDE68A)
-            : const Color(0xFFBBF7D0))
-        : const Color(0xFFFECACA);
-
-    final Color estadoColor = conStock
-        ? (stockBajo
-            ? const Color(0xFFB45309)
-            : const Color(0xFF16803A))
+    final stockBajo = conStock && producto.stock <= 100;
+    final estadoColor = conStock
+        ? (stockBajo ? const Color(0xFFB45309) : const Color(0xFF16803A))
         : const Color(0xFFDC2626);
+    final fondo = conStock
+        ? (stockBajo ? const Color(0xFFFFFBEB) : const Color(0xFFF0FDF4))
+        : const Color(0xFFFEF2F2);
+    final borde = conStock
+        ? (stockBajo ? const Color(0xFFFDE68A) : const Color(0xFFBBF7D0))
+        : const Color(0xFFFECACA);
 
     return Material(
       color: fondo,
       child: InkWell(
+        borderRadius: BorderRadius.circular(9),
         onTap: () => _seleccionarProducto(producto),
         child: Container(
-          padding: EdgeInsets.all(movil ? 11 : 13),
+          padding: EdgeInsets.all(movil ? 12 : 13),
           decoration: BoxDecoration(
             border: Border.all(color: borde),
             borderRadius: BorderRadius.circular(9),
           ),
-          child: movil
-              ? Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    _cabeceraResultado(
-                      producto,
-                      estadoColor,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Container(
+                    width: 36,
+                    height: 36,
+                    decoration: BoxDecoration(
+                      color: estadoColor.withOpacity(.12),
+                      shape: BoxShape.circle,
                     ),
-                    const SizedBox(height: 7),
-                    _datosResultado(
-                      producto,
-                      estadoColor,
+                    child: Icon(Icons.inventory_2_outlined, color: estadoColor, size: 20),
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          producto.descripcion,
+                          maxLines: 4,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(
+                            color: Color(0xFF172554),
+                            fontWeight: FontWeight.w800,
+                            fontSize: 14,
+                            height: 1.25,
+                          ),
+                        ),
+                        const SizedBox(height: 5),
+                        Text(
+                          'Código: ${producto.codigo}',
+                          style: const TextStyle(
+                            color: Color(0xFF475569),
+                            fontWeight: FontWeight.w600,
+                            fontSize: 12,
+                          ),
+                        ),
+                      ],
                     ),
-                    const SizedBox(height: 9),
-                    SizedBox(
-                      width: double.infinity,
-                      child: _botonSeleccionarProducto(
-                        producto,
+                  ),
+                  const SizedBox(width: 8),
+                  Column(
+                    crossAxisAlignment: CrossAxisAlignment.end,
+                    children: [
+                      Text(
+                        producto.stockTexto,
+                        style: TextStyle(
+                          fontWeight: FontWeight.w900,
+                          fontSize: 18,
+                          color: estadoColor,
+                        ),
                       ),
-                    ),
-                  ],
-                )
-              : Row(
-                  children: [
-                    Expanded(
-                      flex: 4,
-                      child: _cabeceraResultado(
-                        producto,
-                        estadoColor,
+                      Text(
+                        producto.unidadVisible,
+                        textAlign: TextAlign.right,
+                        style: TextStyle(
+                          color: estadoColor,
+                          fontWeight: FontWeight.w700,
+                          fontSize: 10.5,
+                        ),
                       ),
-                    ),
-                    Expanded(
-                      flex: 2,
-                      child: _datosResultado(
-                        producto,
-                        estadoColor,
-                      ),
-                    ),
-                    const SizedBox(width: 12),
-                    _botonSeleccionarProducto(producto),
-                  ],
+                      if (producto.peso > 0)
+                        Text(
+                          '${producto.pesoTexto} kg',
+                          textAlign: TextAlign.right,
+                          style: const TextStyle(
+                            color: Color(0xFF64748B),
+                            fontSize: 10.5,
+                          ),
+                        ),
+                    ],
+                  ),
+                ],
+              ),
+              const SizedBox(height: 8),
+              Wrap(
+                spacing: 7,
+                runSpacing: 7,
+                children: [
+                  _chipProducto(
+                    'UNIDAD: ${producto.unidadVisible}',
+                    color: estadoColor,
+                  ),
+                  _chipProducto(
+                    'PRESENTACIÓN: ${producto.presentacion}',
+                  ),
+                  _chipProducto(
+                    conStock
+                        ? 'STOCK: ${producto.stockTexto} ${producto.unidadVisible == 'ROLLO' ? 'ROLLOS' : 'MT'}'
+                        : 'SIN STOCK',
+                    color: estadoColor,
+                  ),
+                ],
+              ),
+              if (producto.cliente.trim().isNotEmpty && producto.cliente != 'SIN CLIENTE') ...[
+                const SizedBox(height: 6),
+                Text(
+                  'Cliente: ${producto.cliente}',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(color: Color(0xFF475569), fontSize: 11.5),
                 ),
+              ],
+              if (producto.lote.trim().isNotEmpty) ...[
+                const SizedBox(height: 3),
+                Text(
+                  'Lote: ${producto.lote}',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(color: Color(0xFF475569), fontSize: 11.5),
+                ),
+              ],
+              if (producto.vendedor.trim().isNotEmpty) ...[
+                const SizedBox(height: 3),
+                Text(
+                  'Vendedor: ${producto.vendedor}',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(color: Color(0xFF475569), fontSize: 11.5),
+                ),
+              ],
+              const SizedBox(height: 6),
+              Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      'Precio lista: US\$ ${producto.valorListaPrecioDolar.toStringAsFixed(2)}',
+                      style: const TextStyle(
+                        color: Color(0xFF16803A),
+                        fontWeight: FontWeight.w800,
+                        fontSize: 12,
+                      ),
+                    ),
+                  ),
+                  const Icon(Icons.chevron_right, color: Color(0xFF16803A)),
+                ],
+              ),
+            ],
+          ),
         ),
       ),
     );
   }
 
-  Widget _cabeceraResultado(
-    ProductoCotizacionStock producto,
-    Color estadoColor,
-  ) {
-    return Row(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Container(
-          width: 34,
-          height: 34,
-          decoration: BoxDecoration(
-            color: estadoColor.withOpacity(.12),
-            shape: BoxShape.circle,
-          ),
-          child: Icon(
-            producto.stock > 0
-                ? Icons.inventory_2_outlined
-                : Icons.inventory_2_outlined,
-            color: estadoColor,
-            size: 19,
-          ),
+  Widget _chipProducto(String texto, {Color? color}) {
+    final textoColor = color ?? const Color(0xFF475569);
+    final fondo = color == null ? const Color(0xFFF1F5F9) : color.withOpacity(.10);
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 6),
+      decoration: BoxDecoration(
+        color: fondo,
+        borderRadius: BorderRadius.circular(7),
+      ),
+      child: Text(
+        texto,
+        style: TextStyle(
+          color: textoColor,
+          fontWeight: FontWeight.w700,
+          fontSize: 10.5,
         ),
-        const SizedBox(width: 9),
-        Expanded(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                producto.codigo.isEmpty
-                    ? 'SIN CÓDIGO'
-                    : producto.codigo,
-                style: TextStyle(
-                  fontWeight: FontWeight.w800,
-                  color: estadoColor,
-                  fontSize: 13,
-                ),
-              ),
-              const SizedBox(height: 3),
-              Text(
-                producto.descripcion,
-                maxLines: 2,
-                overflow: TextOverflow.ellipsis,
-                style: const TextStyle(
-                  color: Color(0xFF172554),
-                  fontWeight: FontWeight.w700,
-                ),
-              ),
-            ],
-          ),
-        ),
-      ],
-    );
-  }
-
-  Widget _datosResultado(
-    ProductoCotizacionStock producto,
-    Color estadoColor,
-  ) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(
-          producto.estadoStock,
-          style: TextStyle(
-            color: estadoColor,
-            fontWeight: FontWeight.w800,
-            fontSize: 12,
-          ),
-        ),
-        const SizedBox(height: 3),
-        Text(
-          'Stock: ${producto.stock.toStringAsFixed(2)} MT',
-          style: TextStyle(
-            color: estadoColor,
-            fontWeight: FontWeight.w700,
-            fontSize: 12,
-          ),
-        ),
-        if (producto.peso > 0) ...[
-          const SizedBox(height: 2),
-          Text(
-            'Peso: ${producto.peso.toStringAsFixed(4)}',
-            style: const TextStyle(
-              color: Color(0xFF475569),
-              fontSize: 11.5,
-            ),
-          ),
-        ],
-      ],
+      ),
     );
   }
 
@@ -1328,6 +1406,7 @@ class _CotizacionesPageState extends State<CotizacionesPage> {
 
   Future<void> _buscarProductos(String texto) async {
     final busqueda = _normalizarBusqueda(texto);
+    final secuencia = ++_busquedaProductoSecuencia;
 
     if (busqueda.isEmpty) {
       if (!mounted) return;
@@ -1341,24 +1420,19 @@ class _CotizacionesPageState extends State<CotizacionesPage> {
     setState(() => _buscandoProducto = true);
 
     try {
-      // La búsqueda real se hace sobre TODO el stock permitido,
-      // sin agrupar y sin límite de 50/100 registros.
       final productos = await _productoService.buscarProductos(texto);
-
-      if (!mounted) return;
+      if (!mounted || secuencia != _busquedaProductoSecuencia) return;
 
       setState(() {
         _productosEncontrados = productos;
         _buscandoProducto = false;
       });
     } catch (_) {
-      if (!mounted) return;
-
+      if (!mounted || secuencia != _busquedaProductoSecuencia) return;
       setState(() {
         _productosEncontrados = [];
         _buscandoProducto = false;
       });
-
       _mensaje(
         'No fue posible buscar productos. Verifique la conexión con Supabase.',
       );
@@ -1367,7 +1441,6 @@ class _CotizacionesPageState extends State<CotizacionesPage> {
 
   String _normalizarBusqueda(String texto) {
     var resultado = texto.toLowerCase().trim();
-
     const reemplazos = {
       'á': 'a',
       'é': 'e',
@@ -1377,61 +1450,66 @@ class _CotizacionesPageState extends State<CotizacionesPage> {
       'ü': 'u',
       'ñ': 'n',
     };
-
     reemplazos.forEach((origen, destino) {
       resultado = resultado.replaceAll(origen, destino);
     });
-
-    resultado = resultado.replaceAll(RegExp(r'[^a-z0-9x]+'), ' ');
+    resultado = resultado.replaceAll(RegExp(r'(?<=\d),(?=\d)'), '.');
+    resultado = resultado.replaceAll(RegExp(r'[^a-z0-9.]+'), ' ');
     resultado = resultado.replaceAll(RegExp(r'\s+'), ' ').trim();
-
-    resultado = resultado.replaceAllMapped(
-      RegExp(r'([a-z]+)\s+(\d)'),
-      (m) => '${m.group(1)}${m.group(2)}',
-    );
-
     return resultado;
   }
 
   Future<void> _abrirSelectorProducto() async {
-    // No mostramos todo el catálogo al abrir el selector.
-    // El usuario debe escribir una búsqueda. Esto evita que aparezca una
-    // lista enorme de productos apenas se abre la ventana.
-    setState(() {
-      _productosEncontrados = [];
-      _buscandoProducto = false;
-    });
+    // La ventana abre inmediatamente con una pequeña muestra de stock.
+    // Ya no esperamos a cargar miles de filas para poder mostrar algo.
+    ++_busquedaProductoSecuencia;
+    if (mounted) {
+      setState(() {
+        _productosEncontrados = [];
+        _buscandoProducto = true;
+      });
+    }
 
-    final seleccionado =
-        await showDialog<ProductoCotizacionStock>(
+    try {
+      final muestra = await _productoService.obtenerMuestraInicial(limite: 20);
+      if (mounted) {
+        setState(() {
+          _productosEncontrados = muestra;
+          _buscandoProducto = false;
+        });
+      }
+    } catch (_) {
+      if (mounted) {
+        setState(() {
+          _productosEncontrados = [];
+          _buscandoProducto = false;
+        });
+      }
+    }
+
+    final seleccionado = await showDialog<ProductoCotizacionStock>(
       context: context,
       builder: (_) => _dialogoProductos(),
     );
 
     if (!mounted || seleccionado == null) return;
-
     _seleccionarProducto(seleccionado);
   }
 
   Widget _dialogoProductos() {
-    final controller = TextEditingController(
-      text: _productoController.text,
-    );
+    final controller = TextEditingController(text: _productoController.text);
 
     return StatefulBuilder(
       builder: (dialogContext, setDialogState) {
         return AlertDialog(
           title: const Row(
             children: [
-              Icon(
-                Icons.inventory_2_outlined,
-                color: Color(0xFF16803A),
-              ),
+              Icon(Icons.inventory_2_outlined, color: Color(0xFF16803A)),
               SizedBox(width: 9),
-              Text(
-                'Buscar producto',
-                style: TextStyle(
-                  fontWeight: FontWeight.bold,
+              Expanded(
+                child: Text(
+                  'Buscar producto',
+                  style: TextStyle(fontWeight: FontWeight.bold),
                 ),
               ),
             ],
@@ -1453,208 +1531,62 @@ class _CotizacionesPageState extends State<CotizacionesPage> {
                     final busqueda = _normalizarBusqueda(texto);
 
                     if (busqueda.isEmpty) {
-                      if (secuencia != _busquedaProductoSecuencia) return;
-
-                      setDialogState(() {
-                        _productosEncontrados = [];
-                        _buscandoProducto = false;
-                      });
+                      setDialogState(() => _buscandoProducto = true);
+                      try {
+                        final muestra = await _productoService.obtenerMuestraInicial(limite: 20);
+                        if (!dialogContext.mounted || secuencia != _busquedaProductoSecuencia) return;
+                        setDialogState(() {
+                          _productosEncontrados = muestra;
+                          _buscandoProducto = false;
+                        });
+                      } catch (_) {
+                        if (!dialogContext.mounted || secuencia != _busquedaProductoSecuencia) return;
+                        setDialogState(() {
+                          _productosEncontrados = [];
+                          _buscandoProducto = false;
+                        });
+                      }
                       return;
                     }
 
                     setDialogState(() => _buscandoProducto = true);
-
                     try {
-                      // IMPORTANTE:
-                      // La búsqueda usa el mismo servicio que carga TODO
-                      // el stock. No se limita a 50 resultados y no agrupa
-                      // los registros.
-                      final productos =
-                          await _productoService.buscarProductos(texto);
-
-                      // Si el usuario ya escribió otra cosa, ignoramos esta
-                      // respuesta anterior para evitar resultados atrasados.
-                      if (secuencia != _busquedaProductoSecuencia) return;
-
+                      final productos = await _productoService.buscarProductos(texto);
+                      if (!dialogContext.mounted || secuencia != _busquedaProductoSecuencia) return;
                       setDialogState(() {
                         _productosEncontrados = productos;
                         _buscandoProducto = false;
                       });
                     } catch (_) {
-                      if (secuencia != _busquedaProductoSecuencia) return;
-
+                      if (!dialogContext.mounted || secuencia != _busquedaProductoSecuencia) return;
                       setDialogState(() {
                         _productosEncontrados = [];
                         _buscandoProducto = false;
                       });
                     }
-                  }
+                  },
                 ),
-                const SizedBox(height: 12),
+                const SizedBox(height: 10),
+                if (_buscandoProducto) const LinearProgressIndicator(minHeight: 2),
+                const SizedBox(height: 8),
                 Expanded(
                   child: _productosEncontrados.isEmpty
                       ? Center(
                           child: Text(
                             controller.text.trim().isEmpty
-                                ? 'Escriba código, modelo o descripción para buscar.'
-                                : 'No se encontró en stock. Se buscará también en la lista de precios vigente.',
+                                ? 'Cargando una muestra de stock disponible...'
+                                : 'No se encontraron productos.',
                             textAlign: TextAlign.center,
-                            style: const TextStyle(
-                              color: Color(0xFF64748B),
-                            ),
+                            style: const TextStyle(color: Color(0xFF64748B)),
                           ),
                         )
                       : ListView.separated(
-                          itemCount:
-                              _productosEncontrados.length,
-                          separatorBuilder: (_, __) =>
-                              const SizedBox(height: 7),
-                          itemBuilder: (_, index) {
-                            final producto =
-                                _productosEncontrados[index];
-
-                            final color =
-                                producto.stock > 0
-                                    ? const Color(0xFF16803A)
-                                    : const Color(0xFFDC2626);
-
-                            return Material(
-                              color: producto.stock > 0
-                                  ? const Color(0xFFF0FDF4)
-                                  : const Color(0xFFFEF2F2),
-                              child: InkWell(
-                                borderRadius: BorderRadius.circular(9),
-                                onTap: () {
-                                  Navigator.pop(
-                                    dialogContext,
-                                    producto,
-                                  );
-                                },
-                                child: Container(
-                                  padding: const EdgeInsets.fromLTRB(14, 11, 12, 11),
-                                  decoration: BoxDecoration(
-                                    borderRadius: BorderRadius.circular(9),
-                                    border: Border.all(
-                                      color: producto.stock > 0
-                                          ? const Color(0xFFBBF7D0)
-                                          : const Color(0xFFFECACA),
-                                    ),
-                                  ),
-                                  child: Row(
-                                    crossAxisAlignment: CrossAxisAlignment.start,
-                                    children: [
-                                      Padding(
-                                        padding: const EdgeInsets.only(top: 2),
-                                        child: Icon(
-                                          Icons.inventory_2_outlined,
-                                          color: color,
-                                          size: 24,
-                                        ),
-                                      ),
-                                      const SizedBox(width: 11),
-                                      Expanded(
-                                        child: Column(
-                                          crossAxisAlignment: CrossAxisAlignment.start,
-                                          children: [
-                                            Text(
-                                              producto.descripcion,
-                                              maxLines: 2,
-                                              overflow: TextOverflow.ellipsis,
-                                              style: const TextStyle(
-                                                fontWeight: FontWeight.w700,
-                                                fontSize: 14.5,
-                                              ),
-                                            ),
-                                            const SizedBox(height: 5),
-                                            Text(
-                                              'Código : ${producto.codigo}',
-                                              style: const TextStyle(
-                                                color: Color(0xFF475569),
-                                                fontSize: 12.5,
-                                              ),
-                                            ),
-                                            if (producto.cliente.trim().isNotEmpty && producto.cliente != 'SIN CLIENTE')
-                                              Text(
-                                                'Cliente : ${producto.cliente}',
-                                                maxLines: 1,
-                                                overflow: TextOverflow.ellipsis,
-                                                style: const TextStyle(
-                                                  color: Color(0xFF475569),
-                                                  fontSize: 12.5,
-                                                ),
-                                              ),
-                                            if (producto.lote.trim().isNotEmpty)
-                                              Text(
-                                                'Lote : ${producto.lote}',
-                                                maxLines: 1,
-                                                overflow: TextOverflow.ellipsis,
-                                                style: const TextStyle(
-                                                  color: Color(0xFF475569),
-                                                  fontSize: 12.5,
-                                                ),
-                                              ),
-                                            Text(
-                                              'Vendedor : ${producto.vendedor.trim().isEmpty ? '' : producto.vendedor}',
-                                              maxLines: 1,
-                                              overflow: TextOverflow.ellipsis,
-                                              style: const TextStyle(
-                                                color: Color(0xFF475569),
-                                                fontSize: 12.5,
-                                              ),
-                                            ),
-                                            Text(
-                                              'Precio Lista : US\$ ${producto.valorListaPrecioDolar.toStringAsFixed(2)}',
-                                              style: const TextStyle(
-                                                color: Color(0xFF16803A),
-                                                fontWeight: FontWeight.w800,
-                                                fontSize: 12.5,
-                                              ),
-                                            ),
-                                            if (producto.fechaIngreso.trim().isNotEmpty)
-                                              Text(
-                                                'Fecha Ingreso Alm. 01 : ${producto.fechaIngreso}',
-                                                style: const TextStyle(
-                                                  color: Color(0xFF64748B),
-                                                  fontSize: 12.5,
-                                                ),
-                                              ),
-                                          ],
-                                        ),
-                                      ),
-                                      const SizedBox(width: 10),
-                                      Column(
-                                        crossAxisAlignment: CrossAxisAlignment.end,
-                                        children: [
-                                          Text(
-                                            producto.stockTexto,
-                                            style: const TextStyle(
-                                              fontWeight: FontWeight.w800,
-                                              fontSize: 17,
-                                              color: Color(0xFF334155),
-                                            ),
-                                          ),
-                                          Text(
-                                            producto.peso > 0
-                                                ? '${producto.peso.toStringAsFixed(2)} kg'
-                                                : '0.00 kg',
-                                            style: const TextStyle(
-                                              color: Color(0xFF64748B),
-                                              fontSize: 11.5,
-                                            ),
-                                          ),
-                                          const SizedBox(height: 7),
-                                          Icon(
-                                            Icons.chevron_right,
-                                            color: color,
-                                          ),
-                                        ],
-                                      ),
-                                    ],
-                                  ),
-                                ),
-                              ),
-                            );
-                          },
+                          itemCount: _productosEncontrados.length,
+                          separatorBuilder: (_, __) => const SizedBox(height: 7),
+                          itemBuilder: (_, index) => _resultadoProductoItem(
+                            _productosEncontrados[index],
+                            true,
+                          ),
                         ),
                 ),
               ],
@@ -1662,8 +1594,7 @@ class _CotizacionesPageState extends State<CotizacionesPage> {
           ),
           actions: [
             TextButton(
-              onPressed: () =>
-                  Navigator.pop(dialogContext),
+              onPressed: () => Navigator.pop(dialogContext),
               child: const Text('CANCELAR'),
             ),
           ],

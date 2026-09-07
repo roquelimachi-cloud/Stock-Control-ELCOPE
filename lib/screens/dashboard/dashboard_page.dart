@@ -2,10 +2,9 @@ import 'package:flutter/material.dart';
 
 import '../login/login_page.dart';
 import '../stock/stock_page.dart';
-import 'stock_antiguo_page.dart';
-import 'stock_antiguo_analisis_gerencial.dart';
 import '../sync/sync_page.dart';
 import '../usuarios/usuarios_page.dart';
+import 'roles_permisos_screen.dart';
 import '../../services/sesion.dart';
 import '../perfil/mi_perfil_page.dart';
 import '../../models/dashboard/dashboard_summary.dart';
@@ -13,81 +12,22 @@ import '../../services/supabase/dashboard_service.dart';
 import '../../widgets/dashboard/kpi_card.dart';
 import '../../models/dashboard/cliente_top.dart';
 import '../../widgets/dashboard/top_clientes_card.dart';
-import 'package:intl/intl.dart';
-import '../../widgets/dashboard/cliente_hover.dart';
-import '../../widgets/dashboard/clase_pie_chart.dart';
-import '../../widgets/dashboard/peso_clase_pie_chart.dart';
-import '../../models/dashboard/clase_resumen.dart';
-import '../../models/dashboard/peso_clase_resumen.dart';
-import '../../models/dashboard/producto_top.dart';
-import '../../widgets/dashboard/top_productos_card.dart';
-import '../produccion/produccion_dashboard.dart';
-import '../produccion/produccion_gerencial_dashboard.dart';
-import '../../models/dashboard/stock_vendedor.dart';
-import '../../widgets/dashboard/stock_vendedor_card.dart';
 
-class DashboardPage extends StatefulWidget {
-  const DashboardPage({super.key});
+class DashboardPage extends StatelessWidget {
+  DashboardPage({super.key});
 
-  @override
-  State<DashboardPage> createState() =>
-      _DashboardPageState();
-}
+  final DashboardService dashboardService = DashboardService();
 
-class _DashboardPageState
-    extends State<DashboardPage> {
-
-  final DashboardService dashboardService =
-      DashboardService();
-
-  final ScrollController _scrollController =
-      ScrollController();
-
-late Future<DashboardSummary> _resumenFuture;
-late Future<List<ClienteTop>> _clientesFuture;
-late Future<List<ClaseResumen>> _clasesFuture;
-late Future<List<PesoClaseResumen>> _pesoClasesFuture;
-late Future<List<ProductoTop>> _productosFuture;
-late Future<List<StockVendedor>> _stockVendedoresFuture;
-@override
-void initState() {
-  super.initState();
-
-  _resumenFuture = dashboardService.obtenerResumen();
-  _clientesFuture = dashboardService.obtenerTopClientes();
-  _clasesFuture = dashboardService.obtenerResumenClases();
-  _pesoClasesFuture = dashboardService.obtenerPesoPorClase();
-  _productosFuture = dashboardService.obtenerTopProductos();
-  _stockVendedoresFuture =
-      dashboardService.obtenerStockPorVendedor();
-
-  _scrollController.addListener(() {
-    ClienteHover.cerrarPopup();
-  });
-}
-
-  @override
-  void dispose() {
-    _scrollController.dispose();
-    super.dispose();
+  bool get _esAdministrador {
+    final rol = Sesion.rol.trim().toLowerCase();
+    return Sesion.esAdministrador || rol == 'administrador';
   }
 
   @override
   Widget build(BuildContext context) {
+    final esAdministrador = _esAdministrador;
 
-    final entero = NumberFormat("#,##0", "en_US");
-final decimal = NumberFormat("#,##0.00", "en_US");
-
-
- return GestureDetector(
-  behavior: HitTestBehavior.translucent,
-  onTap: () {
-    ClienteHover.cerrarPopup();
-    FocusScope.of(context).unfocus();
-  },
-  child: Scaffold(
-
-
+    return Scaffold(
       appBar: AppBar(
         title: const Text("CONTROL DE STOCK ELCOPE"),
         centerTitle: true,
@@ -95,9 +35,6 @@ final decimal = NumberFormat("#,##0.00", "en_US");
         foregroundColor: Colors.white,
       ),
       drawer: Drawer(
-        width: MediaQuery.sizeOf(context).width < 600
-            ? MediaQuery.sizeOf(context).width * 0.86
-            : 304,
         child: SafeArea(
           child: Column(
             children: [
@@ -108,24 +45,26 @@ final decimal = NumberFormat("#,##0.00", "en_US");
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                 Image.asset(
-  'assets/images/logo_mr.png',
-  width: 70,
-  height: 70,
-),
-                    SizedBox(height: 10),
+                    Image.asset(
+                      'assets/images/logo_mr.png',
+                      width: 70,
+                      height: 70,
+                    ),
+                    const SizedBox(height: 10),
                     Text(
-                     Sesion.nombre,
-                      style: TextStyle(
+                      Sesion.nombre,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
                         color: Colors.white,
                         fontSize: 28,
                         fontWeight: FontWeight.bold,
                       ),
                     ),
-                    SizedBox(height: 5),
+                    const SizedBox(height: 5),
                     Text(
-                       Sesion.rol,
-                      style: TextStyle(
+                      Sesion.rol,
+                      style: const TextStyle(
                         color: Colors.white70,
                         fontSize: 15,
                       ),
@@ -140,146 +79,113 @@ final decimal = NumberFormat("#,##0.00", "en_US");
                   children: [
                     ListTile(
                       leading: const Icon(Icons.dashboard),
-                      title: const Text(
-                        "Dashboard",
-                        softWrap: false,
-                        overflow: TextOverflow.ellipsis,
-                      ),
+                      title: const Text("Dashboard"),
                       onTap: () {
                         Navigator.pop(context);
                       },
                     ),
 
-              ListTile(
-  leading: const Icon(Icons.calendar_month_outlined),
-  title: const Text("Stock Antiguo (> 30 días)"),
-  subtitle: Text(
-    Sesion.rol == 'Gerencia' ||
-            Sesion.rol == 'Jefe Lima' ||
-            Sesion.rol == 'Jefe Provincia'
-        ? "Análisis gerencial"
-        : "Control de permanencia",
-     softWrap: false,
-     overflow: TextOverflow.ellipsis,
-  ),
-  onTap: () {
-    Navigator.pop(context);
+                    ListTile(
+                      leading: const Icon(Icons.inventory_2),
+                      title: const Text("Control de Stock"),
+                      onTap: () {
+                        Navigator.pop(context);
 
-    if (Sesion.rol == 'Gerencia' ||
-        Sesion.rol == 'Jefe Lima' ||
-        Sesion.rol == 'Jefe Provincia') {
-      Navigator.push(
-        context,
-        MaterialPageRoute(
-          builder: (_) => const StockAntiguoAnalisisGerencialPage(),
-        ),
-      );
-    } else {
-      Navigator.push(
-        context,
-        MaterialPageRoute(
-          builder: (_) => const StockAntiguoPage(),
-        ),
-      );
-    }
-  },
-),
-             ListTile(
-  leading: const Icon(Icons.factory),
-  title: const Text("Producción Pendiente"),
-  subtitle: const Text("Dashboard de Producción"),
-  onTap: () {
-    Navigator.pop(context);
+                        Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder: (_) => const StockPage(),
+                          ),
+                        );
+                      },
+                    ),
 
-    Navigator.push(
-      context,
-      MaterialPageRoute(
-        builder: (_) => const ProduccionGerencialDashboard(),
-      ),
-    );
-  },
-),
-                  ListTile(
-  leading: const Icon(Icons.person),
-  title: const Text("Mi Perfil"),
-  onTap: () {
-    Navigator.pop(context);
+                    ListTile(
+                      leading: const Icon(Icons.person),
+                      title: const Text("Mi Perfil"),
+                      onTap: () {
+                        Navigator.pop(context);
 
-    Navigator.push(
-      context,
-      MaterialPageRoute(
-        builder: (_) => const MiPerfilPage(),
-      ),
-    );
-  },
-),
-                    
-if (Sesion.esAdministrador)
-  ListTile(
-    leading: const Icon(Icons.sync),
-    title: const Text("Sincronizar Excel"),
-    onTap: () async {
-      Navigator.pop(context);
+                        Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder: (_) => const MiPerfilPage(),
+                          ),
+                        );
+                      },
+                    ),
 
-      await Navigator.push(
-        context,
-        MaterialPageRoute(
-          builder: (_) => const SyncPage(),
-        ),
-      );
+                    if (esAdministrador)
+                      ListTile(
+                        leading: const Icon(Icons.sync),
+                        title: const Text("Sincronizar Excel"),
+                        onTap: () {
+                          Navigator.pop(context);
 
-      if (!mounted) return;
+                          Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder: (_) => const SyncPage(),
+                            ),
+                          );
+                        },
+                      ),
 
-      setState(() {
-        _resumenFuture =
-            dashboardService.obtenerResumen();
+                    if (esAdministrador)
+                      ListTile(
+                        leading: const Icon(Icons.people),
+                        title: const Text("Usuarios"),
+                        onTap: () {
+                          Navigator.pop(context);
 
-        _clientesFuture =
-            dashboardService.obtenerTopClientes();
+                          Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder: (_) => const UsuariosPage(),
+                            ),
+                          );
+                        },
+                      ),
 
-        _clasesFuture =
-            dashboardService.obtenerResumenClases();
+                    // =====================================================
+                    // ROLES Y PERMISOS
+                    // Solo Administrador
+                    // =====================================================
+                    if (esAdministrador)
+                      ListTile(
+                        leading: const Icon(
+                          Icons.admin_panel_settings_outlined,
+                        ),
+                        title: const Text("Roles y Permisos"),
+                        subtitle: const Text(
+                          "Administrar accesos por rol",
+                        ),
+                        onTap: () {
+                          Navigator.pop(context);
 
-        _pesoClasesFuture =
-            dashboardService.obtenerPesoPorClase();
+                          Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder: (_) => const RolesPermisosScreen(),
+                            ),
+                          );
+                        },
+                      ),
 
-        _productosFuture =
-            dashboardService.obtenerTopProductos();
-      });
-    },
-  ),
+                    if (esAdministrador)
+                      ListTile(
+                        leading: const Icon(Icons.settings),
+                        title: const Text("Configuración"),
+                        onTap: () {
+                          Navigator.pop(context);
 
-                    if (Sesion.esAdministrador)
-  ListTile(
-    leading: const Icon(Icons.people),
-    title: const Text("Usuarios"),
-    onTap: () {
-      Navigator.pop(context);
-
-      Navigator.push(
-        context,
-        MaterialPageRoute(
-          builder: (_) => const UsuariosPage(),
-        ),
-      );
-    },
-  ),
-
-                    
-       if (Sesion.esAdministrador)
-  ListTile(
-    leading: const Icon(Icons.settings),
-    title: const Text("Configuración"),
-    onTap: () {
-      Navigator.pop(context);
-
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text("Módulo en desarrollo"),
-        ),
-      );
-    },
-  ),
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(
+                              content: Text("Módulo en desarrollo"),
+                            ),
+                          );
+                        },
+                      ),
                   ],
                 ),
               ),
@@ -299,17 +205,16 @@ if (Sesion.esAdministrador)
                   ),
                 ),
                 onTap: () {
-  Sesion.cerrarSesion();
+                  Sesion.cerrarSesion();
 
-  Navigator.pushAndRemoveUntil(
-    context,
-    MaterialPageRoute(
-      builder: (_) => const LoginPage(),
-    ),
-    (route) => false,
-  );
-},
-              
+                  Navigator.pushAndRemoveUntil(
+                    context,
+                    MaterialPageRoute(
+                      builder: (_) => const LoginPage(),
+                    ),
+                    (route) => false,
+                  );
+                },
               ),
 
               const SizedBox(height: 10),
@@ -317,363 +222,133 @@ if (Sesion.esAdministrador)
           ),
         ),
       ),
-  
-body: FutureBuilder<DashboardSummary>(
-  future: _resumenFuture,
-  builder: (context, snapshot) {
 
-    if (snapshot.connectionState == ConnectionState.waiting) {
-      return const Center(
-        child: CircularProgressIndicator(),
-      );
-    }
+      body: FutureBuilder<DashboardSummary>(
+        future: dashboardService.obtenerResumen(),
+        builder: (context, snapshot) {
+          if (snapshot.connectionState == ConnectionState.waiting) {
+            return const Center(
+              child: CircularProgressIndicator(),
+            );
+          }
 
-    if (snapshot.hasError) {
-      return Center(
-        child: Text(
-          "Error: ${snapshot.error}",
-        ),
-      );
-    }
-
-   
-
-    return FutureBuilder<List<ClienteTop>>(
-      future: _clientesFuture,
-      builder: (context, topSnapshot) {
-        if (topSnapshot.connectionState ==
-            ConnectionState.waiting) {
-          return const Center(
-            child: CircularProgressIndicator(),
-          );
-        }
-
-        if (topSnapshot.hasError) {
-          return Center(
-            child: Text(
-              "Error: ${topSnapshot.error}",
-            ),
-          );
-        }
-
-       final topClientes = topSnapshot.data ?? [];
-
-debugPrint("================================");
-debugPrint("Cantidad de clientes: ${topClientes.length}");
-
-for (final c in topClientes) {
-  debugPrint("${c.cliente} -> ${c.valorStock}");
-}
-
-debugPrint("================================");
-
-final resumen = snapshot.data!;
-
-return SingleChildScrollView(
-  controller: _scrollController,
-  padding: const EdgeInsets.all(20),
-  child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-
-              Text(
-                "Bienvenido ${Sesion.nombre}",
-                style: const TextStyle(
-                  fontSize: 30,
-                  fontWeight: FontWeight.bold,
-                ),
+          if (snapshot.hasError) {
+            return Center(
+              child: Text(
+                "Error: ${snapshot.error}",
               ),
+            );
+          }
 
-              const SizedBox(height: 8),
+          final resumen = snapshot.data;
 
-              Text(
-                Sesion.rol,
-                style: const TextStyle(
-                  fontSize: 18,
-                  color: Colors.grey,
-                ),
-              ),
+          if (resumen == null) {
+            return const Center(
+              child: Text("No se pudo obtener el resumen del dashboard."),
+            );
+          }
 
-              const SizedBox(height: 30),
-GridView.count(
-  shrinkWrap: true,
-  physics: const NeverScrollableScrollPhysics(),
-  crossAxisCount: 3,
-  crossAxisSpacing: 20,
-  mainAxisSpacing: 20,
-  
-  childAspectRatio:
-    MediaQuery.of(context).size.width < 700
-        ? 0.95
-        : 2.3,
-
-  children: [
-
-    KpiCard(
-      titulo: "Peso Total",
-      valor: "${decimal.format(resumen.pesoTotal)} Kg",
-      icono: Icons.scale,
-      color: Colors.orange,
-    ),
-
-    KpiCard(
-      titulo: "Valor Stock",
-      valor: "US\$ ${decimal.format(resumen.valorStock)}",
-      icono: Icons.attach_money,
-      color: Colors.green,
-    ),
-
-    KpiCard(
-      titulo: "Clientes",
-      valor: entero.format(resumen.clientes),
-      icono: Icons.people,
-      color: Colors.purple,
-    ),
-
-  ],
-),
-
-const SizedBox(height: 30),
-FutureBuilder<List<ClaseResumen>>(
-  future: _clasesFuture,
-  builder: (context, claseSnapshot) {
-    if (claseSnapshot.connectionState ==
-        ConnectionState.waiting) {
-      return const Center(
-        child: CircularProgressIndicator(),
-      );
-    }
-
-    if (claseSnapshot.hasError) {
-      return Center(
-        child: Text(
-          "Error: ${claseSnapshot.error}",
-        ),
-      );
-    }
-
-    final clases = claseSnapshot.data ?? [];
-
-    return FutureBuilder<List<ProductoTop>>(
-      future: _productosFuture,
-      builder: (context, productoSnapshot) {
-
-        if (productoSnapshot.connectionState ==
-            ConnectionState.waiting) {
-          return const Center(
-            child: CircularProgressIndicator(),
-          );
-        }
-
-        if (productoSnapshot.hasError) {
-          return Center(
-            child: Text(
-              "Error: ${productoSnapshot.error}",
-            ),
-          );
-        }
-
-        final productos =
-            productoSnapshot.data ?? [];
-
-        return Column(
-          children: [
-
-            FutureBuilder<List<PesoClaseResumen>>(
-              future: _pesoClasesFuture,
-              builder: (context, pesoSnapshot) {
-                if (pesoSnapshot.connectionState ==
-                    ConnectionState.waiting) {
-                  return const Center(
-                    child: CircularProgressIndicator(),
-                  );
-                }
-
-                if (pesoSnapshot.hasError) {
-                  return Center(
-                    child: Text(
-                      "Error Peso por Clase: ${pesoSnapshot.error}",
-                    ),
-                  );
-                }
-
-                final pesoClases =
-                    pesoSnapshot.data ?? [];
-
-                return LayoutBuilder(
-                  builder: (context, constraints) {
-                    if (constraints.maxWidth < 950) {
-                      return Column(
-                        children: [
-                          ClasePieChart(
-                            datos: clases,
-                          ),
-                          const SizedBox(height: 20),
-                          PesoClasePieChart(
-                            datos: pesoClases,
-                          ),
-                          const SizedBox(height: 20),
-                          TopClientesCard(
-                            clientes: topClientes,
-                          ),
-                        ],
-                      );
-                    }
-
-            return Column(
-  children: [
-
-    // =========================================================
-    // DONAS - ESCRITORIO
-    // =========================================================
-
-    SizedBox(
-      height: 550,
-
-      child: Row(
-        crossAxisAlignment:
-            CrossAxisAlignment.stretch,
-
-        children: [
-
-          // ===================================================
-          // DONA 1
-          // ===================================================
-
-          Expanded(
-            child: SizedBox(
-              height: double.infinity,
-
-              child: ClasePieChart(
-                datos: clases,
-              ),
-            ),
-          ),
-
-          const SizedBox(width: 20),
-
-          // ===================================================
-          // DONA 2
-          // ===================================================
-
-          Expanded(
-            child: SizedBox(
-              height: double.infinity,
-
-              child: PesoClasePieChart(
-                datos: pesoClases,
-              ),
-            ),
-          ),
-        ],
-      ),
-    ),
-
-    const SizedBox(height: 25),
-
-    // =========================================================
-    // TOP CLIENTES
-    // =========================================================
-
-    TopClientesCard(
-      clientes: topClientes,
-    ),
-  ],
-);
-                  },
+          return FutureBuilder<List<ClienteTop>>(
+            future: dashboardService.obtenerTopClientes(),
+            builder: (context, topSnapshot) {
+              if (topSnapshot.connectionState ==
+                  ConnectionState.waiting) {
+                return const Center(
+                  child: CircularProgressIndicator(),
                 );
-              },
-            ),
+              }
 
-            const SizedBox(height: 25),
+              if (topSnapshot.hasError) {
+                return Center(
+                  child: Text(
+                    "Error: ${topSnapshot.error}",
+                  ),
+                );
+              }
 
-          const SizedBox(height: 25),
+              final topClientes = topSnapshot.data ?? [];
 
-// =========================================================
-// STOCK POR VENDEDOR
-// =========================================================
+              return SingleChildScrollView(
+                padding: const EdgeInsets.all(20),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      "Bienvenido ${Sesion.nombre}",
+                      style: const TextStyle(
+                        fontSize: 30,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
 
-FutureBuilder<List<StockVendedor>>(
-  future: _stockVendedoresFuture,
+                    const SizedBox(height: 8),
 
-  builder: (context, vendedorSnapshot) {
-    // -------------------------------------------------------
-    // CARGANDO
-    // -------------------------------------------------------
+                    Text(
+                      Sesion.rol,
+                      style: const TextStyle(
+                        fontSize: 18,
+                        color: Colors.grey,
+                      ),
+                    ),
 
-    if (vendedorSnapshot.connectionState ==
-        ConnectionState.waiting) {
-      return const SizedBox(
-        height: 120,
-        child: Center(
-          child: CircularProgressIndicator(),
-        ),
-      );
-    }
+                    const SizedBox(height: 30),
 
-    // -------------------------------------------------------
-    // ERROR
-    // -------------------------------------------------------
+                    GridView.count(
+                      shrinkWrap: true,
+                      physics:
+                          const NeverScrollableScrollPhysics(),
+                      crossAxisCount: 2,
+                      crossAxisSpacing: 20,
+                      mainAxisSpacing: 20,
+                      childAspectRatio: 2.8,
+                      children: [
+                        KpiCard(
+                          titulo: "Stock Total",
+                          valor:
+                              resumen.stockTotal.toStringAsFixed(0),
+                          icono: Icons.inventory,
+                          color: Colors.blue,
+                        ),
 
-    if (vendedorSnapshot.hasError) {
-      return const SizedBox.shrink();
-    }
+                        KpiCard(
+                          titulo: "Peso Total",
+                          valor:
+                              "${resumen.pesoTotal.toStringAsFixed(2)} Kg",
+                          icono: Icons.scale,
+                          color: Colors.orange,
+                        ),
 
-    final vendedores =
-        vendedorSnapshot.data ?? [];
+                        KpiCard(
+                          titulo: "Valor Stock",
+                          valor:
+                              "US\$ ${resumen.valorStock.toStringAsFixed(2)}",
+                          icono: Icons.attach_money,
+                          color: Colors.green,
+                        ),
 
-    // -------------------------------------------------------
-    // QUIÉNES PUEDEN VER LA BARRA
-    // -------------------------------------------------------
+                        KpiCard(
+                          titulo: "Clientes",
+                          valor: resumen.clientes.toString(),
+                          icono: Icons.people,
+                          color: Colors.purple,
+                        ),
+                      ],
+                    ),
 
-    final mostrarStockVendedores =
-        Sesion.rol == 'Gerencia' ||
-        Sesion.rol == 'Jefe Lima' ||
-        Sesion.rol == 'Jefe Provincia';
+                    const SizedBox(height: 30),
 
-    // -------------------------------------------------------
-    // VENDEDORES / ADMINISTRADOR
-    // NO MOSTRAR
-    // -------------------------------------------------------
+                    TopClientesCard(
+                      clientes: topClientes,
+                    ),
 
-    if (!mostrarStockVendedores ||
-        vendedores.isEmpty) {
-      return const SizedBox.shrink();
-    }
-
-    return StockVendedorCard(
-      vendedores: vendedores,
+                    const SizedBox(height: 20),
+                  ],
+                ),
+              );
+            },
+          );
+        },
+      ),
     );
-  },
-),
-
-const SizedBox(height: 25),
-
-// =========================================================
-// TOP PRODUCTOS
-// =========================================================
-
-TopProductosCard(
-  productos: productos,
-),
-          ],
-        );
-      },
-    );
-  },
-),
-
-const SizedBox(height: 20),
-
-          ],
-        ),
-      );
-    },
-  );
-},
-),
-
-    ),
-  );
-}
+  }
 }

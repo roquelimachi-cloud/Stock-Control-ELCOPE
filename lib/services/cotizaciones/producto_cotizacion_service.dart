@@ -1,14 +1,7 @@
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 /// Registro de producto utilizado exclusivamente por Cotizaciones.
-///
-/// IMPORTANTE:
-/// - El stock se obtiene de public.stock.
-/// - El precio unitario base se obtiene de public.productos.
-/// - El valor de stock.valor_lista_precio_dolar NO se usa como precio
-///   unitario, porque puede representar la valorización del registro.
-/// - Los registros de stock se mantienen individualmente.
-/// - Los productos sin stock pueden aparecer desde la lista vigente de precios.
+/// Conserva cada registro de stock individual para distinguir lotes.
 class ProductoCotizacionStock {
   final String codigo;
   final String descripcion;
@@ -23,6 +16,9 @@ class ProductoCotizacionStock {
   final String fechaIngreso;
   final String modelo;
   final String datosBusqueda;
+  final String unidadMedida;
+  final String presentacionStock;
+  final double cantidadEmpaque;
 
   const ProductoCotizacionStock({
     required this.codigo,
@@ -38,15 +34,27 @@ class ProductoCotizacionStock {
     required this.fechaIngreso,
     required this.modelo,
     this.datosBusqueda = '',
+    this.unidadMedida = '',
+    this.presentacionStock = '',
+    this.cantidadEmpaque = 0,
   });
 
   bool get tieneStock => stock > 0;
 
-  String get stockTexto {
-    if (stock <= 0) return '0';
-    return stock.toStringAsFixed(
-      stock == stock.roundToDouble() ? 0 : 2,
+  String get stockTexto => _formatearNumero(stock);
+
+  String get pesoTexto => _formatearNumero(peso);
+
+  static String _formatearNumero(double valor) {
+    final decimales = valor == valor.roundToDouble() ? 0 : 2;
+    final fijo = valor.toStringAsFixed(decimales);
+    final partes = fijo.split('.');
+    final entero = partes[0];
+    final conMiles = entero.replaceAllMapped(
+      RegExp(r'\B(?=(\d{3})+(?!\d))'),
+      (_) => ',',
     );
+    return partes.length == 1 ? conMiles : '$conMiles.${partes[1]}';
   }
 
   String get estadoStock {
@@ -55,11 +63,68 @@ class ProductoCotizacionStock {
     return 'CON STOCK';
   }
 
-  /// Presentación detectada desde la descripción.
-  /// Ejemplo: "(Rollosx100)" -> "Rollos x 100 metros".
-  String get presentacion {
-    final texto = descripcion.trim();
+  String get unidadVisible {
+    var unidad = unidadMedida.trim().toUpperCase();
+    unidad = unidad.replaceAll('.', '').replaceAll(' ', '');
 
+    if (unidad == 'ROL' ||
+        unidad == 'RO' ||
+        unidad == 'ROLLO' ||
+        unidad == 'ROLLOS' ||
+        unidad == 'BOBINA' ||
+        unidad == 'BOBINAS') {
+      return 'ROLLO';
+    }
+
+    if (unidad == 'MT' ||
+        unidad == 'M' ||
+        unidad == 'METRO' ||
+        unidad == 'METROS') {
+      return 'METRO (MT)';
+    }
+
+    final texto = '${presentacionStock.trim()} $descripcion $lote'.toUpperCase();
+
+    // El Excel de stock suele identificar metros como "(m)" o "...MT".
+    if (RegExp(r'\(\s*M\s*\)|\bMT\b|\bMETROS?\b|\bMETR[AO]S?\b')
+        .hasMatch(texto)) {
+      // Si además aparece ROL/BOB en una presentación explícita, prevalece ROLLO.
+      if (!RegExp(r'\bROL(?:LO|LOS)?\b|\bBOBIN(?:A|AS)\b', caseSensitive: false)
+          .hasMatch(texto)) {
+        return 'METRO (MT)';
+      }
+    }
+
+    if (RegExp(r'\bROL(?:LO|LOS)?\b|\bBOBIN(?:A|AS)\b|\bCARRETE(?:S)?\b', caseSensitive: false)
+        .hasMatch(texto)) {
+      return 'ROLLO';
+    }
+
+    return unidad.isEmpty ? 'NO DEFINIDA' : unidad;
+  }
+
+  /// Presentación comercial. Prioriza la columna del stock y luego intenta
+  /// detectar formatos escritos en la descripción.
+  String get presentacion {
+    final desdeStock = presentacionStock.trim();
+    if (desdeStock.isNotEmpty) {
+      final match = RegExp(
+        r'(rollos?|bobinas?|carretes?|paquetes?|cajas?)\s*[xX]?\s*(\d+(?:[.,]\d+)?)?\s*(?:MT|M|METROS?)?',
+        caseSensitive: false,
+      ).firstMatch(desdeStock);
+
+      if (match != null) {
+        final tipo = _capitalizar(match.group(1) ?? 'Presentación');
+        final cantidad = match.group(2);
+        return cantidad != null && cantidad.isNotEmpty
+            ? '$tipo x $cantidad metros'
+            : tipo;
+      }
+
+      return desdeStock;
+    }
+
+    final texto = descripcion.trim();
     final match = RegExp(
       r'\(\s*(rollos?|bobinas?|carretes?|paquetes?|cajas?)\s*[xX]\s*(\d+(?:[.,]\d+)?)\s*(?:MT|M|METROS?)?\s*\)',
       caseSensitive: false,
@@ -82,24 +147,21 @@ class ProductoCotizacionStock {
       return '${_capitalizar(tipo)} x $cantidad metros';
     }
 
-    // También acepta la columna presentacion si la descripción no la trae.
+    if (unidadVisible == 'ROLLO') return 'ROLLO';
+    if (unidadVisible == 'METRO (MT)') return 'METRO (MT)';
     return 'Por definir';
   }
 
   double get factorPresentacion {
-    final texto = descripcion.trim();
-
+    final texto = presentacion;
     final match = RegExp(
-      r'(?:rollos?|bobinas?|carretes?|paquetes?|cajas?)\s*[xX]\s*(\d+(?:[.,]\d+)?)\s*(?:MT|M|METROS?)?',
+      r'(?:rollos?|bobinas?|carretes?|paquetes?|cajas?)\s*x\s*(\d+(?:[.,]\d+)?)|\bx\s*(\d+(?:[.,]\d+)?)\b',
       caseSensitive: false,
     ).firstMatch(texto);
 
     if (match == null) return 1;
-
-    return double.tryParse(
-          (match.group(1) ?? '1').replaceAll(',', '.'),
-        ) ??
-        1;
+    final valor = match.group(1) ?? match.group(2) ?? '1';
+    return double.tryParse(valor.replaceAll(',', '.')) ?? 1;
   }
 
   static String _capitalizar(String texto) {
@@ -110,95 +172,51 @@ class ProductoCotizacionStock {
   factory ProductoCotizacionStock.fromMap(Map<String, dynamic> map) {
     final descripcion = _texto(
       map,
-      const [
-        'descripcion',
-        'articulo',
-        'producto',
-        'nombre_producto',
-      ],
+      const ['descripcion', 'articulo', 'producto', 'nombre_producto'],
       defecto: 'SIN DESCRIPCIÓN',
     );
 
     final modelo = _texto(
       map,
-      const [
-        'modelo',
-        'modelo_producto',
-        'modelo_articulo',
-        'modeloArticulo',
-      ],
+      const ['modelo', 'modelo_producto', 'modelo_articulo', 'modeloArticulo'],
     );
 
     return ProductoCotizacionStock(
       codigo: _texto(
         map,
-        const [
-          'codigo',
-          'codigo_articulo',
-          'codigoArticulo',
-        ],
+        const ['codigo', 'codigo_articulo', 'codigoArticulo'],
       ),
       descripcion: descripcion,
       stock: _numero(map['stock']),
-      peso: _numero(
-        map['peso'] ??
-            map['peso_cobre'] ??
-            map['pesoCobre'],
-      ),
-      valorListaPrecioDolar: _numero(
-        map['valor_lista_precio_dolar'],
-      ),
-      cliente: _texto(
-        map,
-        const ['cliente'],
-        defecto: 'SIN CLIENTE',
-      ),
+      peso: _numero(map['peso'] ?? map['peso_cobre'] ?? map['pesoCobre']),
+      valorListaPrecioDolar: _numero(map['valor_lista_precio_dolar']),
+      cliente: _texto(map, const ['cliente'], defecto: 'SIN CLIENTE'),
       almacen: _texto(
         map,
-        const [
-          'almacen',
-          'almacén',
-          'almacen_nombre',
-          'almacenNombre',
-          'ubicacion',
-        ],
+        const ['almacen', 'almacén', 'almacen_nombre', 'almacenNombre', 'ubicacion'],
         defecto: 'SIN ALMACÉN',
       ),
       condicion: _texto(
         map,
-        const [
-          'condicion',
-          'condición',
-          'estado',
-          'estado_stock',
-          'situacion',
-          'situación',
-        ],
+        const ['condicion', 'condición', 'estado', 'estado_stock', 'situacion', 'situación'],
       ),
-      vendedor: _texto(
-        map,
-        const [
-          'vendedor',
-          'asesor',
-          'representante',
-        ],
-      ),
+      vendedor: _texto(map, const ['vendedor', 'asesor', 'representante']),
       lote: _texto(map, const ['lote']),
-      fechaIngreso: _texto(
-        map,
-        const ['fecha_ingreso', 'fechaIngreso'],
-      ),
+      fechaIngreso: _texto(map, const ['fecha_ingreso', 'fechaIngreso']),
       modelo: modelo,
       datosBusqueda: _normalizarMapa(map),
+      unidadMedida: _texto(map, const ['unidad_medida', 'unidadMedida', 'unidad']),
+      presentacionStock: _texto(map, const ['presentacion', 'presentación']),
+      cantidadEmpaque: _numero(
+        map['cantidad_empaque'] ?? map['cantidadEmpaque'],
+      ),
     );
   }
 
   static String _normalizarMapa(Map<String, dynamic> map) {
     final partes = <String>[];
-
     for (final entrada in map.entries) {
       final clave = entrada.key.toLowerCase();
-
       if (const {
         'cliente',
         'vendedor',
@@ -213,37 +231,23 @@ class ProductoCotizacionStock {
       }.contains(clave)) {
         continue;
       }
-
       final valor = entrada.value;
       if (valor == null) continue;
-
       final texto = valor.toString().trim();
-      if (texto.isEmpty) continue;
-
-      partes.add(texto);
+      if (texto.isNotEmpty) partes.add(texto);
     }
-
     return _normalizarTexto(partes.join(' '));
   }
 
   static String _normalizarTexto(String texto) {
     var resultado = texto.toLowerCase();
-
     const reemplazos = {
-      'á': 'a',
-      'é': 'e',
-      'í': 'i',
-      'ó': 'o',
-      'ú': 'u',
-      'ü': 'u',
-      'ñ': 'n',
+      'á': 'a', 'é': 'e', 'í': 'i', 'ó': 'o', 'ú': 'u', 'ü': 'u', 'ñ': 'n',
     };
-
     reemplazos.forEach((origen, destino) {
       resultado = resultado.replaceAll(origen, destino);
     });
-
-    return resultado.replaceAll(RegExp(r'[^a-z0-9]+'), ' ').trim();
+    return resultado.replaceAll(RegExp(r'[^a-z0-9.]+'), ' ').trim();
   }
 
   static String _texto(
@@ -254,23 +258,16 @@ class ProductoCotizacionStock {
     for (final campo in campos) {
       final valor = map[campo];
       if (valor == null) continue;
-
       final texto = valor.toString().trim();
       if (texto.isNotEmpty) return texto;
     }
-
     return defecto;
   }
 
   static double _numero(dynamic valor) {
     if (valor == null) return 0;
-
     if (valor is num) return valor.toDouble();
-
-    return double.tryParse(
-          valor.toString().trim().replaceAll(',', ''),
-        ) ??
-        0;
+    return double.tryParse(valor.toString().trim().replaceAll(',', '')) ?? 0;
   }
 }
 
@@ -300,7 +297,6 @@ class ProductoCotizacionService {
       todas.addAll(pagina);
 
       if (pagina.length < tamanoPagina) break;
-
       inicio += tamanoPagina;
     }
 
@@ -324,25 +320,17 @@ class ProductoCotizacionService {
       resultado = resultado.replaceAll(origen, destino);
     });
 
-    // Conservamos los decimales para que una búsqueda como "1.5"
-    // NO se convierta en "1 5". De lo contrario, productos que solo
-    // contienen "1" y "5" en otros lugares también aparecen.
+    // Conservamos los decimales: "1.5" debe seguir siendo un único término.
     resultado = resultado.replaceAll(RegExp(r'(?<=\d),(?=\d)'), '.');
     return resultado.replaceAll(RegExp(r'[^a-z0-9.]+'), ' ').trim();
   }
 
-  String _compacto(String texto) {
-    return _normalizar(texto).replaceAll(' ', '');
-  }
+  String _compacto(String texto) => _normalizar(texto).replaceAll(' ', '');
 
   String _codigo(Map<String, dynamic> fila) {
     return ProductoCotizacionStock._texto(
       fila,
-      const [
-        'codigo',
-        'codigo_articulo',
-        'codigoArticulo',
-      ],
+      const ['codigo', 'codigo_articulo', 'codigoArticulo'],
     ).trim();
   }
 
@@ -374,111 +362,335 @@ class ProductoCotizacionService {
       'voltaje',
       'presentacion',
       'unidad',
+      'unidad_medida',
     ];
 
     final partes = <String>[];
-
     for (final campo in campos) {
       final valor = fila[campo];
       if (valor == null) continue;
-
       final texto = valor.toString().trim();
       if (texto.isNotEmpty) partes.add(texto);
     }
-
     return _normalizar(partes.join(' '));
   }
 
-  Future<Map<String, double>> _cargarPreciosVigentes() async {
-    final filas = await _cargarTodasLasFilas(
-      'productos',
-      columnas: 'codigo, precio_vigente_dolar, activo',
-    );
+  Future<Map<String, Map<String, dynamic>>> _cargarDatosProductos(
+    Iterable<String> codigos,
+  ) async {
+    final lista = codigos
+        .map((e) => e.trim())
+        .where((e) => e.isNotEmpty)
+        .toSet()
+        .toList();
 
-    final precios = <String, double>{};
+    if (lista.isEmpty) return {};
 
-    for (final fila in filas) {
-      if (fila['activo'] == false) continue;
+    final resultado = <String, Map<String, dynamic>>{};
 
-      final codigo = fila['codigo']?.toString().trim() ?? '';
-      if (codigo.isEmpty) continue;
+    // Los resultados de búsqueda están acotados, por lo que esta consulta es
+    // mucho más rápida que cargar toda la tabla productos.
+    for (int inicio = 0; inicio < lista.length; inicio += 500) {
+      final fin = (inicio + 500 < lista.length) ? inicio + 500 : lista.length;
+      final lote = lista.sublist(inicio, fin);
 
-      precios[_normalizar(codigo)] =
+      final filas = await _supabase
+          .from('productos')
+          .select(
+            'codigo, descripcion, modelo, calibre, unidad, presentacion, '
+            'precio_vigente_dolar, activo',
+          )
+          .inFilter('codigo', lote);
+
+      for (final filaOriginal in (filas as List)) {
+        final fila = Map<String, dynamic>.from(filaOriginal);
+        final codigo = fila['codigo']?.toString().trim() ?? '';
+        if (codigo.isEmpty) continue;
+        resultado[_normalizar(codigo)] = fila;
+      }
+    }
+
+    return resultado;
+  }
+
+  Map<String, dynamic> _enriquecerFila(
+    Map<String, dynamic> fila,
+    Map<String, Map<String, dynamic>> productos,
+  ) {
+    final salida = Map<String, dynamic>.from(fila);
+    final codigo = _codigo(salida);
+    final producto = productos[_normalizar(codigo)];
+
+    if (producto != null) {
+      final precio = ProductoCotizacionStock._numero(
+        producto['precio_vigente_dolar'],
+      );
+      salida['valor_lista_precio_dolar'] = precio;
+
+      // El stock sincronizado conserva la presentación del Excel. Si por
+      // alguna razón falta, aprovechamos los datos del catálogo de productos.
+      if ((salida['descripcion']?.toString().trim() ?? '').isEmpty ||
+          (salida['descripcion']?.toString().trim() ?? '').toUpperCase() == 'SIN DESCRIPCIÓN') {
+        salida['descripcion'] = producto['descripcion'] ?? '';
+      }
+      if ((salida['modelo']?.toString().trim() ?? '').isEmpty) {
+        salida['modelo'] = producto['modelo'] ?? '';
+      }
+      if ((salida['unidad']?.toString().trim() ?? '').isEmpty) {
+        salida['unidad'] = producto['unidad'] ?? '';
+      }
+      if ((salida['presentacion']?.toString().trim() ?? '').isEmpty) {
+        salida['presentacion'] = producto['presentacion'] ?? '';
+      }
+    } else {
+      salida['valor_lista_precio_dolar'] =
           ProductoCotizacionStock._numero(
-        fila['precio_vigente_dolar'],
+        salida['valor_lista_precio_dolar'],
       );
     }
 
-    return precios;
+    return salida;
+  }
+
+  Future<List<ProductoCotizacionStock>> obtenerMuestraInicial({
+    int limite = 20,
+  }) async {
+    // Al abrir el selector mostramos 20 códigos DISTINTOS que sí tienen stock.
+    // Se ordenan por código para que el usuario tenga una referencia estable.
+    final filas = await _supabase
+        .from('stock')
+        .select('*')
+        .gt('stock', 0)
+        .order('codigo', ascending: true)
+        .limit(300);
+
+    final porCodigo = <String, Map<String, dynamic>>{};
+
+    for (final original in (filas as List)) {
+      final fila = Map<String, dynamic>.from(original);
+      final codigo = _codigo(fila);
+      if (codigo.isEmpty) continue;
+
+      final clave = _normalizar(codigo);
+      final existente = porCodigo[clave];
+      final stockActual = ProductoCotizacionStock._numero(fila['stock']);
+      final stockExistente = existente == null
+          ? -1
+          : ProductoCotizacionStock._numero(existente['stock']);
+
+      if (existente == null || stockActual > stockExistente) {
+        porCodigo[clave] = fila;
+      }
+    }
+
+    final muestra = porCodigo.values.toList()
+      ..sort((a, b) => _codigo(a).compareTo(_codigo(b)));
+
+    final seleccion = muestra.take(limite).toList();
+    final datosProductos = await _cargarDatosProductos(seleccion.map(_codigo));
+    final enriquecidos = seleccion
+        .map((fila) => _enriquecerFila(fila, datosProductos))
+        .toList();
+
+    return enriquecidos.map(ProductoCotizacionStock.fromMap).toList();
+  }
+
+  /// Busca primero en el catálogo de productos para incluir también códigos
+  /// que actualmente tengan stock 0. Luego incorpora el mejor registro de
+  /// stock disponible para cada código.
+  Future<List<Map<String, dynamic>>> _buscarCatalogoPorTexto(
+    List<String> palabras,
+  ) async {
+    final porCodigo = <String, Map<String, dynamic>>{};
+
+    for (final palabra in palabras) {
+      final termino = palabra.trim();
+      if (termino.isEmpty) continue;
+
+      final variantes = <String>{
+        termino,
+        termino.replaceAll('.', ''),
+      };
+      if (termino.contains('.')) {
+        variantes.add(termino.replaceAll('.', ' '));
+      }
+
+      // Para búsquedas compactas (NYY25, NYSY4, THW14, N2XOH10, etc.)
+      // consultamos también los componentes que pueden estar separados en la
+      // descripción del catálogo. Ejemplo:
+      //   N2XOH10 -> N2XOH + 10
+      //   NYY25   -> NYY + 25
+      //   N2XOH10MM2 -> N2XOH + 10 + MM + 2
+      // La validación final exige todos los componentes, evitando resultados
+      // falsos por consultar solamente un número.
+      final compacta = termino.replaceAll('.', '');
+      final numeros = RegExp(r'\d+').allMatches(compacta).toList();
+
+      if (numeros.isNotEmpty && RegExp(r'[a-z]').hasMatch(compacta)) {
+        if (numeros.length == 1) {
+          final inicioNumero = numeros.first.start;
+          final base = compacta.substring(0, inicioNumero);
+          if (base.isNotEmpty) variantes.add(base);
+          variantes.add(numeros.first.group(0)!);
+        } else {
+          // La primera parte alfanumérica representa la familia/modelo.
+          // Para N2XOH10MM2 tomamos N2XOH y luego los componentes posteriores.
+          final inicioSegundoNumero = numeros[1].start;
+          final base = compacta.substring(0, inicioSegundoNumero);
+          if (base.isNotEmpty && RegExp(r'[a-z]').hasMatch(base)) {
+            variantes.add(base);
+          }
+
+          for (int i = 1; i < numeros.length; i++) {
+            variantes.add(numeros[i].group(0)!);
+          }
+
+          final despuesSegundoNumero = compacta.substring(numeros[1].end);
+          for (final m in RegExp(r'[a-z]+').allMatches(despuesSegundoNumero)) {
+            variantes.add(m.group(0)!);
+          }
+        }
+      }
+
+      for (final variante in variantes) {
+        final patron = '%${variante.replaceAll('%', '')}%';
+        final respuesta = await _supabase
+            .from('productos')
+            .select(
+              'codigo, descripcion, modelo, calibre, unidad, presentacion, '
+              'precio_vigente_dolar, activo',
+            )
+            .eq('activo', true)
+            .or(
+              'codigo.ilike.$patron,'
+              'descripcion.ilike.$patron,'
+              'modelo.ilike.$patron,'
+              'calibre.ilike.$patron,'
+              'unidad.ilike.$patron,'
+              'presentacion.ilike.$patron',
+            )
+            .limit(500);
+
+        for (final original in (respuesta as List)) {
+          final fila = Map<String, dynamic>.from(original);
+          final codigo = fila['codigo']?.toString().trim() ?? '';
+          if (codigo.isEmpty) continue;
+          porCodigo[_normalizar(codigo)] = fila;
+        }
+      }
+    }
+
+    return porCodigo.values.toList();
+  }
+
+  Future<Map<String, Map<String, dynamic>>> _buscarMejorStockPorCodigos(
+    Iterable<String> codigos,
+  ) async {
+    final lista = codigos
+        .map((e) => e.trim())
+        .where((e) => e.isNotEmpty)
+        .toSet()
+        .toList();
+
+    final resultado = <String, Map<String, dynamic>>{};
+    for (int inicio = 0; inicio < lista.length; inicio += 100) {
+      final fin = (inicio + 100 < lista.length) ? inicio + 100 : lista.length;
+      final lote = lista.sublist(inicio, fin);
+
+      final filas = await _supabase
+          .from('stock')
+          .select('*')
+          .inFilter('codigo', lote)
+          .order('stock', ascending: false);
+
+      for (final original in (filas as List)) {
+        final fila = Map<String, dynamic>.from(original);
+        final codigo = _codigo(fila);
+        if (codigo.isEmpty) continue;
+        final clave = _normalizar(codigo);
+        if (!resultado.containsKey(clave)) {
+          resultado[clave] = fila;
+        }
+      }
+    }
+    return resultado;
+  }
+
+  Future<List<Map<String, dynamic>>> _buscarStockRapido(
+    List<String> palabras,
+  ) async {
+    // Conservamos esta función para compatibilidad con el resto del servicio.
+    // Ahora consulta el catálogo por código y recupera el mejor stock de cada
+    // código, por lo que también encuentra artículos sin stock.
+    final productos = await _buscarCatalogoPorTexto(palabras);
+    final stocks = await _buscarMejorStockPorCodigos(
+      productos.map((e) => e['codigo']?.toString() ?? ''),
+    );
+
+    final resultado = <Map<String, dynamic>>[];
+    for (final producto in productos) {
+      final codigo = producto['codigo']?.toString().trim() ?? '';
+      final stock = stocks[_normalizar(codigo)];
+      if (stock != null) {
+        resultado.add(_enriquecerFila(stock, {
+          _normalizar(codigo): producto,
+        }));
+      } else {
+        resultado.add({
+          'codigo': codigo,
+          'descripcion': producto['descripcion'] ?? '',
+          'stock': 0,
+          'peso': 0,
+          'valor_lista_precio_dolar': ProductoCotizacionStock._numero(
+            producto['precio_vigente_dolar'],
+          ),
+          'cliente': '',
+          'almacen': '',
+          'condicion': 'SIN STOCK',
+          'vendedor': '',
+          'lote': '',
+          'fecha_ingreso': '',
+          'modelo': producto['modelo'] ?? '',
+          'unidad': producto['unidad'] ?? '',
+          'presentacion': producto['presentacion'] ?? '',
+          'calibre': producto['calibre'] ?? '',
+        });
+      }
+    }
+    return resultado;
+  }
+
+  Future<List<Map<String, dynamic>>> _buscarProductosSinStock(
+    List<String> palabras,
+  ) async {
+    return _buscarCatalogoPorTexto(palabras);
   }
 
   Future<List<Map<String, dynamic>>> _cargarCatalogoCompleto() async {
     if (_catalogo != null) return _catalogo!;
 
     final stock = await _cargarTodasLasFilas('stock');
-    final precios = await _cargarPreciosVigentes();
-
-    final resultado = <Map<String, dynamic>>[];
-    final codigosStock = <String>{};
-
-    // 1. Todos los registros reales de stock, sin agrupar.
-    for (final original in stock) {
-      final fila = Map<String, dynamic>.from(original);
+    final porCodigo = <String, Map<String, dynamic>>{};
+    for (final fila in stock) {
       final codigo = _codigo(fila);
-
       if (codigo.isEmpty) continue;
-
       final clave = _normalizar(codigo);
-      codigosStock.add(clave);
-
-      // ESTE es el precio correcto: precio base de la lista vigente.
-      // Si es Rollos x 100, la página aplica el factor 100 una sola vez.
-      fila['valor_lista_precio_dolar'] = precios[clave] ?? 0;
-
-      resultado.add(fila);
+      final existente = porCodigo[clave];
+      if (existente == null ||
+          ProductoCotizacionStock._numero(fila['stock']) >
+              ProductoCotizacionStock._numero(existente['stock'])) {
+        porCodigo[clave] = fila;
+      }
     }
 
-    // 2. Catálogo de precios vigente para códigos que NO están en stock.
-    // Esto permite cotizar productos sin existencia y luego enviarlos
-    // a Producción.
-    final productos = await _cargarTodasLasFilas(
-      'productos',
-      columnas: 'codigo, descripcion, precio_vigente_dolar, activo',
+    final datosProductos = await _cargarDatosProductos(
+      porCodigo.values.map(_codigo),
     );
 
-    for (final producto in productos) {
-      if (producto['activo'] == false) continue;
-
-      final codigo = producto['codigo']?.toString().trim() ?? '';
-      if (codigo.isEmpty) continue;
-
-      final clave = _normalizar(codigo);
-
-      if (codigosStock.contains(clave)) continue;
-
-      final precio = ProductoCotizacionStock._numero(
-        producto['precio_vigente_dolar'],
-      );
-
-      resultado.add({
-        'codigo': codigo,
-        'descripcion':
-            producto['descripcion']?.toString() ?? 'SIN DESCRIPCIÓN',
-        'stock': 0,
-        'peso': 0,
-        'valor_lista_precio_dolar': precio,
-        'cliente': '',
-        'almacen': '',
-        'condicion': 'SIN STOCK',
-        'vendedor': '',
-        'lote': '',
-        'fecha_ingreso': '',
-        'modelo': '',
-      });
-    }
-
-    _catalogo = resultado;
-    return resultado;
+    _catalogo = porCodigo.values
+        .map((fila) => _enriquecerFila(fila, datosProductos))
+        .toList();
+    return _catalogo!;
   }
 
   Future<List<ProductoCotizacionStock>> buscarProductos(
@@ -487,73 +699,160 @@ class ProductoCotizacionService {
     final busqueda = _normalizar(texto);
     if (busqueda.isEmpty) return [];
 
-    // Cada término se conserva como unidad. Por ejemplo:
-    // "nysy 1.5" => ["nysy", "1.5"], no ["nysy", "1", "5"].
     final palabras = busqueda
         .split(RegExp(r'\s+'))
         .where((p) => p.isNotEmpty)
         .toList();
 
-    final catalogo = await _cargarCatalogoCompleto();
-    final encontrados = <Map<String, dynamic>>[];
+    // 1) Catálogo: aquí están TODOS los códigos, incluso los que no tienen stock.
+    final productos = await _buscarCatalogoPorTexto(palabras);
+    if (productos.isEmpty) return [];
 
-    for (final fila in catalogo) {
-      final buscable = _textoBuscableProducto(fila);
-      final buscableCompacto = _compacto(buscable);
+    // 2) Traemos el mejor registro de stock para cada código encontrado.
+    final stocks = await _buscarMejorStockPorCodigos(
+      productos.map((e) => e['codigo']?.toString() ?? ''),
+    );
 
-      final coincide = palabras.every((palabra) {
-        final p = _normalizar(palabra);
-        final pc = _compacto(p);
+    final candidatos = <Map<String, dynamic>>[];
+    for (final producto in productos) {
+      final codigo = producto['codigo']?.toString().trim() ?? '';
+      if (codigo.isEmpty) continue;
 
-        // Esto permite:
-        // "NYSY4" -> encuentra "NYSY 4x..."
-        // "NYSY 4" -> también encuentra "NYSY4..."
-        return buscable.contains(p) ||
-            buscableCompacto.contains(pc);
-      });
-
-      if (coincide) {
-        encontrados.add(fila);
+      final filaStock = stocks[_normalizar(codigo)];
+      if (filaStock != null) {
+        candidatos.add(_enriquecerFila(
+          filaStock,
+          {_normalizar(codigo): producto},
+        ));
+      } else {
+        candidatos.add({
+          'codigo': codigo,
+          'descripcion': producto['descripcion'] ?? 'SIN DESCRIPCIÓN',
+          'stock': 0,
+          'peso': 0,
+          'valor_lista_precio_dolar': ProductoCotizacionStock._numero(
+            producto['precio_vigente_dolar'],
+          ),
+          'cliente': '',
+          'almacen': '',
+          'condicion': 'SIN STOCK',
+          'vendedor': '',
+          'lote': '',
+          'fecha_ingreso': '',
+          'modelo': producto['modelo'] ?? '',
+          'unidad': producto['unidad'] ?? '',
+          'presentacion': producto['presentacion'] ?? '',
+          'calibre': producto['calibre'] ?? '',
+        });
       }
     }
 
-    // Disponibles primero; SIN STOCK después, pero nunca ocultos.
+    // 3) Validación final: todas las palabras deben estar presentes en el
+    // código, descripción, modelo, unidad o presentación.
+    final encontrados = <Map<String, dynamic>>[];
+    for (final fila in candidatos) {
+      final buscable = _textoBuscableProducto(fila);
+      final compacto = _compacto(buscable);
+      final coincide = palabras.every((palabra) {
+        final p = _normalizar(palabra);
+        final pc = _compacto(p);
+        if (buscable.contains(p) || compacto.contains(pc)) return true;
+
+        // Acepta formatos compactos cuando el origen los guarda separados.
+        // Esto cubre tanto NYY25/NYSY4/THW14 como N2XOH10.
+        final componentes = <String>[];
+        final numeros = RegExp(r'\d+').allMatches(pc).toList();
+
+        if (numeros.isNotEmpty && RegExp(r'[a-z]').hasMatch(pc)) {
+          if (numeros.length == 1) {
+            final base = pc.substring(0, numeros.first.start);
+            if (base.isNotEmpty) componentes.add(base);
+            componentes.add(numeros.first.group(0)!);
+          } else {
+            final base = pc.substring(0, numeros[1].start);
+            if (base.isNotEmpty && RegExp(r'[a-z]').hasMatch(base)) {
+              componentes.add(base);
+            }
+
+            for (int i = 1; i < numeros.length; i++) {
+              componentes.add(numeros[i].group(0)!);
+            }
+
+            final cola = pc.substring(numeros[1].end);
+            componentes.addAll(
+              RegExp(r'[a-z]+')
+                  .allMatches(cola)
+                  .map((m) => m.group(0)!),
+            );
+          }
+        }
+
+        if (componentes.isEmpty) return false;
+
+        // Cada componente puede estar separado por espacios/puntuación.
+        return componentes.every((componente) {
+          final c = _normalizar(componente);
+          if (c.isEmpty) return true;
+          return buscable.contains(c) || compacto.contains(c);
+        });
+      });
+      if (coincide) encontrados.add(fila);
+    }
+
+    // 4) Stock disponible primero; dentro de cada grupo, código ascendente.
     encontrados.sort((a, b) {
       final stockA = ProductoCotizacionStock._numero(a['stock']);
       final stockB = ProductoCotizacionStock._numero(b['stock']);
-
-      final porStock = stockB.compareTo(stockA);
-      if (porStock != 0) return porStock;
-
+      if ((stockA > 0) != (stockB > 0)) {
+        return stockA > 0 ? -1 : 1;
+      }
+      if (stockA != stockB) return stockB.compareTo(stockA);
       return _codigo(a).compareTo(_codigo(b));
     });
 
-    return encontrados
-        .map((fila) => ProductoCotizacionStock.fromMap(fila))
+    // Máximo 15 códigos distintos. Los códigos sin stock quedan disponibles
+    // para fabricación después de los que sí tienen existencia.
+    final unicos = <String, Map<String, dynamic>>{};
+    for (final fila in encontrados) {
+      final codigo = _codigo(fila);
+      if (codigo.isEmpty) continue;
+      final clave = _normalizar(codigo);
+      final existente = unicos[clave];
+      if (existente == null ||
+          ProductoCotizacionStock._numero(fila['stock']) >
+              ProductoCotizacionStock._numero(existente['stock'])) {
+        unicos[clave] = fila;
+      }
+    }
+
+    final resultado = unicos.values.toList()
+      ..sort((a, b) {
+        final stockA = ProductoCotizacionStock._numero(a['stock']);
+        final stockB = ProductoCotizacionStock._numero(b['stock']);
+        if ((stockA > 0) != (stockB > 0)) return stockA > 0 ? -1 : 1;
+        if (stockA != stockB) return stockB.compareTo(stockA);
+        return _codigo(a).compareTo(_codigo(b));
+      });
+
+    return resultado
+        .take(15)
+        .map(ProductoCotizacionStock.fromMap)
         .toList();
   }
 
   Future<List<ProductoCotizacionStock>> obtenerTodosProductos() async {
     final catalogo = await _cargarCatalogoCompleto();
-
-    return catalogo
-        .map((fila) => ProductoCotizacionStock.fromMap(fila))
-        .toList();
+    return catalogo.map(ProductoCotizacionStock.fromMap).toList();
   }
 
-  Future<List<ProductoCotizacionStock>> obtenerPorCodigo(
-    String codigo,
-  ) async {
+  Future<List<ProductoCotizacionStock>> obtenerPorCodigo(String codigo) async {
     final buscado = _normalizar(codigo);
     if (buscado.isEmpty) return [];
 
     final catalogo = await _cargarCatalogoCompleto();
-
     return catalogo
-        .where(
-          (fila) => _normalizar(_codigo(fila)) == buscado,
-        )
-        .map((fila) => ProductoCotizacionStock.fromMap(fila))
+        .where((fila) => _normalizar(_codigo(fila)) == buscado)
+        .map(ProductoCotizacionStock.fromMap)
         .toList();
   }
 

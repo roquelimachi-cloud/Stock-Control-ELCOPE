@@ -798,6 +798,18 @@ class _CotizacionesPageState extends State<CotizacionesPage> {
   }
 
   Future<void> _abrirBusquedaCliente() async {
+    // "Cambiar cliente" debe volver al buscador y NO volver a buscar
+    // automáticamente al cliente que ya estaba seleccionado.
+    if (_clienteSeleccionado != null) {
+      setState(() {
+        _clienteSeleccionado = null;
+        _clienteController.clear();
+        _rucController.clear();
+        _paso = 1;
+      });
+      return;
+    }
+
     final texto = _clienteController.text.trim().isNotEmpty
         ? _clienteController.text.trim()
         : _rucController.text.trim();
@@ -1194,8 +1206,9 @@ class _CotizacionesPageState extends State<CotizacionesPage> {
 
   Widget _resultadoProductoItem(
     ProductoCotizacionStock producto,
-    bool movil,
-  ) {
+    bool movil, {
+    BuildContext? dialogContext,
+  }) {
     final conStock = producto.stock > 0;
     final stockBajo = conStock && producto.stock <= 100;
     final estadoColor = conStock
@@ -1212,7 +1225,13 @@ class _CotizacionesPageState extends State<CotizacionesPage> {
       color: fondo,
       child: InkWell(
         borderRadius: BorderRadius.circular(9),
-        onTap: () => _seleccionarProducto(producto),
+        onTap: () {
+          if (dialogContext != null) {
+            Navigator.pop(dialogContext, producto);
+          } else {
+            _seleccionarProducto(producto);
+          }
+        },
         child: Container(
           padding: EdgeInsets.all(movil ? 12 : 13),
           decoration: BoxDecoration(
@@ -1420,7 +1439,11 @@ class _CotizacionesPageState extends State<CotizacionesPage> {
     setState(() => _buscandoProducto = true);
 
     try {
-      final productos = await _productoService.buscarProductos(texto);
+      final productos = _normalizarBusqueda(texto)
+              .split(RegExp(r'\s+'))
+              .contains('199000000000000')
+          ? <ProductoCotizacionStock>[_productoComodin()]
+          : await _productoService.buscarProductos(texto);
       if (!mounted || secuencia != _busquedaProductoSecuencia) return;
 
       setState(() {
@@ -1551,7 +1574,11 @@ class _CotizacionesPageState extends State<CotizacionesPage> {
 
                     setDialogState(() => _buscandoProducto = true);
                     try {
-                      final productos = await _productoService.buscarProductos(texto);
+                      final productos = _normalizarBusqueda(texto)
+                              .split(RegExp(r'\s+'))
+                              .contains('199000000000000')
+                          ? <ProductoCotizacionStock>[_productoComodin()]
+                          : await _productoService.buscarProductos(texto);
                       if (!dialogContext.mounted || secuencia != _busquedaProductoSecuencia) return;
                       setDialogState(() {
                         _productosEncontrados = productos;
@@ -1586,6 +1613,7 @@ class _CotizacionesPageState extends State<CotizacionesPage> {
                           itemBuilder: (_, index) => _resultadoProductoItem(
                             _productosEncontrados[index],
                             true,
+                            dialogContext: dialogContext,
                           ),
                         ),
                 ),
@@ -1603,16 +1631,94 @@ class _CotizacionesPageState extends State<CotizacionesPage> {
     );
   }
 
-  void _seleccionarProducto(
+  ProductoCotizacionStock _productoComodin() {
+    return const ProductoCotizacionStock(
+      codigo: '199000000000000',
+      descripcion: 'COMODÍN',
+      stock: 0,
+      peso: 0,
+      valorListaPrecioDolar: 0,
+      cliente: '',
+      almacen: '',
+      condicion: 'COMODÍN',
+      vendedor: '',
+      lote: '',
+      fechaIngreso: '',
+      modelo: '',
+      datosBusqueda: '199000000000000 comodin',
+      unidadMedida: '',
+      presentacionStock: '',
+      cantidadEmpaque: 0,
+    );
+  }
+
+  Future<void> _seleccionarProducto(
     ProductoCotizacionStock producto,
-  ) {
+  ) async {
+    String descripcion = producto.descripcion;
+
+    // 199000000000000 es el código comodín:
+    // el código permanece fijo y el usuario define la descripción.
+    if (producto.esComodin) {
+      final controller = TextEditingController(
+        text: producto.descripcion == 'COMODÍN' ? '' : producto.descripcion,
+      );
+
+      final nuevaDescripcion = await showDialog<String>(
+        context: context,
+        builder: (dialogContext) => AlertDialog(
+          title: const Text(
+            'Producto comodín',
+            style: TextStyle(fontWeight: FontWeight.bold),
+          ),
+          content: TextField(
+            controller: controller,
+            autofocus: true,
+            maxLines: 3,
+            decoration: _decoracion(
+              'Descripción del artículo',
+              Icons.edit_note_outlined,
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(dialogContext),
+              child: const Text('CANCELAR'),
+            ),
+            ElevatedButton(
+              onPressed: () {
+                final valor = controller.text.trim();
+                if (valor.isEmpty) return;
+                Navigator.pop(dialogContext, valor);
+              },
+              style: ElevatedButton.styleFrom(
+                backgroundColor: const Color(0xFF16803A),
+                foregroundColor: Colors.white,
+              ),
+              child: const Text('AGREGAR'),
+            ),
+          ],
+        ),
+      );
+
+      controller.dispose();
+
+      if (!mounted || nuevaDescripcion == null || nuevaDescripcion.trim().isEmpty) {
+        return;
+      }
+
+      descripcion = nuevaDescripcion.trim();
+    }
+
+    if (!mounted) return;
+
     setState(() {
       _lineas.add(
         _LineaCotizacion(
           codigo: producto.codigo.isEmpty
               ? 'SIN CÓDIGO'
               : producto.codigo,
-          descripcion: producto.descripcion,
+          descripcion: descripcion,
           stock: producto.stock,
           cantidad: 1,
           presentacion: producto.presentacion,
@@ -1640,6 +1746,62 @@ class _CotizacionesPageState extends State<CotizacionesPage> {
     return linea.factorPresentacion > 0
         ? linea.factorPresentacion
         : 1;
+  }
+
+  Future<void> _editarDescripcionComodin(int index) async {
+    if (index < 0 || index >= _lineas.length) return;
+    if (_lineas[index].codigo.trim() != '199000000000000') return;
+
+    final controller = TextEditingController(
+      text: _lineas[index].descripcion,
+    );
+
+    final descripcion = await showDialog<String>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text(
+          'Modificar descripción',
+          style: TextStyle(fontWeight: FontWeight.bold),
+        ),
+        content: TextField(
+          controller: controller,
+          autofocus: true,
+          maxLines: 3,
+          decoration: _decoracion(
+            'Descripción del artículo',
+            Icons.edit_note_outlined,
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext),
+            child: const Text('CANCELAR'),
+          ),
+          ElevatedButton(
+            onPressed: () {
+              final valor = controller.text.trim();
+              if (valor.isEmpty) return;
+              Navigator.pop(dialogContext, valor);
+            },
+            style: ElevatedButton.styleFrom(
+              backgroundColor: const Color(0xFF16803A),
+              foregroundColor: Colors.white,
+            ),
+            child: const Text('GUARDAR'),
+          ),
+        ],
+      ),
+    );
+
+    controller.dispose();
+
+    if (!mounted || descripcion == null || descripcion.trim().isEmpty) return;
+
+    setState(() {
+      _lineas[index] = _lineas[index].copyWith(
+        descripcion: descripcion.trim(),
+      );
+    });
   }
 
   Future<void> _editarPrecio(int index) async {
@@ -2089,7 +2251,29 @@ class _CotizacionesPageState extends State<CotizacionesPage> {
                   children: [
                     _numeroItem(index + 1),
                     const SizedBox(width: 9),
-                    Expanded(child: Text(linea.descripcion, style: const TextStyle(fontWeight: FontWeight.bold, color: Color(0xFF172554)))),
+                    Expanded(
+                      child: Row(
+                        children: [
+                          Expanded(
+                            child: Text(
+                              linea.descripcion,
+                              style: const TextStyle(
+                                fontWeight: FontWeight.bold,
+                                color: Color(0xFF172554),
+                              ),
+                            ),
+                          ),
+                          if (linea.codigo.trim() == '199000000000000')
+                            IconButton(
+                              tooltip: 'Modificar descripción',
+                              onPressed: () => _editarDescripcionComodin(index),
+                              icon: const Icon(Icons.edit_outlined, size: 16),
+                              color: const Color(0xFF2563EB),
+                              visualDensity: VisualDensity.compact,
+                            ),
+                        ],
+                      ),
+                    ),
                     IconButton(onPressed: () => setState(() => _lineas.removeAt(index)), icon: const Icon(Icons.more_vert)),
                   ],
                 ),
@@ -2218,7 +2402,27 @@ class _CotizacionesPageState extends State<CotizacionesPage> {
                 _numeroItem(index + 1),
                 const SizedBox(width: 12),
                 Expanded(flex: 2, child: Text(linea.codigo, style: const TextStyle(fontWeight: FontWeight.w700, color: Color(0xFF172554)))),
-                Expanded(flex: 4, child: Text(linea.descripcion, style: const TextStyle(color: Color(0xFF334155)))),
+                Expanded(
+                  flex: 4,
+                  child: Row(
+                    children: [
+                      Expanded(
+                        child: Text(
+                          linea.descripcion,
+                          style: const TextStyle(color: Color(0xFF334155)),
+                        ),
+                      ),
+                      if (linea.codigo.trim() == '199000000000000')
+                        IconButton(
+                          tooltip: 'Modificar descripción',
+                          onPressed: () => _editarDescripcionComodin(index),
+                          icon: const Icon(Icons.edit_outlined, size: 16),
+                          color: const Color(0xFF2563EB),
+                          visualDensity: VisualDensity.compact,
+                        ),
+                    ],
+                  ),
+                ),
                 SizedBox(
                   width: 95,
                   child: Text(

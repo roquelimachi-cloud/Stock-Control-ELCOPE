@@ -41,6 +41,10 @@ class ProductoCotizacionStock {
 
   bool get tieneStock => stock > 0;
 
+  /// Código especial de Cotizaciones cuyo texto descriptivo lo define
+  /// manualmente el usuario.
+  bool get esComodin => codigo.trim() == '199000000000000';
+
   String get stockTexto => _formatearNumero(stock);
 
   String get pesoTexto => _formatearNumero(peso);
@@ -109,12 +113,13 @@ class ProductoCotizacionStock {
     final desdeStock = presentacionStock.trim();
     if (desdeStock.isNotEmpty) {
       final match = RegExp(
-        r'(rollos?|bobinas?|carretes?|paquetes?|cajas?)\s*[xX]?\s*(\d+(?:[.,]\d+)?)?\s*(?:MT|M|METROS?)?',
+        r'(rol(?:lo|los)?|bobinas?|carretes?|paquetes?|cajas?)\s*[xX]?\s*(\d+(?:[.,]\d+)?)?\s*(?:MT|M|METROS?)?',
         caseSensitive: false,
       ).firstMatch(desdeStock);
 
       if (match != null) {
-        final tipo = _capitalizar(match.group(1) ?? 'Presentación');
+        final tipoRaw = match.group(1) ?? 'Presentación';
+        final tipo = tipoRaw.toUpperCase().startsWith('ROL') ? 'Rollo' : _capitalizar(tipoRaw);
         final cantidad = match.group(2);
         return cantidad != null && cantidad.isNotEmpty
             ? '$tipo x $cantidad metros'
@@ -126,25 +131,27 @@ class ProductoCotizacionStock {
 
     final texto = descripcion.trim();
     final match = RegExp(
-      r'\(\s*(rollos?|bobinas?|carretes?|paquetes?|cajas?)\s*[xX]\s*(\d+(?:[.,]\d+)?)\s*(?:MT|M|METROS?)?\s*\)',
+      r'\(\s*(rol(?:lo|los)?|bobinas?|carretes?|paquetes?|cajas?)\s*[xX]\s*(\d+(?:[.,]\d+)?)\s*(?:MT|M|METROS?)?\s*\)',
       caseSensitive: false,
     ).firstMatch(texto);
 
     if (match != null) {
-      final tipo = match.group(1) ?? 'Presentación';
+      final tipoRaw = match.group(1) ?? 'Presentación';
+      final tipo = tipoRaw.toUpperCase().startsWith('ROL') ? 'Rollo' : _capitalizar(tipoRaw);
       final cantidad = match.group(2) ?? '1';
-      return '${_capitalizar(tipo)} x $cantidad metros';
+      return '$tipo x $cantidad metros';
     }
 
     final simple = RegExp(
-      r'\b(rollos?|bobinas?|carretes?|paquetes?|cajas?)\s*[xX]\s*(\d+(?:[.,]\d+)?)\s*(?:MT|M|METROS?)?\b',
+      r'\b(rol(?:lo|los)?|bobinas?|carretes?|paquetes?|cajas?)\s*[xX]\s*(\d+(?:[.,]\d+)?)\s*(?:MT|M|METROS?)?\b',
       caseSensitive: false,
     ).firstMatch(texto);
 
     if (simple != null) {
-      final tipo = simple.group(1) ?? 'Presentación';
+      final tipoRaw = simple.group(1) ?? 'Presentación';
+      final tipo = tipoRaw.toUpperCase().startsWith('ROL') ? 'Rollo' : _capitalizar(tipoRaw);
       final cantidad = simple.group(2) ?? '1';
-      return '${_capitalizar(tipo)} x $cantidad metros';
+      return '$tipo x $cantidad metros';
     }
 
     if (unidadVisible == 'ROLLO') return 'ROLLO';
@@ -155,7 +162,7 @@ class ProductoCotizacionStock {
   double get factorPresentacion {
     final texto = presentacion;
     final match = RegExp(
-      r'(?:rollos?|bobinas?|carretes?|paquetes?|cajas?)\s*x\s*(\d+(?:[.,]\d+)?)|\bx\s*(\d+(?:[.,]\d+)?)\b',
+      r'(?:rol(?:lo|los)?|bobinas?|carretes?|paquetes?|cajas?)\s*x\s*(\d+(?:[.,]\d+)?)|\bx\s*(\d+(?:[.,]\d+)?)\b',
       caseSensitive: false,
     ).firstMatch(texto);
 
@@ -699,10 +706,19 @@ class ProductoCotizacionService {
     final busqueda = _normalizar(texto);
     if (busqueda.isEmpty) return [];
 
-    final palabras = busqueda
+    final palabrasOriginales = busqueda
         .split(RegExp(r'\s+'))
         .where((p) => p.isNotEmpty)
         .toList();
+
+    // BOV = BÓVEDA. Es un alias comercial que el usuario escribe al
+    // buscar el artículo 00101002 (Caja de Registro).
+    // No se agrega BOV como campo del catálogo ni se altera el buscador
+    // general: solamente se traduce este alias.
+    final palabras = palabrasOriginales.length == 1 &&
+            palabrasOriginales.first == 'bov'
+        ? <String>['00101002']
+        : palabrasOriginales.where((p) => p != 'bov').toList();
 
     // 1) Catálogo: aquí están TODOS los códigos, incluso los que no tienen stock.
     final productos = await _buscarCatalogoPorTexto(palabras);

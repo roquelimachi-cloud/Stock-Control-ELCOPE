@@ -5,6 +5,7 @@ import 'package:flutter/services.dart';
 import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
 import 'package:printing/printing.dart';
+import '../sesion.dart';
 
 class StockDashboardPdfItem {
   const StockDashboardPdfItem({
@@ -46,68 +47,41 @@ class StockDashboardPdfService {
     required List<StockDashboardPdfItem> items,
   }) async {
     try {
-      final ordenados = [...items]
-        ..sort((a, b) => b.valor.compareTo(a.valor));
+      final logoBytes = await _cargarLogo();
+      final logo = logoBytes == null ? null : pw.MemoryImage(logoBytes);
 
       final pdf = pw.Document(
         title: 'Control de Stock - $titulo',
         author: 'ELCOPE',
       );
 
+      final ordenados = [...items];
+
       pdf.addPage(
         pw.MultiPage(
           pageFormat: PdfPageFormat.a4.landscape,
           maxPages: 100,
-          margin: const pw.EdgeInsets.fromLTRB(18, 16, 18, 18),
-          header: (_) => _header(),
-          footer: (ctx) => pw.Align(
-            alignment: pw.Alignment.centerRight,
-            child: pw.Text(
-              'ELCOPE - $titulo - Página ${ctx.pageNumber}',
-              style: const pw.TextStyle(fontSize: 6, color: PdfColors.grey600),
-            ),
-          ),
+          margin: const pw.EdgeInsets.fromLTRB(14, 12, 14, 18),
+          header: (_) => _headerDetalle(logo, titulo),
+          footer: (ctx) => _footerDetalle(ctx),
           build: (_) => [
-            pw.Container(
-              width: double.infinity,
-              padding: const pw.EdgeInsets.all(9),
-              decoration: pw.BoxDecoration(
-                color: PdfColors.white,
-                border: pw.Border.all(color: _borde),
-                borderRadius: pw.BorderRadius.circular(8),
+            pw.SizedBox(height: 7),
+            _kpisDetalle(ordenados),
+            pw.SizedBox(height: 8),
+            _tablaDetalle(ordenados),
+            pw.SizedBox(height: 7),
+            pw.Text(
+              'Observaciones:',
+              style: pw.TextStyle(
+                fontSize: 7,
+                fontWeight: pw.FontWeight.bold,
+                color: PdfColors.grey900,
               ),
-              child: pw.Column(
-                crossAxisAlignment: pw.CrossAxisAlignment.start,
-                children: [
-                  pw.Text(
-                    titulo,
-                    style: pw.TextStyle(
-                      color: _verde,
-                      fontSize: 12,
-                      fontWeight: pw.FontWeight.bold,
-                    ),
-                  ),
-                  pw.SizedBox(height: 4),
-                  pw.Text(
-                    'Valor de stock (US\$) + Peso de cobre (kg)',
-                    style: const pw.TextStyle(
-                      fontSize: 7,
-                      color: PdfColors.grey600,
-                    ),
-                  ),
-                  pw.SizedBox(height: 8),
-                  ...ordenados.map((e) => _filaGraficoIndividual(e, ordenados)),
-                  pw.SizedBox(height: 6),
-                  pw.Row(
-                    mainAxisAlignment: pw.MainAxisAlignment.center,
-                    children: [
-                      _leyendaItem(_azul, 'Valor Stock (US\$)'),
-                      pw.SizedBox(width: 16),
-                      _leyendaItem(_verdeBarra, 'Peso de cobre (kg)'),
-                    ],
-                  ),
-                ],
-              ),
+            ),
+            pw.SizedBox(height: 3),
+            pw.Text(
+              '-',
+              style: const pw.TextStyle(fontSize: 7, color: PdfColors.grey700),
             ),
           ],
         ),
@@ -129,6 +103,379 @@ class StockDashboardPdfService {
         ),
       );
     }
+  }
+
+  static pw.Widget _headerDetalle(pw.MemoryImage? logo, String titulo) {
+    final now = DateTime.now();
+    final fecha = '${now.day.toString().padLeft(2, '0')}/'
+        '${now.month.toString().padLeft(2, '0')}/'
+        '${now.year}';
+    final hora = '${now.hour.toString().padLeft(2, '0')}:'
+        '${now.minute.toString().padLeft(2, '0')}:'
+        '${now.second.toString().padLeft(2, '0')}';
+    final usuario = Sesion.nombre.trim().isEmpty ? 'Usuario' : Sesion.nombre.trim();
+
+    return pw.Container(
+      height: 55,
+      padding: const pw.EdgeInsets.fromLTRB(9, 5, 9, 5),
+      decoration: pw.BoxDecoration(
+        color: PdfColors.white,
+        border: pw.Border.all(color: _borde),
+        borderRadius: pw.BorderRadius.circular(7),
+      ),
+      child: pw.Row(
+        crossAxisAlignment: pw.CrossAxisAlignment.center,
+        children: [
+          pw.Container(
+            width: 48,
+            height: 43,
+            alignment: pw.Alignment.center,
+            child: logo == null
+                ? pw.Text(
+                    'ELCOPE',
+                    style: pw.TextStyle(
+                      color: _verde,
+                      fontSize: 9,
+                      fontWeight: pw.FontWeight.bold,
+                    ),
+                  )
+                : pw.Image(logo, fit: pw.BoxFit.contain),
+          ),
+          pw.SizedBox(width: 7),
+          pw.Expanded(
+            child: pw.Column(
+              mainAxisAlignment: pw.MainAxisAlignment.center,
+              crossAxisAlignment: pw.CrossAxisAlignment.start,
+              children: [
+                pw.Text(
+                  'ELCOPE',
+                  style: pw.TextStyle(
+                    color: _verde,
+                    fontSize: 12,
+                    fontWeight: pw.FontWeight.bold,
+                  ),
+                ),
+                pw.Text(
+                  'CONTROL DE STOCK',
+                  style: pw.TextStyle(
+                    color: PdfColors.grey900,
+                    fontSize: 10.5,
+                    fontWeight: pw.FontWeight.bold,
+                  ),
+                ),
+                pw.Text(
+                  'Detalle de stock por artículo.',
+                  style: const pw.TextStyle(
+                    fontSize: 5.8,
+                    color: PdfColors.grey600,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          pw.Container(
+            width: 110,
+            child: pw.Column(
+              crossAxisAlignment: pw.CrossAxisAlignment.start,
+              mainAxisAlignment: pw.MainAxisAlignment.center,
+              children: [
+                pw.Text('Fecha:   $fecha', style: const pw.TextStyle(fontSize: 5.8)),
+                pw.Text('Hora:    $hora', style: const pw.TextStyle(fontSize: 5.8)),
+                pw.Text('Usuario: $usuario',
+                    maxLines: 1,
+                    overflow: pw.TextOverflow.clip,
+                    style: const pw.TextStyle(fontSize: 5.8)),
+              ],
+            ),
+          ),
+          pw.Container(
+            width: 115,
+            padding: const pw.EdgeInsets.only(left: 10),
+            child: pw.Text(
+              titulo.trim().isEmpty ? 'VISTA PREVIA\nRESUMEN DE STOCK' : 'VISTA PREVIA\nRESUMEN DE STOCK',
+              textAlign: pw.TextAlign.left,
+              style: pw.TextStyle(
+                color: _azul,
+                fontSize: 7.8,
+                fontWeight: pw.FontWeight.bold,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  static pw.Widget _kpisDetalle(List<StockDashboardPdfItem> items) {
+    final registros = items.length;
+    final ops = items
+        .map(_opDesdeItem)
+        .where((e) => e.isNotEmpty && e != '-')
+        .toSet()
+        .length;
+    final stock = items.fold<double>(0, (s, e) => s + e.stock);
+    final valor = items.fold<double>(0, (s, e) => s + e.valor);
+    final peso = items.fold<double>(0, (s, e) => s + e.peso);
+
+    return pw.Row(
+      children: [
+        _kpiDetalle('REGISTROS', '$registros', _azul),
+        pw.SizedBox(width: 7),
+        _kpiDetalle('OP', '$ops', _azul),
+        pw.SizedBox(width: 7),
+        _kpiDetalle('STOCK', _money(stock), _verde),
+        pw.SizedBox(width: 7),
+        _kpiDetalle('VALOR US\$', _money(valor), _verde),
+        pw.SizedBox(width: 7),
+        _kpiDetalle('PESO kg', _money(peso), _verde),
+      ],
+    );
+  }
+
+  static pw.Widget _kpiDetalle(String titulo, String valor, PdfColor color) {
+    return pw.Expanded(
+      child: pw.Container(
+        height: 42,
+        padding: const pw.EdgeInsets.fromLTRB(8, 5, 8, 5),
+        decoration: pw.BoxDecoration(
+          color: PdfColors.white,
+          border: pw.Border.all(color: _borde),
+          borderRadius: pw.BorderRadius.circular(7),
+        ),
+        child: pw.Column(
+          crossAxisAlignment: pw.CrossAxisAlignment.start,
+          mainAxisAlignment: pw.MainAxisAlignment.center,
+          children: [
+            pw.Text(
+              titulo,
+              style: const pw.TextStyle(
+                fontSize: 5.5,
+                color: PdfColors.grey600,
+              ),
+            ),
+            pw.SizedBox(height: 2),
+            pw.Text(
+              valor,
+              maxLines: 1,
+              style: pw.TextStyle(
+                color: color,
+                fontSize: 9.5,
+                fontWeight: pw.FontWeight.bold,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  static pw.Widget _tablaDetalle(List<StockDashboardPdfItem> items) {
+    final header = [
+      'N°',
+      'CÓDIGO',
+      'DESCRIPCIÓN',
+      'CLIENTE',
+      'RUC',
+      'OP',
+      'ALMACÉN',
+      'STOCK',
+      'VALOR US\$',
+      'PESO kg',
+    ];
+
+    final rows = <pw.TableRow>[
+      pw.TableRow(
+        decoration: const pw.BoxDecoration(color: _verde),
+        children: header.map((text) => _celdaHeader(text)).toList(),
+      ),
+    ];
+
+    for (var i = 0; i < items.length; i++) {
+      final item = items[i];
+      final codigo = _codigoDesdeItem(item);
+      final descripcion = _descripcionDesdeItem(item);
+      final cliente = _campoDesdeItem(item, 'Cliente:', 'SIN CLIENTE');
+      final ruc = _campoDesdeItem(item, 'RUC:', '-');
+      final op = _opDesdeItem(item);
+      final almacen = _campoDesdeItem(item, 'Almacén:', 'SIN ALMACÉN');
+
+      rows.add(
+        pw.TableRow(
+          decoration: pw.BoxDecoration(
+            color: i.isEven ? PdfColors.white : _fondo,
+            border: const pw.Border(
+              bottom: pw.BorderSide(color: PdfColors.grey300, width: .35),
+            ),
+          ),
+          children: [
+            _celda('${i + 1}', align: pw.TextAlign.center),
+            _celda(codigo, maxLines: 1),
+            _celda(descripcion, maxLines: 2),
+            _celda(cliente, maxLines: 1),
+            _celda(ruc, maxLines: 1),
+            _celda(op, maxLines: 1),
+            _celda(almacen, maxLines: 1),
+            _celda(_money(item.stock), align: pw.TextAlign.right),
+            _celda(_money(item.valor), align: pw.TextAlign.right),
+            _celda(_money(item.peso), align: pw.TextAlign.right),
+          ],
+        ),
+      );
+    }
+
+    final totalStock = items.fold<double>(0, (s, e) => s + e.stock);
+    final totalValor = items.fold<double>(0, (s, e) => s + e.valor);
+    final totalPeso = items.fold<double>(0, (s, e) => s + e.peso);
+
+    rows.add(
+      pw.TableRow(
+        decoration: const pw.BoxDecoration(color: _verdeClaro),
+        children: [
+          _celda('', bold: true),
+          _celda('', bold: true),
+          _celda('TOTALES:', bold: true, align: pw.TextAlign.right),
+          _celda('', bold: true),
+          _celda('', bold: true),
+          _celda('', bold: true),
+          _celda('', bold: true),
+          _celda(_money(totalStock), bold: true, align: pw.TextAlign.right),
+          _celda(_money(totalValor), bold: true, align: pw.TextAlign.right),
+          _celda(_money(totalPeso), bold: true, align: pw.TextAlign.right),
+        ],
+      ),
+    );
+
+    return pw.Table(
+      border: pw.TableBorder(
+        left: const pw.BorderSide(color: _borde, width: .4),
+        right: const pw.BorderSide(color: _borde, width: .4),
+        top: const pw.BorderSide(color: _borde, width: .4),
+        bottom: const pw.BorderSide(color: _borde, width: .4),
+        horizontalInside: const pw.BorderSide(color: PdfColors.grey300, width: .35),
+        verticalInside: const pw.BorderSide(color: PdfColors.grey300, width: .35),
+      ),
+      columnWidths: const {
+        0: pw.FixedColumnWidth(25),
+        1: pw.FixedColumnWidth(86),
+        2: pw.FixedColumnWidth(180),
+        3: pw.FixedColumnWidth(135),
+        4: pw.FixedColumnWidth(58),
+        5: pw.FixedColumnWidth(78),
+        6: pw.FixedColumnWidth(55),
+        7: pw.FixedColumnWidth(58),
+        8: pw.FixedColumnWidth(70),
+        9: pw.FixedColumnWidth(58),
+      },
+      children: rows,
+    );
+  }
+
+  static pw.Widget _celdaHeader(String text) {
+    return pw.Container(
+      padding: const pw.EdgeInsets.symmetric(horizontal: 3, vertical: 4),
+      alignment: pw.Alignment.centerLeft,
+      child: pw.Text(
+        text,
+        maxLines: 2,
+        style: pw.TextStyle(
+          color: PdfColors.white,
+          fontSize: 5.5,
+          fontWeight: pw.FontWeight.bold,
+        ),
+      ),
+    );
+  }
+
+  static pw.Widget _celda(
+    String text, {
+    pw.TextAlign align = pw.TextAlign.left,
+    bool bold = false,
+    int maxLines = 1,
+  }) {
+    return pw.Container(
+      padding: const pw.EdgeInsets.symmetric(horizontal: 3, vertical: 3.5),
+      alignment: align == pw.TextAlign.right
+          ? pw.Alignment.centerRight
+          : align == pw.TextAlign.center
+              ? pw.Alignment.center
+              : pw.Alignment.centerLeft,
+      child: pw.Text(
+        text,
+        maxLines: maxLines,
+        overflow: pw.TextOverflow.clip,
+        textAlign: align,
+        style: pw.TextStyle(
+          fontSize: 5.8,
+          fontWeight: bold ? pw.FontWeight.bold : pw.FontWeight.normal,
+          color: PdfColors.grey900,
+        ),
+      ),
+    );
+  }
+
+  static String _campoDesdeItem(
+    StockDashboardPdfItem item,
+    String etiqueta,
+    String defecto,
+  ) {
+    final texto = item.nombre;
+    final inicio = texto.indexOf(etiqueta);
+    if (inicio < 0) return defecto;
+    final desde = inicio + etiqueta.length;
+    final fin = texto.indexOf(' | ', desde);
+    final valor = (fin < 0 ? texto.substring(desde) : texto.substring(desde, fin)).trim();
+    return valor.isEmpty ? defecto : valor;
+  }
+
+  static String _codigoDesdeItem(StockDashboardPdfItem item) {
+    final separador = item.nombre.indexOf(' | ');
+    if (separador < 0) return item.nombre.trim();
+    return item.nombre.substring(0, separador).trim();
+  }
+
+  static String _descripcionDesdeItem(StockDashboardPdfItem item) {
+    final inicio = item.nombre.indexOf(' | ');
+    final marcador = item.nombre.indexOf(' | Cliente:');
+    if (inicio < 0) return item.nombre.trim();
+    final desde = inicio + 3;
+    if (marcador < 0 || marcador <= desde) {
+      return item.nombre.substring(desde).trim();
+    }
+    return item.nombre.substring(desde, marcador).trim();
+  }
+
+  static String _opDesdeItem(StockDashboardPdfItem item) {
+    final valor = _campoDesdeItem(item, 'OP:', '-');
+    return valor.isEmpty ? '-' : valor;
+  }
+
+  static pw.Widget _footerDetalle(pw.Context ctx) {
+    return pw.Column(
+      children: [
+        pw.Container(
+          height: .6,
+          color: _verdeBarra,
+        ),
+        pw.SizedBox(height: 3),
+        pw.Row(
+          mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
+          children: [
+            pw.Text(
+              'ELCOPE S.A.  |  Control de Stock',
+              style: const pw.TextStyle(fontSize: 5.5, color: PdfColors.grey700),
+            ),
+            pw.Text(
+              'Cables de energía para un mundo en conexión',
+              style: const pw.TextStyle(fontSize: 5.5, color: PdfColors.grey700),
+            ),
+            pw.Text(
+              'Página ${ctx.pageNumber} de ${ctx.pagesCount}',
+              style: const pw.TextStyle(fontSize: 5.5, color: PdfColors.grey700),
+            ),
+          ],
+        ),
+      ],
+    );
   }
 
   static pw.Widget _filaGraficoIndividual(

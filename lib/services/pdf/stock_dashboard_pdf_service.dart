@@ -55,7 +55,14 @@ class StockDashboardPdfService {
         author: 'ELCOPE',
       );
 
-      final ordenados = [...items];
+      // La vista previa es la fuente de verdad.
+      // No se recorta la lista: el PDF imprime todos los registros
+      // que recibe desde la vista previa.
+      final ordenados = [...items]
+        ..sort((a, b) => b.valor.compareTo(a.valor));
+
+      final esRankingClientes =
+          titulo.trim().toUpperCase() == 'TOP 10 CLIENTES CON MAYOR STOCK';
 
       pdf.addPage(
         pw.MultiPage(
@@ -68,7 +75,12 @@ class StockDashboardPdfService {
             pw.SizedBox(height: 7),
             _kpisDetalle(ordenados),
             pw.SizedBox(height: 8),
-            _tablaDetalle(ordenados),
+            _tablaDetalle(
+              ordenados,
+              esRankingClientes:
+                  titulo.trim().toUpperCase() ==
+                  'TOP 10 CLIENTES CON MAYOR STOCK',
+            ),
             pw.SizedBox(height: 7),
             pw.Text(
               'Observaciones:',
@@ -192,7 +204,7 @@ class StockDashboardPdfService {
             width: 115,
             padding: const pw.EdgeInsets.only(left: 10),
             child: pw.Text(
-              titulo.trim().isEmpty ? 'VISTA PREVIA\nRESUMEN DE STOCK' : 'VISTA PREVIA\nRESUMEN DE STOCK',
+              'VISTA PREVIA\n${titulo.trim().isEmpty ? 'RESUMEN DE STOCK' : titulo.toUpperCase()}',
               textAlign: pw.TextAlign.left,
               style: pw.TextStyle(
                 color: _azul,
@@ -269,7 +281,10 @@ class StockDashboardPdfService {
     );
   }
 
-  static pw.Widget _tablaDetalle(List<StockDashboardPdfItem> items) {
+  static pw.Widget _tablaDetalle(
+    List<StockDashboardPdfItem> items, {
+    bool esRankingClientes = false,
+  }) {
     final header = [
       'N°',
       'CÓDIGO',
@@ -292,12 +307,21 @@ class StockDashboardPdfService {
 
     for (var i = 0; i < items.length; i++) {
       final item = items[i];
-      final codigo = _codigoDesdeItem(item);
-      final descripcion = _descripcionDesdeItem(item);
-      final cliente = _campoDesdeItem(item, 'Cliente:', 'SIN CLIENTE');
+
+      // En TOP 10 CLIENTES, item.nombre es directamente el nombre
+      // del cliente agrupado. Versiones anteriores podían enviarlo
+      // como "CLIENTE: NOMBRE".
+      final codigo = esRankingClientes ? '-' : _codigoDesdeItem(item);
+      final descripcion =
+          esRankingClientes ? '-' : _descripcionDesdeItem(item);
+      final cliente = esRankingClientes
+          ? _clienteDesdeRanking(item.nombre)
+          : _campoDesdeItem(item, 'Cliente:', 'SIN CLIENTE');
       final ruc = _campoDesdeItem(item, 'RUC:', '-');
-      final op = _opDesdeItem(item);
-      final almacen = _campoDesdeItem(item, 'Almacén:', 'SIN ALMACÉN');
+      final op = esRankingClientes ? '-' : _opDesdeItem(item);
+      final almacen = esRankingClientes
+          ? '-'
+          : _campoDesdeItem(item, 'Almacén:', 'SIN ALMACÉN');
 
       rows.add(
         pw.TableRow(
@@ -411,6 +435,25 @@ class StockDashboardPdfService {
         ),
       ),
     );
+  }
+
+  static String _clienteDesdeRanking(String nombre) {
+    final texto = nombre.trim();
+
+    if (texto.isEmpty) return 'SIN CLIENTE';
+
+    const prefijo = 'CLIENTE:';
+
+    // Compatibilidad con el formato que se estaba enviando:
+    // "CLIENTE: ELECTRO CONDUCTORES PERUANOS S.A.C."
+    if (texto.toUpperCase().startsWith(prefijo)) {
+      final cliente = texto.substring(prefijo.length).trim();
+      return cliente.isEmpty ? 'SIN CLIENTE' : cliente;
+    }
+
+    // Formato correcto actual:
+    // "ELECTRO CONDUCTORES PERUANOS S.A.C."
+    return texto;
   }
 
   static String _campoDesdeItem(

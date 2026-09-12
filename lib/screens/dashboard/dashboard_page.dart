@@ -4,6 +4,7 @@ import '../login/login_page.dart';
 import '../stock/stock_page.dart';
 import '../sync/sync_page.dart';
 import '../usuarios/usuarios_page.dart';
+import '../usuarios/usuarios_accesos_screen.dart';
 import 'roles_permisos_screen.dart';
 import '../../services/sesion.dart';
 import '../perfil/mi_perfil_page.dart';
@@ -142,6 +143,32 @@ class DashboardPage extends StatelessWidget {
                             context,
                             MaterialPageRoute(
                               builder: (_) => const UsuariosPage(),
+                            ),
+                          );
+                        },
+                      ),
+
+                    // =====================================================
+                    // USUARIOS Y ACCESOS
+                    // Administración de usuarios, roles y permisos.
+                    // Solo Administrador.
+                    // =====================================================
+                    if (esAdministrador)
+                      ListTile(
+                        leading: const Icon(
+                          Icons.admin_panel_settings_outlined,
+                        ),
+                        title: const Text("Usuarios y Accesos"),
+                        subtitle: const Text(
+                          "Usuarios, roles y permisos",
+                        ),
+                        onTap: () {
+                          Navigator.pop(context);
+
+                          Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder: (_) => const UsuariosAccesosScreen(),
                             ),
                           );
                         },

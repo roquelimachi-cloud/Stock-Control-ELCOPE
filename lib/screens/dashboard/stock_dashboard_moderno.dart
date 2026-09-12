@@ -11,9 +11,11 @@ import '../perfil/mi_perfil_page.dart';
 import '../stock/stock_page.dart';
 import '../sync/sync_page.dart';
 import '../usuarios/usuarios_page.dart';
+import '../usuarios/usuarios_accesos_screen.dart';
 import '../../services/supabase/supabase_service.dart';
 import '../../services/pdf/stock_dashboard_pdf_service.dart';
 import '../produccion/produccion_gerencial_dashboard.dart';
+import '../cotizaciones/cotizaciones_page.dart';
 
 class DashboardPage extends StatefulWidget {
   const DashboardPage({super.key});
@@ -30,8 +32,72 @@ class _DashboardPageState extends State<DashboardPage> {
 
   final SupabaseClient _db = SupabaseService.client;
   final TextEditingController _buscar = TextEditingController();
+  final ScrollController _resumenVertical = ScrollController();
+  final ScrollController _resumenHorizontal = ScrollController();
   final GlobalKey<ScaffoldState> _scaffoldKey = GlobalKey<ScaffoldState>();
   bool _menuVisible = true;
+
+  final Map<String, bool> _verPermisos = {};
+  bool _cargandoPermisos = true;
+
+  bool _puedeVer(String codigo) {
+    if (_esAdministrador) return true;
+    return _verPermisos[codigo] == true;
+  }
+
+  Future<void> _cargarPermisosUsuario() async {
+    try {
+      final usuarioId = Sesion.idUsuario;
+      if (usuarioId <= 0) {
+        if (mounted) setState(() => _cargandoPermisos = false);
+        return;
+      }
+
+      final data = await _db
+          .from('accesos_usuario')
+          .select('modulo_id, puede_ver, accesos_modulos!inner(codigo)')
+          .eq('usuario_id', usuarioId);
+
+      final permisos = <String, bool>{};
+      for (final item in data as List) {
+        final row = Map<String, dynamic>.from(item as Map);
+        final modulo = row['accesos_modulos'];
+        if (modulo is Map) {
+          final codigo = modulo['codigo']?.toString().trim().toLowerCase();
+          if (codigo != null && codigo.isNotEmpty) {
+            final valor = row['puede_ver'];
+            permisos[codigo] = valor == true ||
+                valor?.toString().toLowerCase() == 'true' ||
+                valor?.toString() == '1';
+          }
+        }
+      }
+
+      if (!mounted) return;
+      setState(() {
+        _verPermisos
+          ..clear()
+          ..addAll(permisos);
+        _cargandoPermisos = false;
+      });
+    } catch (_) {
+      if (!mounted) return;
+      setState(() {
+        _verPermisos.clear();
+        _cargandoPermisos = false;
+      });
+    }
+  }
+
+  Future<void> _inicializar() async {
+    // Permisos y stock se consultan en paralelo. Antes el dashboard
+    // esperaba primero a los permisos y recién después comenzaba
+    // a descargar el stock.
+    await Future.wait<void>([
+      _cargarPermisosUsuario(),
+      _cargar(),
+    ]);
+  }
 
   List<Map<String, dynamic>> _todos = [];
   List<Map<String, dynamic>> _filtrados = [];
@@ -67,12 +133,14 @@ class _DashboardPageState extends State<DashboardPage> {
       _vendedor = _vendedorActual;
     }
     _buscar.addListener(_aplicarFiltros);
-    _cargar();
+    _inicializar();
   }
 
   @override
   void dispose() {
     _buscar.dispose();
+    _resumenVertical.dispose();
+    _resumenHorizontal.dispose();
     super.dispose();
   }
 
@@ -186,6 +254,8 @@ class _DashboardPageState extends State<DashboardPage> {
   }
 
   Future<void> _cargar() async {
+    if (!mounted) return;
+
     setState(() {
       _cargando = true;
       _error = null;
@@ -194,11 +264,56 @@ class _DashboardPageState extends State<DashboardPage> {
     try {
       final List<Map<String, dynamic>> rows = [];
 
+      // ============================================================
+      // CONSULTA OPTIMIZADA A SUPABASE
+      //
+      // Antes se descargaba TODO public.stock y recién después
+      // se filtraba en Dart. Esto era especialmente costoso para
+      // mroque porque es Administrador + Vendedor.
+      //
+      // Ahora:
+      //   - Administrador + vendedor -> solo su vendedor.
+      //   - Usuario individual       -> solo su vendedor.
+      //   - Jefe Lima                -> solo OP120*.
+      //   - Jefe Provincia           -> solo OP220*.
+      //   - Gerencia / Administrador sin vendedor -> todo.
+      //
+      // De esta manera Supabase hace el filtro y la aplicación
+      // recibe muchos menos registros.
+      // ============================================================
+
+      final vendedorFiltro = _vendedorActual.trim();
+      final prefijoJefatura = _prefijoOpJefatura.trim().toUpperCase();
+
+      final filtrarPorVendedor =
+          !_esGerencia &&
+          !_esJefatura &&
+          vendedorFiltro.isNotEmpty;
+
+      final filtrarPorOp =
+          _esJefatura && prefijoJefatura.isNotEmpty;
+
       for (int from = 0;; from += 1000) {
-        final data = await _db
-            .from('stock')
-            .select()
-            .range(from, from + 999);
+        final dynamic data;
+
+        if (filtrarPorVendedor) {
+          data = await _db
+              .from('stock')
+              .select()
+              .ilike('vendedor', vendedorFiltro)
+              .range(from, from + 999);
+        } else if (filtrarPorOp) {
+          data = await _db
+              .from('stock')
+              .select()
+              .ilike('produccion', '$prefijoJefatura%')
+              .range(from, from + 999);
+        } else {
+          data = await _db
+              .from('stock')
+              .select()
+              .range(from, from + 999);
+        }
 
         final pagina = List<Map<String, dynamic>>.from(data);
         rows.addAll(pagina);
@@ -206,99 +321,116 @@ class _DashboardPageState extends State<DashboardPage> {
         if (pagina.length < 1000) break;
       }
 
-      // =======================================================
-      // MAPA DE RUC POR CLIENTE
-      // Algunas filas de stock no traen el RUC directamente.
-      // Usamos la razón social de clientes como vínculo.
-      // =======================================================
-      final rucsPorCliente = <String, Set<String>>{};
-      try {
-        for (int from = 0;; from += 1000) {
-          final clientesData = await _db
-              .from('clientes')
-              .select('codigo, ruc, razon_social')
-              .range(from, from + 999);
+      // ============================================================
+      // SEGURIDAD LOCAL DE RESPALDO
+      //
+      // Supabase ya filtró la consulta. Mantenemos el filtro local
+      // como segunda capa para conservar exactamente el comportamiento
+      // anterior si algún dato viene con diferencias de formato.
+      // ============================================================
+      List<Map<String, dynamic>> visibles;
 
-          final paginaClientes = List<Map<String, dynamic>>.from(clientesData);
-          for (final c in paginaClientes) {
-            final razon = _normalizarNombre(c['razon_social']?.toString() ?? '');
-            if (razon.isEmpty) continue;
+      if (_esGerencia) {
+        visibles = rows;
+      } else if (_esAdministrador && Sesion.vendedor.trim().isEmpty) {
+        visibles = rows;
+      } else if (_esJefatura) {
+        final prefijo = _prefijoOpJefatura.trim().toUpperCase();
+        visibles = prefijo.isEmpty
+            ? <Map<String, dynamic>>[]
+            : rows.where((r) {
+                final op = _opDe(r).trim().toUpperCase();
+                return op.startsWith(prefijo);
+              }).toList();
+      } else {
+        final vendedorSesion = _normalizarNombre(_vendedorActual);
 
-            final ruc = (c['ruc'] ?? c['codigo'])?.toString().trim() ?? '';
-            if (ruc.isEmpty) continue;
+        visibles = vendedorSesion.isEmpty
+            ? <Map<String, dynamic>>[]
+            : rows.where((r) {
+                final vendedor = _normalizarNombre(
+                  _campo(r, [
+                    'vendedor',
+                    'asesor',
+                    'representante',
+                  ]),
+                );
 
-            rucsPorCliente.putIfAbsent(razon, () => <String>{}).add(ruc);
-          }
-
-          if (paginaClientes.length < 1000) break;
-        }
-      } catch (_) {
-        // El RUC seguirá funcionando cuando venga directamente en stock.
+                return vendedor == vendedorSesion;
+              }).toList();
       }
 
-      // =======================================================
-    // SEGURIDAD POR ROL
-    // Gerencia / Administrador = todo.
-    // Jefatura = TODO su ámbito geográfico:
-    //   Jefe Lima     -> únicamente OP120*
-    //   Jefe Provincia -> únicamente OP220*
-    // La jefatura NO se limita por vendedor; debe poder analizar
-    // todo el stock de su zona.
-    // Usuario individual = solamente su propio vendedor.
-    // =======================================================
-    final List<Map<String, dynamic>> visibles;
+      if (!mounted) return;
 
- if (_esGerencia) {
-  // Gerencia puede analizar todo el stock.
-  visibles = rows;
-} else if (_esAdministrador && Sesion.vendedor.trim().isEmpty) {
-  // Administrador sin vendedor asignado:
-  // puede analizar todo el stock.
-  visibles = rows;
-} else if (_esJefatura) {
-      final prefijo = _prefijoOpJefatura.trim().toUpperCase();
-
-      visibles = prefijo.isEmpty
-          ? <Map<String, dynamic>>[]
-          : rows.where((r) {
-              final op = _opDe(r).trim().toUpperCase();
-              return op.startsWith(prefijo);
-            }).toList();
-} else {
-  // Usuario restringido o Administrador que además
-  // tiene un vendedor asignado.
-  //
-  // En este caso solamente debe visualizar
-  // el stock correspondiente a su vendedor.
-
-  final vendedorSesion = _normalizarNombre(_vendedorActual);
-
-  visibles = vendedorSesion.isEmpty
-      ? <Map<String, dynamic>>[]
-      : rows.where((r) {
-          final vendedor = _normalizarNombre(
-            _campo(r, [
-              'vendedor',
-              'asesor',
-              'representante',
-            ]),
-          );
-
-          return vendedor == vendedorSesion;
-        }).toList();
-}
-
+      // El dashboard aparece apenas termina la consulta de stock.
+      // El mapa completo de clientes/RUC se carga aparte y no bloquea
+      // la primera pantalla.
       setState(() {
-        _rucsPorCliente = rucsPorCliente;
         _todos = visibles;
         _filtrados = List<Map<String, dynamic>>.from(visibles);
         _cargando = false;
       });
+
+      // ============================================================
+      // RUC POR CLIENTE EN SEGUNDO PLANO
+      //
+      // Esta consulta ya no bloquea la apertura del dashboard.
+      // ============================================================
+      _cargarRucsEnSegundoPlano();
     } catch (e) {
+      if (!mounted) return;
+
       setState(() {
         _cargando = false;
         _error = e.toString();
       });
+    }
+  }
+
+  Future<void> _cargarRucsEnSegundoPlano() async {
+    try {
+      final rucsPorCliente = <String, Set<String>>{};
+
+      for (int from = 0;; from += 1000) {
+        final clientesData = await _db
+            .from('clientes')
+            .select('codigo, ruc, razon_social')
+            .range(from, from + 999);
+
+        final paginaClientes =
+            List<Map<String, dynamic>>.from(clientesData);
+
+        for (final c in paginaClientes) {
+          final razon =
+              _normalizarNombre(c['razon_social']?.toString() ?? '');
+          if (razon.isEmpty) continue;
+
+          final ruc =
+              (c['ruc'] ?? c['codigo'])?.toString().trim() ?? '';
+          if (ruc.isEmpty) continue;
+
+          rucsPorCliente
+              .putIfAbsent(razon, () => <String>{})
+              .add(ruc);
+        }
+
+        if (paginaClientes.length < 1000) break;
+      }
+
+      if (!mounted) return;
+
+      setState(() {
+        _rucsPorCliente = rucsPorCliente;
+      });
+
+      // Si el usuario escribió un RUC mientras el mapa estaba
+      // cargándose, volvemos a aplicar el filtro automáticamente.
+      if (_buscar.text.trim().isNotEmpty) {
+        _aplicarFiltros();
+      }
+    } catch (_) {
+      // El RUC seguirá funcionando cuando venga directamente
+      // en las filas de stock. No bloqueamos el dashboard.
     }
   }
 
@@ -610,6 +742,8 @@ final ruc = _rucDe(r);
     );
   }
 
+  // La tarjeta puede mostrar TOP 10, pero la VISTA PREVIA recibe
+  // todos los registros del ranking para poder revisarlos e imprimirlos.
   void _abrirVistaPrevia(
     String titulo,
     List<_ResumenGrupo> datos,
@@ -1012,7 +1146,7 @@ final ruc = _rucDe(r);
               ),
               OutlinedButton.icon(
                 onPressed:
-                    top.isEmpty ? null : () => _abrirVistaPrevia(titulo, datos),
+                    datos.isEmpty ? null : () => _abrirVistaPrevia(titulo, datos),
                 icon: const Icon(Icons.visibility_outlined, size: 18),
                 label: const Text('VISTA PREVIA'),
                 style: OutlinedButton.styleFrom(
@@ -1216,56 +1350,76 @@ final ruc = _rucDe(r);
                     title: const Text('Dashboard'),
                     onTap: lateral ? null : () => Navigator.pop(context),
                   ),
-                  ListTile(
-                    leading: const Icon(Icons.inventory_2_outlined),
-                    title: const Text('Control de Stock'),
-                    onTap: () {
-                      if (!lateral) Navigator.pop(context);
-                      Navigator.push(
-                        context,
-                        MaterialPageRoute(builder: (_) => const StockPage()),
-                      );
-                    },
-                  ),
-                  ListTile(
-                    leading: const Icon(Icons.calendar_month_outlined),
-                    title: const Text('Stock Antiguo (> 30 días)'),
-                    subtitle: Text(
-                      _esGerencia || _esJefatura
-                          ? 'Análisis gerencial'
-                          : 'Control de permanencia',
-                    ),
-                    onTap: () {
-                      if (!lateral) Navigator.pop(context);
-                      if (_esGerencia || _esJefatura) {
+
+                  if (_puedeVer('stock'))
+                    ListTile(
+                      leading: const Icon(Icons.inventory_2_outlined),
+                      title: const Text('Control de Stock'),
+                      onTap: () {
+                        if (!lateral) Navigator.pop(context);
                         Navigator.push(
                           context,
                           MaterialPageRoute(
-                            builder: (_) => const StockAntiguoAnalisisGerencialPage(),
+                            builder: (_) => const StockPage(),
                           ),
                         );
-                      } else {
+                      },
+                    ),
+
+                  if (_puedeVer('stock'))
+                    ListTile(
+                      leading: const Icon(Icons.calendar_month_outlined),
+                      title: const Text('Stock Antiguo (> 30 días)'),
+                      subtitle: Text(
+                        _esGerencia || _esJefatura
+                            ? 'Análisis gerencial'
+                            : 'Control de permanencia',
+                      ),
+                      onTap: () {
+                        if (!lateral) Navigator.pop(context);
                         Navigator.push(
                           context,
-                          MaterialPageRoute(builder: (_) => const StockAntiguoPage()),
+                          MaterialPageRoute(
+                            builder: (_) => _esGerencia || _esJefatura
+                                ? const StockAntiguoAnalisisGerencialPage()
+                                : const StockAntiguoPage(),
+                          ),
                         );
-                      }
-                    },
-                  ),
-                  ListTile(
-                    leading: const Icon(Icons.settings_outlined),
-                    title: const Text('Producción'),
-                    subtitle: const Text('Dashboard de Producción'),
-                    onTap: () {
-                      if (!lateral) Navigator.pop(context);
-                      Navigator.push(
-                        context,
-                        MaterialPageRoute(
-                          builder: (_) => const ProduccionGerencialDashboard(),
-                        ),
-                      );
-                    },
-                  ),
+                      },
+                    ),
+
+                  if (_puedeVer('produccion'))
+                    ListTile(
+                      leading: const Icon(Icons.settings_outlined),
+                      title: const Text('Producción'),
+                      subtitle: const Text('Dashboard de Producción'),
+                      onTap: () {
+                        if (!lateral) Navigator.pop(context);
+                        Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder: (_) => const ProduccionGerencialDashboard(),
+                          ),
+                        );
+                      },
+                    ),
+
+                  if (_puedeVer('cotizaciones'))
+                    ListTile(
+                      leading: const Icon(Icons.request_quote_outlined),
+                      title: const Text('Cotizaciones'),
+                      subtitle: const Text('Gestión de cotizaciones'),
+                      onTap: () {
+                        if (!lateral) Navigator.pop(context);
+                        Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder: (_) => const CotizacionesPage(),
+                          ),
+                        );
+                      },
+                    ),
+
                   ListTile(
                     leading: const Icon(Icons.person),
                     title: const Text('Mi Perfil'),
@@ -1273,11 +1427,14 @@ final ruc = _rucDe(r);
                       if (!lateral) Navigator.pop(context);
                       Navigator.push(
                         context,
-                        MaterialPageRoute(builder: (_) => const MiPerfilPage()),
+                        MaterialPageRoute(
+                          builder: (_) => const MiPerfilPage(),
+                        ),
                       );
                     },
                   ),
-                  if (_esAdministrador)
+
+                  if (_esAdministrador && _puedeVer('configuracion'))
                     ListTile(
                       leading: const Icon(Icons.sync),
                       title: const Text('Sincronizar Excel'),
@@ -1285,13 +1442,16 @@ final ruc = _rucDe(r);
                         if (!lateral) Navigator.pop(context);
                         await Navigator.push(
                           context,
-                          MaterialPageRoute(builder: (_) => const SyncPage()),
+                          MaterialPageRoute(
+                            builder: (_) => const SyncPage(),
+                          ),
                         );
                         if (!mounted) return;
                         await _actualizar();
                       },
                     ),
-                  if (_esAdministrador)
+
+                  if (_puedeVer('usuarios'))
                     ListTile(
                       leading: const Icon(Icons.people),
                       title: const Text('Usuarios'),
@@ -1299,8 +1459,30 @@ final ruc = _rucDe(r);
                         if (!lateral) Navigator.pop(context);
                         Navigator.push(
                           context,
-                          MaterialPageRoute(builder: (_) => const UsuariosPage()),
+                          MaterialPageRoute(
+                            builder: (_) => const UsuariosPage(),
+                          ),
                         );
+                      },
+                    ),
+
+                  if (_puedeVer('usuarios_accesos'))
+                    ListTile(
+                      leading: const Icon(
+                        Icons.admin_panel_settings_outlined,
+                      ),
+                      title: const Text('Usuarios y Accesos'),
+                      subtitle: const Text('Administrar permisos'),
+                      onTap: () async {
+                        if (!lateral) Navigator.pop(context);
+                        await Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder: (_) => const UsuariosAccesosScreen(),
+                          ),
+                        );
+                        if (!mounted) return;
+                        await _cargarPermisosUsuario();
                       },
                     ),
                 ],
@@ -1378,7 +1560,7 @@ final ruc = _rucDe(r);
           key: desktop ? null : _scaffoldKey,
           backgroundColor: _fondo,
           drawer: desktop ? null : _menu(context),
-          body: _cargando
+          body: _cargando || _cargandoPermisos
               ? const Center(child: CircularProgressIndicator())
               : _error != null
                   ? Center(
@@ -1976,9 +2158,24 @@ final ruc = _rucDe(r);
             ),
           ),
           const SizedBox(height: 12),
-          SingleChildScrollView(
-            scrollDirection: Axis.horizontal,
-            child: DataTable(
+          SizedBox(
+            height: 430,
+            child: Scrollbar(
+              controller: _resumenVertical,
+              thumbVisibility: true,
+              trackVisibility: true,
+              child: SingleChildScrollView(
+                controller: _resumenVertical,
+                child: Scrollbar(
+                  controller: _resumenHorizontal,
+                  thumbVisibility: true,
+                  trackVisibility: true,
+                  notificationPredicate: (notification) =>
+                      notification.metrics.axis == Axis.horizontal,
+                  child: SingleChildScrollView(
+                    controller: _resumenHorizontal,
+                    scrollDirection: Axis.horizontal,
+                    child: DataTable(
               headingRowColor:
                   const WidgetStatePropertyAll(Color(0xFFF0F5F3)),
               columns: const [
@@ -2083,6 +2280,10 @@ final ruc = _rucDe(r);
                   ],
                 );
               }).toList(),
+                    ),
+                  ),
+                ),
+              ),
             ),
           ),
         ],
@@ -2943,7 +3144,7 @@ class _StockDetallePreviewPage extends StatelessWidget {
   }
 }
 
-class _StockDashboardPreviewPage extends StatelessWidget {
+class _StockDashboardPreviewPage extends StatefulWidget {
   const _StockDashboardPreviewPage({
     required this.titulo,
     required this.datos,
@@ -2952,14 +3153,31 @@ class _StockDashboardPreviewPage extends StatelessWidget {
   final String titulo;
   final List<_ResumenGrupo> datos;
 
+  @override
+  State<_StockDashboardPreviewPage> createState() =>
+      _StockDashboardPreviewPageState();
+}
+
+class _StockDashboardPreviewPageState
+    extends State<_StockDashboardPreviewPage> {
   static const verde = Color(0xFF087A4A);
   static const azul = Color(0xFF2468D8);
   static const fondo = Color(0xFFF5F8F7);
 
+  final ScrollController _verticalController = ScrollController();
+  final ScrollController _horizontalController = ScrollController();
+
+  @override
+  void dispose() {
+    _verticalController.dispose();
+    _horizontalController.dispose();
+    super.dispose();
+  }
+
   @override
   Widget build(BuildContext context) {
     final money = NumberFormat('#,##0.00', 'en_US');
-    final ordenados = [...datos]
+    final ordenados = [...widget.datos]
       ..sort((a, b) => b.valor.compareTo(a.valor));
 
     final totalValor = ordenados.fold<double>(
@@ -2991,7 +3209,7 @@ class _StockDashboardPreviewPage extends StatelessWidget {
           onPressed: () => Navigator.pop(context),
         ),
         title: Text(
-          'VISTA PREVIA — $titulo',
+          'VISTA PREVIA — ${widget.titulo}',
           style: const TextStyle(
             fontWeight: FontWeight.w800,
             color: verde,
@@ -3012,7 +3230,7 @@ class _StockDashboardPreviewPage extends StatelessWidget {
 
                         await StockDashboardPdfService.imprimir(
                           context: context,
-                          titulo: titulo,
+                          titulo: widget.titulo,
                           items: ordenados
                               .map(
                                 (e) => StockDashboardPdfItem(
@@ -3048,8 +3266,11 @@ class _StockDashboardPreviewPage extends StatelessWidget {
                 style: TextStyle(fontSize: 16),
               ),
             )
-          : SingleChildScrollView(
-              padding: const EdgeInsets.all(20),
+          : Scrollbar(
+              thumbVisibility: true,
+              trackVisibility: true,
+              child: SingleChildScrollView(
+                padding: const EdgeInsets.all(20),
               child: Center(
                 child: ConstrainedBox(
                   constraints: const BoxConstraints(maxWidth: 1250),
@@ -3087,7 +3308,7 @@ class _StockDashboardPreviewPage extends StatelessWidget {
                                 crossAxisAlignment: CrossAxisAlignment.start,
                                 children: [
                                   Text(
-                                    titulo,
+                                    widget.titulo,
                                     style: const TextStyle(
                                       fontSize: 24,
                                       fontWeight: FontWeight.w800,
@@ -3151,9 +3372,24 @@ class _StockDashboardPreviewPage extends StatelessWidget {
                             color: const Color(0xFFDDE9E4),
                           ),
                         ),
-                        child: SingleChildScrollView(
-                          scrollDirection: Axis.horizontal,
-                          child: DataTable(
+                        child: SizedBox(
+                          height: 520,
+                          child: Scrollbar(
+                            controller: _verticalController,
+                            thumbVisibility: true,
+                            trackVisibility: true,
+                            child: SingleChildScrollView(
+                              controller: _verticalController,
+                              child: Scrollbar(
+                                controller: _horizontalController,
+                                thumbVisibility: true,
+                                trackVisibility: true,
+                                notificationPredicate: (notification) =>
+                                    notification.metrics.axis == Axis.horizontal,
+                                child: SingleChildScrollView(
+                                  controller: _horizontalController,
+                                  scrollDirection: Axis.horizontal,
+                                  child: DataTable(
                             columnSpacing: 28,
                             headingRowColor:
                                 const WidgetStatePropertyAll(
@@ -3204,6 +3440,10 @@ class _StockDashboardPreviewPage extends StatelessWidget {
                                 ],
                               );
                             }).toList(),
+                                  ),
+                                ),
+                              ),
+                            ),
                           ),
                         ),
                       ),
@@ -3212,6 +3452,7 @@ class _StockDashboardPreviewPage extends StatelessWidget {
                 ),
               ),
             ),
+          ),
     );
   }
 

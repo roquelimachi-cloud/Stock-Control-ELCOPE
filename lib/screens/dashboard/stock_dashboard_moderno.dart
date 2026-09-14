@@ -900,36 +900,57 @@ final ruc = _rucDe(r);
       ),
       child: Column(
         children: [
-          Row(
-            children: [
-              Icon(icono, color: _verde),
-              const SizedBox(width: 8),
-              Expanded(
-                child: Text(
-                  titulo,
-                  style: const TextStyle(
-                    fontSize: 17,
-                    fontWeight: FontWeight.w800,
-                    color: _verde,
-                  ),
-                ),
-              ),
-              OutlinedButton.icon(
-                onPressed:
-                    datos.isEmpty ? null : () => _abrirVistaPrevia(titulo, datos),
+          LayoutBuilder(
+            builder: (context, c) {
+              final mobile = c.maxWidth < 560;
+              final boton = OutlinedButton.icon(
+                onPressed: datos.isEmpty ? null : () => _abrirVistaPrevia(titulo, datos),
                 icon: const Icon(Icons.visibility_outlined, size: 18),
                 label: const Text('VISTA PREVIA'),
                 style: OutlinedButton.styleFrom(
                   foregroundColor: _azul,
-                  side: BorderSide(
-                    color: _azul.withValues(alpha: .55),
-                  ),
+                  side: BorderSide(color: _azul.withValues(alpha: .55)),
                   shape: RoundedRectangleBorder(
                     borderRadius: BorderRadius.circular(22),
                   ),
                 ),
-              ),
-            ],
+              );
+              final tituloWidget = Row(
+                children: [
+                  Icon(icono, color: _verde),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      titulo,
+                      maxLines: mobile ? 2 : 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        fontSize: 17,
+                        fontWeight: FontWeight.w800,
+                        color: _verde,
+                      ),
+                    ),
+                  ),
+                ],
+              );
+              if (mobile) {
+                return Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    tituloWidget,
+                    const SizedBox(height: 8),
+                    Align(alignment: Alignment.centerLeft, child: boton),
+                  ],
+                );
+              }
+              return Row(
+                children: [
+                  Expanded(child: tituloWidget),
+                  const SizedBox(width: 12),
+                  boton,
+                ],
+              );
+            },
           ),
           Align(
             alignment: Alignment.centerLeft,
@@ -1133,35 +1154,56 @@ final ruc = _rucDe(r);
       ),
       child: Column(
         children: [
-          Row(
-            children: [
-              Icon(icono, color: _azul),
-              const SizedBox(width: 8),
-              Expanded(
-                child: Text(
-                  titulo,
-                  style: const TextStyle(
-                    fontSize: 17,
-                    fontWeight: FontWeight.w800,
-                  ),
-                ),
-              ),
-              OutlinedButton.icon(
-                onPressed:
-                    datos.isEmpty ? null : () => _abrirVistaPrevia(titulo, datos),
+          LayoutBuilder(
+            builder: (context, c) {
+              final mobile = c.maxWidth < 560;
+              final boton = OutlinedButton.icon(
+                onPressed: datos.isEmpty ? null : () => _abrirVistaPrevia(titulo, datos),
                 icon: const Icon(Icons.visibility_outlined, size: 18),
                 label: const Text('VISTA PREVIA'),
                 style: OutlinedButton.styleFrom(
                   foregroundColor: _azul,
-                  side: BorderSide(
-                    color: _azul.withValues(alpha: .55),
-                  ),
+                  side: BorderSide(color: _azul.withValues(alpha: .55)),
                   shape: RoundedRectangleBorder(
                     borderRadius: BorderRadius.circular(22),
                   ),
                 ),
-              ),
-            ],
+              );
+              final tituloWidget = Row(
+                children: [
+                  Icon(icono, color: _azul),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      titulo,
+                      maxLines: mobile ? 2 : 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        fontSize: 17,
+                        fontWeight: FontWeight.w800,
+                      ),
+                    ),
+                  ),
+                ],
+              );
+              if (mobile) {
+                return Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    tituloWidget,
+                    const SizedBox(height: 8),
+                    Align(alignment: Alignment.centerLeft, child: boton),
+                  ],
+                );
+              }
+              return Row(
+                children: [
+                  Expanded(child: tituloWidget),
+                  const SizedBox(width: 12),
+                  boton,
+                ],
+              );
+            },
           ),
           Align(
             alignment: Alignment.centerLeft,
@@ -1843,7 +1885,7 @@ final ruc = _rucDe(r);
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                   style: TextStyle(
-                    fontSize: mobile ? 20 : 26,
+                    fontSize: mobile ? 18 : 26,
                     fontWeight: FontWeight.w800,
                     color: const Color(0xFF173B30),
                   ),
@@ -2152,26 +2194,13 @@ final ruc = _rucDe(r);
       ),
       child: Column(
         children: [
-          Row(
-            children: [
-              const Icon(Icons.table_chart_outlined, color: _azul),
-              const SizedBox(width: 8),
-              const Expanded(
-                child: Text(
-                  'RESUMEN DE STOCK',
-                  style: TextStyle(
-                    fontSize: 17,
-                    fontWeight: FontWeight.w800,
-                  ),
-                ),
-              ),
-              OutlinedButton.icon(
+          LayoutBuilder(
+            builder: (context, c) {
+              final mobile = c.maxWidth < 560;
+              final boton = OutlinedButton.icon(
                 onPressed: _filtrados.isEmpty
                     ? null
-                    : () => _abrirVistaPreviaFilas(
-                          'RESUMEN DE STOCK',
-                          _filtrados,
-                        ),
+                    : () => _abrirVistaPreviaFilas('RESUMEN DE STOCK', _filtrados),
                 icon: const Icon(Icons.visibility_outlined, size: 18),
                 label: const Text('VISTA PREVIA'),
                 style: OutlinedButton.styleFrom(
@@ -2181,16 +2210,50 @@ final ruc = _rucDe(r);
                     borderRadius: BorderRadius.circular(22),
                   ),
                 ),
-              ),
-              const SizedBox(width: 12),
-              Text(
+              );
+              final tituloWidget = Row(
+                children: [
+                  const Icon(Icons.table_chart_outlined, color: _azul),
+                  const SizedBox(width: 8),
+                  const Expanded(
+                    child: Text(
+                      'RESUMEN DE STOCK',
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(fontSize: 17, fontWeight: FontWeight.w800),
+                    ),
+                  ),
+                ],
+              );
+              final total = Text(
                 'Stock total: ${_money.format(_stockTotal)}',
-                style: const TextStyle(
-                  color: _verde,
-                  fontWeight: FontWeight.w700,
-                ),
-              ),
-            ],
+                style: const TextStyle(color: _verde, fontWeight: FontWeight.w700),
+              );
+              if (mobile) {
+                return Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    tituloWidget,
+                    const SizedBox(height: 8),
+                    Wrap(
+                      spacing: 10,
+                      runSpacing: 8,
+                      crossAxisAlignment: WrapCrossAlignment.center,
+                      children: [boton, total],
+                    ),
+                  ],
+                );
+              }
+              return Row(
+                children: [
+                  Expanded(child: tituloWidget),
+                  const SizedBox(width: 12),
+                  boton,
+                  const SizedBox(width: 12),
+                  total,
+                ],
+              );
+            },
           ),
           const SizedBox(height: 6),
           const Align(

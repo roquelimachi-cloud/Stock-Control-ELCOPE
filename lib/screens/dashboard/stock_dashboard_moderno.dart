@@ -1,4 +1,8 @@
 
+import 'dart:typed_data';
+
+import 'package:excel/excel.dart' as excel;
+import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
@@ -759,10 +763,9 @@ final ruc = _rucDe(r);
     );
   }
 
-
-  Widget _filtroTexto({double? width}) {
+  Widget _filtroTexto() {
     return SizedBox(
-      width: width,
+      width: 360,
       child: TextField(
         controller: _buscar,
         decoration: InputDecoration(
@@ -785,11 +788,10 @@ final ruc = _rucDe(r);
     required String value,
     required List<String> values,
     required ValueChanged<String?> onChanged,
-    double? width,
   }) {
     final items = <String>[value, ...values.where((e) => e != value)];
     return SizedBox(
-      width: width,
+      width: 235,
       child: DropdownButtonFormField<String>(
         initialValue: value,
         isExpanded: true,
@@ -900,57 +902,36 @@ final ruc = _rucDe(r);
       ),
       child: Column(
         children: [
-          LayoutBuilder(
-            builder: (context, c) {
-              final mobile = c.maxWidth < 560;
-              final boton = OutlinedButton.icon(
-                onPressed: datos.isEmpty ? null : () => _abrirVistaPrevia(titulo, datos),
+          Row(
+            children: [
+              Icon(icono, color: _verde),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  titulo,
+                  style: const TextStyle(
+                    fontSize: 17,
+                    fontWeight: FontWeight.w800,
+                    color: _verde,
+                  ),
+                ),
+              ),
+              OutlinedButton.icon(
+                onPressed:
+                    datos.isEmpty ? null : () => _abrirVistaPrevia(titulo, datos),
                 icon: const Icon(Icons.visibility_outlined, size: 18),
                 label: const Text('VISTA PREVIA'),
                 style: OutlinedButton.styleFrom(
                   foregroundColor: _azul,
-                  side: BorderSide(color: _azul.withValues(alpha: .55)),
+                  side: BorderSide(
+                    color: _azul.withValues(alpha: .55),
+                  ),
                   shape: RoundedRectangleBorder(
                     borderRadius: BorderRadius.circular(22),
                   ),
                 ),
-              );
-              final tituloWidget = Row(
-                children: [
-                  Icon(icono, color: _verde),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: Text(
-                      titulo,
-                      maxLines: mobile ? 2 : 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(
-                        fontSize: 17,
-                        fontWeight: FontWeight.w800,
-                        color: _verde,
-                      ),
-                    ),
-                  ),
-                ],
-              );
-              if (mobile) {
-                return Column(
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [
-                    tituloWidget,
-                    const SizedBox(height: 8),
-                    Align(alignment: Alignment.centerLeft, child: boton),
-                  ],
-                );
-              }
-              return Row(
-                children: [
-                  Expanded(child: tituloWidget),
-                  const SizedBox(width: 12),
-                  boton,
-                ],
-              );
-            },
+              ),
+            ],
           ),
           Align(
             alignment: Alignment.centerLeft,
@@ -1154,56 +1135,35 @@ final ruc = _rucDe(r);
       ),
       child: Column(
         children: [
-          LayoutBuilder(
-            builder: (context, c) {
-              final mobile = c.maxWidth < 560;
-              final boton = OutlinedButton.icon(
-                onPressed: datos.isEmpty ? null : () => _abrirVistaPrevia(titulo, datos),
+          Row(
+            children: [
+              Icon(icono, color: _azul),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  titulo,
+                  style: const TextStyle(
+                    fontSize: 17,
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+              ),
+              OutlinedButton.icon(
+                onPressed:
+                    datos.isEmpty ? null : () => _abrirVistaPrevia(titulo, datos),
                 icon: const Icon(Icons.visibility_outlined, size: 18),
                 label: const Text('VISTA PREVIA'),
                 style: OutlinedButton.styleFrom(
                   foregroundColor: _azul,
-                  side: BorderSide(color: _azul.withValues(alpha: .55)),
+                  side: BorderSide(
+                    color: _azul.withValues(alpha: .55),
+                  ),
                   shape: RoundedRectangleBorder(
                     borderRadius: BorderRadius.circular(22),
                   ),
                 ),
-              );
-              final tituloWidget = Row(
-                children: [
-                  Icon(icono, color: _azul),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: Text(
-                      titulo,
-                      maxLines: mobile ? 2 : 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(
-                        fontSize: 17,
-                        fontWeight: FontWeight.w800,
-                      ),
-                    ),
-                  ),
-                ],
-              );
-              if (mobile) {
-                return Column(
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [
-                    tituloWidget,
-                    const SizedBox(height: 8),
-                    Align(alignment: Alignment.centerLeft, child: boton),
-                  ],
-                );
-              }
-              return Row(
-                children: [
-                  Expanded(child: tituloWidget),
-                  const SizedBox(width: 12),
-                  boton,
-                ],
-              );
-            },
+              ),
+            ],
           ),
           Align(
             alignment: Alignment.centerLeft,
@@ -1734,112 +1694,17 @@ final ruc = _rucDe(r);
     );
   }
 
-
   Widget _header(BuildContext context) {
-    final mobile = MediaQuery.sizeOf(context).width < 700;
-
-    Widget botonImportar({bool compacto = false}) {
-      return OutlinedButton.icon(
-        onPressed: () async {
-          await Navigator.push(
-            context,
-            MaterialPageRoute(builder: (_) => const SyncPage()),
-          );
-          if (!mounted) return;
-          await _actualizar();
-        },
-        icon: const Icon(Icons.upload_outlined),
-        label: Text(compacto ? 'IMPORTAR' : 'IMPORTAR EXCEL'),
-        style: OutlinedButton.styleFrom(
-          foregroundColor: _azul,
-          side: const BorderSide(color: _azul),
-          padding: EdgeInsets.symmetric(
-            horizontal: compacto ? 10 : 16,
-            vertical: 12,
-          ),
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(24),
-          ),
-        ),
-      );
-    }
-
-    Widget botonImprimir({bool compacto = false}) {
-      return OutlinedButton.icon(
-        onPressed: _filtrados.isEmpty
-            ? null
-            : () async {
-                try {
-                  await StockDashboardPdfService.imprimirDashboard(
-                    context: context,
-                    clases: _ordenar(_claseDe).map(_aPdfItem).toList(),
-                    condiciones:
-                        _ordenar(_condicionDe).map(_aPdfItem).toList(),
-                    almacenes: _ordenar(_almacenDe).map(_aPdfItem).toList(),
-                    clientes: _ordenar(
-                      (r) => _campo(
-                        r,
-                        ['cliente'],
-                        defecto: 'SIN CLIENTE',
-                      ),
-                    ).map(_aPdfItem).toList(),
-                    vendedores: _ordenar(_vendedorDe).map(_aPdfItem).toList(),
-                    productos: (_productosAgrupados().values.toList()
-                          ..sort((a, b) => b.valor.compareTo(a.valor)))
-                        .map(_aPdfItem)
-                        .toList(),
-                    totalRegistros: _filtrados.length,
-                    totalStock: _stockTotal,
-                    totalValor: _valorTotal,
-                    totalPeso: _pesoTotal,
-                  );
-                } catch (e) {
-                  if (!context.mounted) return;
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(
-                      content: Text('No se pudo imprimir: $e'),
-                      backgroundColor: Colors.red,
-                    ),
-                  );
-                }
-              },
-        icon: const Icon(Icons.print_outlined),
-        label: Text(compacto ? 'IMPRIMIR' : 'IMPRIMIR DASHBOARD'),
-        style: OutlinedButton.styleFrom(
-          foregroundColor: _azul,
-          side: const BorderSide(color: _azul),
-          padding: EdgeInsets.symmetric(
-            horizontal: compacto ? 10 : 16,
-            vertical: 12,
-          ),
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(24),
-          ),
-        ),
-      );
-    }
-
-    Widget botonActualizar({bool compacto = false}) {
-      return OutlinedButton.icon(
-        onPressed: _actualizar,
-        icon: const Icon(Icons.refresh),
-        label: Text(compacto ? 'ACTUALIZAR' : 'ACTUALIZAR'),
-        style: OutlinedButton.styleFrom(
-          foregroundColor: _verde,
-          side: const BorderSide(color: _verde),
-          padding: EdgeInsets.symmetric(
-            horizontal: compacto ? 10 : 18,
-            vertical: 12,
-          ),
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(24),
-          ),
-        ),
-      );
-    }
-
-    Widget encabezadoPrincipal() {
-      return Row(
+    return Container(
+      width: double.infinity,
+      margin: const EdgeInsets.fromLTRB(18, 12, 18, 0),
+      padding: const EdgeInsets.fromLTRB(10, 10, 12, 10),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: const Color(0xFFDDE9E4)),
+      ),
+      child: Row(
         children: [
           IconButton(
             tooltip: 'Menú',
@@ -1863,95 +1728,154 @@ final ruc = _rucDe(r);
             color: Colors.blueGrey,
           ),
           Container(
-            width: mobile ? 46 : 54,
-            height: mobile ? 46 : 54,
+            width: 54,
+            height: 54,
             decoration: BoxDecoration(
               color: const Color(0xFFE4F6ED),
               borderRadius: BorderRadius.circular(16),
             ),
-            child: Icon(
+            child: const Icon(
               Icons.inventory_2_outlined,
               color: _verde,
-              size: mobile ? 26 : 30,
+              size: 30,
             ),
           ),
-          const SizedBox(width: 12),
+          const SizedBox(width: 14),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(
+                const Text(
                   'CONTROL DE STOCK',
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
                   style: TextStyle(
-                    fontSize: mobile ? 18 : 26,
+                    fontSize: 26,
                     fontWeight: FontWeight.w800,
-                    color: const Color(0xFF173B30),
+                    color: Color(0xFF173B30),
                   ),
                 ),
-                if (!mobile)
-                  Text(
-                    'Análisis general de stock por clase, almacén, cliente, vendedor y producto.',
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: TextStyle(
-                      color: Colors.grey.shade600,
-                      fontSize: 13,
-                    ),
+                Text(
+                  'Análisis general de stock por clase, almacén, cliente, vendedor y producto.',
+                  style: TextStyle(
+                    color: Colors.grey.shade600,
+                    fontSize: 13,
                   ),
+                ),
               ],
             ),
           ),
+          LayoutBuilder(
+            builder: (context, actionsConstraints) {
+              final compacto = actionsConstraints.maxWidth < 420;
+              return Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  if (Sesion.esAdministrador)
+                    OutlinedButton.icon(
+                      onPressed: () async {
+                        await Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder: (_) => const SyncPage(),
+                          ),
+                        );
+                        if (!mounted) return;
+                        await _actualizar();
+                      },
+                      icon: const Icon(Icons.upload_outlined),
+                      label: Text(compacto ? 'IMPORTAR' : 'IMPORTAR EXCEL'),
+                      style: OutlinedButton.styleFrom(
+                        foregroundColor: _azul,
+                        side: const BorderSide(color: _azul),
+                        padding: EdgeInsets.symmetric(
+                          horizontal: compacto ? 10 : 16,
+                          vertical: 14,
+                        ),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(24),
+                        ),
+                      ),
+                    ),
+                  if (Sesion.esAdministrador) const SizedBox(width: 8),
+                  OutlinedButton.icon(
+                    onPressed: _filtrados.isEmpty
+                        ? null
+                        : () async {
+                            try {
+                              await StockDashboardPdfService.imprimirDashboard(
+                                context: context,
+                                clases: _ordenar(_claseDe)
+                                    .map(_aPdfItem)
+                                    .toList(),
+                                condiciones: _ordenar(_condicionDe)
+                                    .map(_aPdfItem)
+                                    .toList(),
+                                almacenes: _ordenar(_almacenDe)
+                                    .map(_aPdfItem)
+                                    .toList(),
+                                clientes: _ordenar((r) => _campo(
+                                  r,
+                                  ['cliente'],
+                                  defecto: 'SIN CLIENTE',
+                                )).map(_aPdfItem).toList(),
+                                vendedores: _ordenar(_vendedorDe)
+                                    .map(_aPdfItem)
+                                    .toList(),
+                                productos: (_productosAgrupados().values.toList()
+                                      ..sort((a, b) => b.valor.compareTo(a.valor)))
+                                    .map(_aPdfItem)
+                                    .toList(),
+                                totalRegistros: _filtrados.length,
+                                totalStock: _stockTotal,
+                                totalValor: _valorTotal,
+                                totalPeso: _pesoTotal,
+                              );
+                            } catch (e) {
+                              if (!context.mounted) return;
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                SnackBar(
+                                  content: Text('No se pudo imprimir: $e'),
+                                  backgroundColor: Colors.red,
+                                ),
+                              );
+                            }
+                          },
+                    icon: const Icon(Icons.print_outlined),
+                    label: Text(compacto ? 'IMPRIMIR' : 'IMPRIMIR DASHBOARD'),
+                    style: OutlinedButton.styleFrom(
+                      foregroundColor: _azul,
+                      side: const BorderSide(color: _azul),
+                      padding: EdgeInsets.symmetric(
+                        horizontal: compacto ? 10 : 16,
+                        vertical: 14,
+                      ),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(24),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  OutlinedButton.icon(
+                    onPressed: _actualizar,
+                    icon: const Icon(Icons.refresh),
+                    label: Text(compacto ? 'ACTUALIZAR' : 'ACTUALIZAR'),
+                    style: OutlinedButton.styleFrom(
+                      foregroundColor: _verde,
+                      side: const BorderSide(color: _verde),
+                      padding: EdgeInsets.symmetric(
+                        horizontal: compacto ? 10 : 18,
+                        vertical: 14,
+                      ),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(24),
+                      ),
+                    ),
+                  ),
+                ],
+              );
+            },
+          ),
         ],
-      );
-    }
-
-    return Container(
-      width: double.infinity,
-      margin: const EdgeInsets.fromLTRB(18, 12, 18, 0),
-      padding: const EdgeInsets.fromLTRB(10, 10, 12, 10),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(18),
-        border: Border.all(color: const Color(0xFFDDE9E4)),
       ),
-      child: mobile
-          ? Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                encabezadoPrincipal(),
-                const SizedBox(height: 10),
-                Wrap(
-                  spacing: 8,
-                  runSpacing: 8,
-                  alignment: WrapAlignment.end,
-                  children: [
-                    if (Sesion.esAdministrador)
-                      botonImportar(compacto: true),
-                    botonImprimir(compacto: true),
-                    botonActualizar(compacto: true),
-                  ],
-                ),
-              ],
-            )
-          : Row(
-              children: [
-                Expanded(child: encabezadoPrincipal()),
-                const SizedBox(width: 12),
-                Wrap(
-                  spacing: 8,
-                  runSpacing: 8,
-                  alignment: WrapAlignment.end,
-                  children: [
-                    if (Sesion.esAdministrador)
-                      botonImportar(compacto: false),
-                    botonImprimir(compacto: false),
-                    botonActualizar(compacto: false),
-                  ],
-                ),
-              ],
-            ),
     );
   }
 
@@ -1995,10 +1919,9 @@ final ruc = _rucDe(r);
             builder: (context, c) {
               final mobile = c.maxWidth < 1050;
               final widgets = [
-                _filtroTexto(width: mobile ? c.maxWidth : 360),
+                _filtroTexto(),
                 _dropdown(
                   label: 'Clase',
-                  width: mobile ? c.maxWidth : 235,
                   value: _clase,
                   values: ['TODAS', ...clases],
                   onChanged: (v) {
@@ -2008,7 +1931,6 @@ final ruc = _rucDe(r);
                 ),
                 _dropdown(
                   label: 'Almacén',
-                  width: mobile ? c.maxWidth : 235,
                   value: _almacen,
                   values: ['TODOS', ...almacenes],
                   onChanged: (v) {
@@ -2018,7 +1940,6 @@ final ruc = _rucDe(r);
                 ),
                 _dropdown(
                   label: 'Vendedor',
-                  width: mobile ? c.maxWidth : 235,
                   value: _esUsuarioRestringido && _vendedorActual.isNotEmpty
                       ? _vendedorActual
                       : _vendedor,
@@ -2034,7 +1955,6 @@ final ruc = _rucDe(r);
                 ),
                 _dropdown(
                   label: 'Condición',
-                  width: mobile ? c.maxWidth : 235,
                   value: _condicion,
                   values: ['TODAS', ...condiciones],
                   onChanged: (v) {
@@ -2043,7 +1963,6 @@ final ruc = _rucDe(r);
                   },
                 ),
                 SizedBox(
-                  width: mobile ? c.maxWidth : null,
                   height: 58,
                   child: OutlinedButton.icon(
                     onPressed: _seleccionarFecha,
@@ -2194,13 +2113,26 @@ final ruc = _rucDe(r);
       ),
       child: Column(
         children: [
-          LayoutBuilder(
-            builder: (context, c) {
-              final mobile = c.maxWidth < 560;
-              final boton = OutlinedButton.icon(
+          Row(
+            children: [
+              const Icon(Icons.table_chart_outlined, color: _azul),
+              const SizedBox(width: 8),
+              const Expanded(
+                child: Text(
+                  'RESUMEN DE STOCK',
+                  style: TextStyle(
+                    fontSize: 17,
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+              ),
+              OutlinedButton.icon(
                 onPressed: _filtrados.isEmpty
                     ? null
-                    : () => _abrirVistaPreviaFilas('RESUMEN DE STOCK', _filtrados),
+                    : () => _abrirVistaPreviaFilas(
+                          'RESUMEN DE STOCK',
+                          _filtrados,
+                        ),
                 icon: const Icon(Icons.visibility_outlined, size: 18),
                 label: const Text('VISTA PREVIA'),
                 style: OutlinedButton.styleFrom(
@@ -2210,50 +2142,16 @@ final ruc = _rucDe(r);
                     borderRadius: BorderRadius.circular(22),
                   ),
                 ),
-              );
-              final tituloWidget = Row(
-                children: [
-                  const Icon(Icons.table_chart_outlined, color: _azul),
-                  const SizedBox(width: 8),
-                  const Expanded(
-                    child: Text(
-                      'RESUMEN DE STOCK',
-                      maxLines: 2,
-                      overflow: TextOverflow.ellipsis,
-                      style: TextStyle(fontSize: 17, fontWeight: FontWeight.w800),
-                    ),
-                  ),
-                ],
-              );
-              final total = Text(
+              ),
+              const SizedBox(width: 12),
+              Text(
                 'Stock total: ${_money.format(_stockTotal)}',
-                style: const TextStyle(color: _verde, fontWeight: FontWeight.w700),
-              );
-              if (mobile) {
-                return Column(
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [
-                    tituloWidget,
-                    const SizedBox(height: 8),
-                    Wrap(
-                      spacing: 10,
-                      runSpacing: 8,
-                      crossAxisAlignment: WrapCrossAlignment.center,
-                      children: [boton, total],
-                    ),
-                  ],
-                );
-              }
-              return Row(
-                children: [
-                  Expanded(child: tituloWidget),
-                  const SizedBox(width: 12),
-                  boton,
-                  const SizedBox(width: 12),
-                  total,
-                ],
-              );
-            },
+                style: const TextStyle(
+                  color: _verde,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+            ],
           ),
           const SizedBox(height: 6),
           const Align(
@@ -2544,6 +2442,136 @@ class _ClienteStockPreviewPage extends StatelessWidget {
     return fecha == null ? '-' : DateFormat('dd/MM/yyyy').format(fecha);
   }
 
+  Future<void> _exportarExcel(BuildContext context) async {
+    if (filas.isEmpty) return;
+
+    try {
+      final workbook = excel.Excel.createExcel();
+      final sheet = workbook['Sheet1'];
+      final money = NumberFormat('#,##0.00', 'en_US');
+
+      final totalCantidad =
+          filas.fold<double>(0, (sum, r) => sum + _cantidad(r));
+      final totalValor =
+          filas.fold<double>(0, (sum, r) => sum + _valor(r));
+      final totalPeso =
+          filas.fold<double>(0, (sum, r) => sum + _peso(r));
+
+      // Encabezado del reporte.
+      sheet.appendRow([
+        excel.TextCellValue('STOCK DEL CLIENTE'),
+      ]);
+      sheet.appendRow([
+        excel.TextCellValue('Cliente'),
+        excel.TextCellValue(cliente.isEmpty ? 'SIN CLIENTE' : cliente),
+      ]);
+      sheet.appendRow([
+        excel.TextCellValue('RUC'),
+        excel.TextCellValue(ruc.isEmpty ? '-' : ruc),
+      ]);
+      sheet.appendRow([
+        excel.TextCellValue('Fecha de generación'),
+        excel.TextCellValue(DateFormat('dd/MM/yyyy HH:mm').format(DateTime.now())),
+      ]);
+      sheet.appendRow([excel.TextCellValue('')]);
+
+      // Resumen.
+      sheet.appendRow([
+        excel.TextCellValue('ARTÍCULOS'),
+        excel.IntCellValue(
+          filas
+              .map(_descripcion)
+              .where((e) => e.trim().isNotEmpty)
+              .toSet()
+              .length,
+        ),
+        excel.TextCellValue('CANTIDAD'),
+        excel.DoubleCellValue(totalCantidad),
+        excel.TextCellValue('MONTO US\$'),
+        excel.DoubleCellValue(totalValor),
+        excel.TextCellValue('PESO kg'),
+        excel.DoubleCellValue(totalPeso),
+      ]);
+      sheet.appendRow([excel.TextCellValue('')]);
+
+      // Detalle completo: se exportan todas las filas de la vista previa.
+      sheet.appendRow([
+        excel.TextCellValue('N°'),
+        excel.TextCellValue('CÓDIGO'),
+        excel.TextCellValue('ARTÍCULO'),
+        excel.TextCellValue('CANTIDAD'),
+        excel.TextCellValue('MONTO US\$'),
+        excel.TextCellValue('FECHA INGRESO'),
+        excel.TextCellValue('PESO kg'),
+        excel.TextCellValue('ALMACÉN'),
+        excel.TextCellValue('OP'),
+      ]);
+
+      for (var i = 0; i < filas.length; i++) {
+        final row = filas[i];
+        sheet.appendRow([
+          excel.IntCellValue(i + 1),
+          excel.TextCellValue(_codigo(row)),
+          excel.TextCellValue(_descripcion(row)),
+          excel.DoubleCellValue(_cantidad(row)),
+          excel.DoubleCellValue(_valor(row)),
+          excel.TextCellValue(_fechaTexto(row)),
+          excel.DoubleCellValue(_peso(row)),
+          excel.TextCellValue(_almacen(row)),
+          excel.TextCellValue(_op(row)),
+        ]);
+      }
+
+      // Anchos para que el archivo sea práctico al abrirlo en Excel.
+      sheet.setColumnWidth(0, 8);
+      sheet.setColumnWidth(1, 22);
+      sheet.setColumnWidth(2, 48);
+      sheet.setColumnWidth(3, 14);
+      sheet.setColumnWidth(4, 16);
+      sheet.setColumnWidth(5, 16);
+      sheet.setColumnWidth(6, 14);
+      sheet.setColumnWidth(7, 18);
+      sheet.setColumnWidth(8, 18);
+
+      final bytes = workbook.encode();
+      if (bytes == null || bytes.isEmpty) {
+        throw Exception('No se pudo generar el archivo Excel.');
+      }
+
+      final nombreCliente = (cliente.isEmpty ? 'SIN_CLIENTE' : cliente)
+          .replaceAll(RegExp(r'[\\/:*?"<>|]'), '_')
+          .replaceAll(RegExp(r'\s+'), '_');
+
+      final archivo =
+          'Stock_${nombreCliente}_${DateFormat('yyyyMMdd_HHmm').format(DateTime.now())}.xlsx';
+
+      final ruta = await FilePicker.platform.saveFile(
+        dialogTitle: 'Guardar stock del cliente en Excel',
+        fileName: archivo,
+        bytes: Uint8List.fromList(bytes),
+        type: FileType.custom,
+        allowedExtensions: const ['xlsx'],
+      );
+
+      if (!context.mounted || ruta == null) return;
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Excel generado correctamente.'),
+          backgroundColor: Color(0xFF087A4A),
+        ),
+      );
+    } catch (e) {
+      if (!context.mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('No se pudo exportar a Excel: $e'),
+          backgroundColor: Colors.red,
+        ),
+      );
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final money = NumberFormat('#,##0.00', 'en_US');
@@ -2579,6 +2607,21 @@ class _ClienteStockPreviewPage extends StatelessWidget {
           ),
         ),
         actions: [
+          Padding(
+            padding: const EdgeInsets.only(right: 8),
+            child: OutlinedButton.icon(
+              onPressed: filas.isEmpty ? null : () => _exportarExcel(context),
+              icon: const Icon(Icons.table_view_outlined, size: 18),
+              label: const Text('EXCEL'),
+              style: OutlinedButton.styleFrom(
+                foregroundColor: const Color(0xFF087A4A),
+                side: const BorderSide(color: Color(0xFF087A4A)),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(22),
+                ),
+              ),
+            ),
+          ),
           Padding(
             padding: const EdgeInsets.only(right: 12),
             child: FilledButton.icon(

@@ -1704,148 +1704,47 @@ final ruc = _rucDe(r);
         borderRadius: BorderRadius.circular(18),
         border: Border.all(color: const Color(0xFFDDE9E4)),
       ),
-      child: Row(
-        children: [
-          IconButton(
-            tooltip: 'Menú',
-            onPressed: () {
-              final desktop = MediaQuery.sizeOf(context).width >= 1200;
-              if (desktop) {
-                setState(() => _menuVisible = !_menuVisible);
-              } else {
-                _scaffoldKey.currentState?.openDrawer();
-              }
-            },
-            icon: const Icon(Icons.menu),
-            color: _azul,
-          ),
-          IconButton(
-            tooltip: 'Atrás',
-            onPressed: () {
-              if (Navigator.canPop(context)) Navigator.pop(context);
-            },
-            icon: const Icon(Icons.arrow_back),
-            color: Colors.blueGrey,
-          ),
-          Container(
-            width: 54,
-            height: 54,
-            decoration: BoxDecoration(
-              color: const Color(0xFFE4F6ED),
-              borderRadius: BorderRadius.circular(16),
-            ),
-            child: const Icon(
-              Icons.inventory_2_outlined,
-              color: _verde,
-              size: 30,
-            ),
-          ),
-          const SizedBox(width: 14),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          final ancho = constraints.maxWidth.isFinite
+              ? constraints.maxWidth
+              : MediaQuery.sizeOf(context).width;
+
+          // En celular/tablet no ponemos los botones de acción dentro
+          // del mismo Row que el título. Eso provocaba que el título
+          // recibiera un ancho mínimo y apareciera letra por letra.
+          final movil = ancho < 900;
+
+          Widget acciones({bool compactas = false}) {
+            final etiquetaImportar = compactas ? 'IMPORTAR' : 'IMPORTAR EXCEL';
+            final etiquetaImprimir =
+                compactas ? 'IMPRIMIR' : 'IMPRIMIR DASHBOARD';
+
+            return Wrap(
+              alignment: WrapAlignment.end,
+              crossAxisAlignment: WrapCrossAlignment.center,
+              spacing: 8,
+              runSpacing: 8,
               children: [
-                const Text(
-                  'CONTROL DE STOCK',
-                  style: TextStyle(
-                    fontSize: 26,
-                    fontWeight: FontWeight.w800,
-                    color: Color(0xFF173B30),
-                  ),
-                ),
-                Text(
-                  'Análisis general de stock por clase, almacén, cliente, vendedor y producto.',
-                  style: TextStyle(
-                    color: Colors.grey.shade600,
-                    fontSize: 13,
-                  ),
-                ),
-              ],
-            ),
-          ),
-          LayoutBuilder(
-            builder: (context, actionsConstraints) {
-              final compacto = actionsConstraints.maxWidth < 420;
-              return Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  if (Sesion.esAdministrador)
-                    OutlinedButton.icon(
-                      onPressed: () async {
-                        await Navigator.push(
-                          context,
-                          MaterialPageRoute(
-                            builder: (_) => const SyncPage(),
-                          ),
-                        );
-                        if (!mounted) return;
-                        await _actualizar();
-                      },
-                      icon: const Icon(Icons.upload_outlined),
-                      label: Text(compacto ? 'IMPORTAR' : 'IMPORTAR EXCEL'),
-                      style: OutlinedButton.styleFrom(
-                        foregroundColor: _azul,
-                        side: const BorderSide(color: _azul),
-                        padding: EdgeInsets.symmetric(
-                          horizontal: compacto ? 10 : 16,
-                          vertical: 14,
-                        ),
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(24),
-                        ),
-                      ),
-                    ),
-                  if (Sesion.esAdministrador) const SizedBox(width: 8),
+                if (Sesion.esAdministrador)
                   OutlinedButton.icon(
-                    onPressed: _filtrados.isEmpty
-                        ? null
-                        : () async {
-                            try {
-                              await StockDashboardPdfService.imprimirDashboard(
-                                context: context,
-                                clases: _ordenar(_claseDe)
-                                    .map(_aPdfItem)
-                                    .toList(),
-                                condiciones: _ordenar(_condicionDe)
-                                    .map(_aPdfItem)
-                                    .toList(),
-                                almacenes: _ordenar(_almacenDe)
-                                    .map(_aPdfItem)
-                                    .toList(),
-                                clientes: _ordenar((r) => _campo(
-                                  r,
-                                  ['cliente'],
-                                  defecto: 'SIN CLIENTE',
-                                )).map(_aPdfItem).toList(),
-                                vendedores: _ordenar(_vendedorDe)
-                                    .map(_aPdfItem)
-                                    .toList(),
-                                productos: (_productosAgrupados().values.toList()
-                                      ..sort((a, b) => b.valor.compareTo(a.valor)))
-                                    .map(_aPdfItem)
-                                    .toList(),
-                                totalRegistros: _filtrados.length,
-                                totalStock: _stockTotal,
-                                totalValor: _valorTotal,
-                                totalPeso: _pesoTotal,
-                              );
-                            } catch (e) {
-                              if (!context.mounted) return;
-                              ScaffoldMessenger.of(context).showSnackBar(
-                                SnackBar(
-                                  content: Text('No se pudo imprimir: $e'),
-                                  backgroundColor: Colors.red,
-                                ),
-                              );
-                            }
-                          },
-                    icon: const Icon(Icons.print_outlined),
-                    label: Text(compacto ? 'IMPRIMIR' : 'IMPRIMIR DASHBOARD'),
+                    onPressed: () async {
+                      await Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (_) => const SyncPage(),
+                        ),
+                      );
+                      if (!mounted) return;
+                      await _actualizar();
+                    },
+                    icon: const Icon(Icons.upload_outlined),
+                    label: Text(etiquetaImportar),
                     style: OutlinedButton.styleFrom(
                       foregroundColor: _azul,
                       side: const BorderSide(color: _azul),
                       padding: EdgeInsets.symmetric(
-                        horizontal: compacto ? 10 : 16,
+                        horizontal: compactas ? 10 : 16,
                         vertical: 14,
                       ),
                       shape: RoundedRectangleBorder(
@@ -1853,28 +1752,191 @@ final ruc = _rucDe(r);
                       ),
                     ),
                   ),
-                  const SizedBox(width: 8),
-                  OutlinedButton.icon(
-                    onPressed: _actualizar,
-                    icon: const Icon(Icons.refresh),
-                    label: Text(compacto ? 'ACTUALIZAR' : 'ACTUALIZAR'),
-                    style: OutlinedButton.styleFrom(
-                      foregroundColor: _verde,
-                      side: const BorderSide(color: _verde),
-                      padding: EdgeInsets.symmetric(
-                        horizontal: compacto ? 10 : 18,
-                        vertical: 14,
-                      ),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(24),
-                      ),
+                OutlinedButton.icon(
+                  onPressed: _filtrados.isEmpty
+                      ? null
+                      : () async {
+                          try {
+                            await StockDashboardPdfService.imprimirDashboard(
+                              context: context,
+                              clases: _ordenar(_claseDe)
+                                  .map(_aPdfItem)
+                                  .toList(),
+                              condiciones: _ordenar(_condicionDe)
+                                  .map(_aPdfItem)
+                                  .toList(),
+                              almacenes: _ordenar(_almacenDe)
+                                  .map(_aPdfItem)
+                                  .toList(),
+                              clientes: _ordenar(
+                                (r) => _campo(
+                                  r,
+                                  ['cliente'],
+                                  defecto: 'SIN CLIENTE',
+                                ),
+                              ).map(_aPdfItem).toList(),
+                              vendedores: _ordenar(_vendedorDe)
+                                  .map(_aPdfItem)
+                                  .toList(),
+                              productos: (_productosAgrupados().values.toList()
+                                    ..sort(
+                                      (a, b) => b.valor.compareTo(a.valor),
+                                    ))
+                                  .map(_aPdfItem)
+                                  .toList(),
+                              totalRegistros: _filtrados.length,
+                              totalStock: _stockTotal,
+                              totalValor: _valorTotal,
+                              totalPeso: _pesoTotal,
+                            );
+                          } catch (e) {
+                            if (!context.mounted) return;
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              SnackBar(
+                                content: Text('No se pudo imprimir: $e'),
+                                backgroundColor: Colors.red,
+                              ),
+                            );
+                          }
+                        },
+                  icon: const Icon(Icons.print_outlined),
+                  label: Text(etiquetaImprimir),
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: _azul,
+                    side: const BorderSide(color: _azul),
+                    padding: EdgeInsets.symmetric(
+                      horizontal: compactas ? 10 : 16,
+                      vertical: 14,
+                    ),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(24),
                     ),
                   ),
-                ],
-              );
-            },
-          ),
-        ],
+                ),
+                OutlinedButton.icon(
+                  onPressed: _actualizar,
+                  icon: const Icon(Icons.refresh),
+                  label: const Text('ACTUALIZAR'),
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: _verde,
+                    side: const BorderSide(color: _verde),
+                    padding: EdgeInsets.symmetric(
+                      horizontal: compactas ? 10 : 18,
+                      vertical: 14,
+                    ),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(24),
+                    ),
+                  ),
+                ),
+              ],
+            );
+          }
+
+          Widget identidad() {
+            return Row(
+              crossAxisAlignment: CrossAxisAlignment.center,
+              children: [
+                IconButton(
+                  tooltip: 'Menú',
+                  onPressed: () {
+                    final desktop = MediaQuery.sizeOf(context).width >= 1200;
+                    if (desktop) {
+                      setState(() => _menuVisible = !_menuVisible);
+                    } else {
+                      _scaffoldKey.currentState?.openDrawer();
+                    }
+                  },
+                  icon: const Icon(Icons.menu),
+                  color: _azul,
+                ),
+                IconButton(
+                  tooltip: 'Atrás',
+                  onPressed: () {
+                    if (Navigator.canPop(context)) Navigator.pop(context);
+                  },
+                  icon: const Icon(Icons.arrow_back),
+                  color: Colors.blueGrey,
+                ),
+                Container(
+                  width: movil ? 46 : 54,
+                  height: movil ? 46 : 54,
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFE4F6ED),
+                    borderRadius: BorderRadius.circular(16),
+                  ),
+                  child: Icon(
+                    Icons.inventory_2_outlined,
+                    color: _verde,
+                    size: movil ? 26 : 30,
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'CONTROL DE STOCK',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          fontSize: movil ? 20 : 26,
+                          fontWeight: FontWeight.w800,
+                          color: const Color(0xFF173B30),
+                        ),
+                      ),
+                      if (!movil)
+                        Text(
+                          'Análisis general de stock por clase, almacén, cliente, vendedor y producto.',
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                            color: Colors.grey.shade600,
+                            fontSize: 13,
+                          ),
+                        ),
+                    ],
+                  ),
+                ),
+              ],
+            );
+          }
+
+          if (movil) {
+            return Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                identidad(),
+                const SizedBox(height: 8),
+                Align(
+                  alignment: Alignment.centerLeft,
+                  child: Text(
+                    'Análisis general de stock por clase, almacén, cliente, vendedor y producto.',
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      color: Colors.grey.shade600,
+                      fontSize: 12,
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 10),
+                acciones(compactas: true),
+              ],
+            );
+          }
+
+          return Row(
+            crossAxisAlignment: CrossAxisAlignment.center,
+            children: [
+              Expanded(child: identidad()),
+              const SizedBox(width: 12),
+              acciones(compactas: ancho < 1200),
+            ],
+          );
+        },
       ),
     );
   }

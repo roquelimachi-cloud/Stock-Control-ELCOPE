@@ -14,6 +14,7 @@ import '../../widgets/produccion/produccion_productos_preview.dart';
 import '../../services/produccion/produccion_productos_pdf_service.dart';
 import '../../widgets/produccion/produccion_clientes_preview.dart';
 import '../../services/produccion/produccion_clientes_pdf_service.dart';
+import '../../widgets/produccion/produccion_cliente_detalle_preview.dart';
 import '../../widgets/produccion/produccion_analisis_preview.dart';
 import '../stock/stock_page.dart';
 import '../dashboard/stock_antiguo_page.dart';
@@ -39,6 +40,12 @@ class _ProduccionGerencialDashboardState
   final moneda = NumberFormat('#,##0.00', 'en_US');
   final numero = NumberFormat('#,##0.00', 'en_US');
 
+  // Scroll de Últimas Órdenes
+  final ScrollController _ultimasHorizontalController =
+      ScrollController();
+  final ScrollController _ultimasVerticalController =
+      ScrollController();
+
   int _tab = 0;
 
   final TextEditingController _busquedaController =
@@ -63,6 +70,8 @@ class _ProduccionGerencialDashboardState
     _busquedaController.dispose();
     controller.removeListener(_actualizarFiltros);
     controller.dispose();
+    _ultimasHorizontalController.dispose();
+    _ultimasVerticalController.dispose();
     super.dispose();
   }
 
@@ -297,8 +306,42 @@ class _ProduccionGerencialDashboardState
     return resultado;
   }
 
+  String _normalizarCliente(String valor) {
+    return valor
+        .trim()
+        .replaceAll(RegExp(r'\\s+'), ' ')
+        .toLowerCase();
+  }
+
+  void _abrirClienteDetalle(
+    BuildContext context,
+    String cliente,
+  ) {
+    final clienteNormalizado = _normalizarCliente(cliente);
+
+    final producciones = _datosFiltrados
+        .where(
+          (e) => _normalizarCliente(e.cliente) == clienteNormalizado,
+        )
+        .toList();
+
+    if (producciones.isEmpty) return;
+
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => ProduccionClienteDetallePreview(
+          cliente: cliente.trim(),
+          producciones: producciones,
+        ),
+      ),
+    );
+  }
+
   void _abrirTodosLosClientes(BuildContext context) {
-    final clientes = _resumenClientes(_datosFiltrados);
+    final clientes = _resumenClientes(_datosFiltrados)
+        .take(5)
+        .toList();
+
     if (clientes.isEmpty) return;
 
     Navigator.of(context).push(
@@ -1337,7 +1380,7 @@ class _ProduccionGerencialDashboardState
       itemBuilder: (_, i) {
         final r = rows[i];
 
-        return Padding(
+        final contenidoFila = Padding(
           padding: const EdgeInsets.symmetric(vertical: 6),
           child: Row(
             crossAxisAlignment: CrossAxisAlignment.start,
@@ -1394,6 +1437,16 @@ class _ProduccionGerencialDashboardState
             ],
           ),
         );
+
+        if (esTopClientes) {
+          return InkWell(
+            onTap: () => _abrirClienteDetalle(context, r.nombre),
+            borderRadius: BorderRadius.circular(8),
+            child: contenidoFila,
+          );
+        }
+
+        return contenidoFila;
       },
     );
 
@@ -1532,12 +1585,24 @@ class _ProduccionGerencialDashboardState
             height: 420,
             width: double.infinity,
             child: Scrollbar(
-              thumbVisibility: !movil,
+              controller: _ultimasHorizontalController,
+              thumbVisibility: true,
+              interactive: true,
+              notificationPredicate: (notification) =>
+                  notification.metrics.axis == Axis.horizontal,
               child: SingleChildScrollView(
-                scrollDirection: Axis.vertical,
-                child: SingleChildScrollView(
-                  scrollDirection: Axis.horizontal,
-                  child: DataTable(
+                controller: _ultimasHorizontalController,
+                scrollDirection: Axis.horizontal,
+                child: Scrollbar(
+                  controller: _ultimasVerticalController,
+                  thumbVisibility: true,
+                  interactive: true,
+                  notificationPredicate: (notification) =>
+                      notification.metrics.axis == Axis.vertical,
+                  child: SingleChildScrollView(
+                    controller: _ultimasVerticalController,
+                    scrollDirection: Axis.vertical,
+                    child: DataTable(
                     showCheckboxColumn: false,
                     headingRowColor:
                         const WidgetStatePropertyAll(Color(0xffe5f6ed)),
@@ -1590,6 +1655,7 @@ class _ProduccionGerencialDashboardState
                         ],
                       );
                     }).toList(),
+                    ),
                   ),
                 ),
               ),

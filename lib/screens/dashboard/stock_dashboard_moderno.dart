@@ -1879,10 +1879,10 @@ final ruc = _rucDe(r);
                     children: [
                       Text(
                         'CONTROL DE STOCK',
-                        maxLines: 1,
+                        maxLines: movil ? 2 : 1,
                         overflow: TextOverflow.ellipsis,
                         style: TextStyle(
-                          fontSize: movil ? 20 : 26,
+                          fontSize: movil ? 18 : 26,
                           fontWeight: FontWeight.w800,
                           color: const Color(0xFF173B30),
                         ),
@@ -2175,45 +2175,80 @@ final ruc = _rucDe(r);
       ),
       child: Column(
         children: [
-          Row(
-            children: [
-              const Icon(Icons.table_chart_outlined, color: _azul),
-              const SizedBox(width: 8),
-              const Expanded(
-                child: Text(
-                  'RESUMEN DE STOCK',
-                  style: TextStyle(
-                    fontSize: 17,
-                    fontWeight: FontWeight.w800,
+          LayoutBuilder(
+            builder: (context, c) {
+              final mobile = c.maxWidth < 700;
+
+              final titulo = Row(
+                children: [
+                  const Icon(Icons.table_chart_outlined, color: _azul),
+                  const SizedBox(width: 8),
+                  const Expanded(
+                    child: Text(
+                      'RESUMEN DE STOCK',
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        fontSize: 17,
+                        fontWeight: FontWeight.w800,
+                      ),
+                    ),
                   ),
-                ),
-              ),
-              OutlinedButton.icon(
-                onPressed: _filtrados.isEmpty
-                    ? null
-                    : () => _abrirVistaPreviaFilas(
-                          'RESUMEN DE STOCK',
-                          _filtrados,
-                        ),
-                icon: const Icon(Icons.visibility_outlined, size: 18),
-                label: const Text('VISTA PREVIA'),
-                style: OutlinedButton.styleFrom(
-                  foregroundColor: _azul,
-                  side: BorderSide(color: _azul.withValues(alpha: .55)),
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(22),
+                ],
+              );
+
+              final acciones = Wrap(
+                alignment: mobile ? WrapAlignment.start : WrapAlignment.end,
+                crossAxisAlignment: WrapCrossAlignment.center,
+                spacing: 10,
+                runSpacing: 8,
+                children: [
+                  OutlinedButton.icon(
+                    onPressed: _filtrados.isEmpty
+                        ? null
+                        : () => _abrirVistaPreviaFilas(
+                              'RESUMEN DE STOCK',
+                              _filtrados,
+                            ),
+                    icon: const Icon(Icons.visibility_outlined, size: 18),
+                    label: const Text('VISTA PREVIA'),
+                    style: OutlinedButton.styleFrom(
+                      foregroundColor: _azul,
+                      side: BorderSide(color: _azul.withValues(alpha: .55)),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(22),
+                      ),
+                    ),
                   ),
-                ),
-              ),
-              const SizedBox(width: 12),
-              Text(
-                'Stock total: ${_money.format(_stockTotal)}',
-                style: const TextStyle(
-                  color: _verde,
-                  fontWeight: FontWeight.w700,
-                ),
-              ),
-            ],
+                  Text(
+                    'Stock total: ${_money.format(_stockTotal)}',
+                    style: const TextStyle(
+                      color: _verde,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                ],
+              );
+
+              if (mobile) {
+                return Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    titulo,
+                    const SizedBox(height: 8),
+                    acciones,
+                  ],
+                );
+              }
+
+              return Row(
+                children: [
+                  Expanded(child: titulo),
+                  const SizedBox(width: 12),
+                  acciones,
+                ],
+              );
+            },
           ),
           const SizedBox(height: 6),
           const Align(
@@ -2223,7 +2258,6 @@ final ruc = _rucDe(r);
               style: TextStyle(color: Colors.grey, fontSize: 11),
             ),
           ),
-          const SizedBox(height: 12),
           SizedBox(
             height: 430,
             child: Scrollbar(

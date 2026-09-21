@@ -296,8 +296,11 @@ class _CotizacionesPageState extends State<CotizacionesPage> {
     });
   }
 
+  // El P. Unit. siempre representa el precio base por la unidad técnica
+  // del producto (por ejemplo, US$/MT). La conversión de ROL x 100,
+  // ROL x 50, etc. se aplica únicamente al total de la línea.
   double _precioVisible(_LineaCotizacion linea) =>
-      linea.precioPresentacion * _factorMoneda;
+      linea.precio * _factorMoneda;
 
   double _totalVisible(_LineaCotizacion linea) =>
       linea.totalConFactor(_factorPresentacion(linea)) * _factorMoneda;
@@ -1329,7 +1332,7 @@ class _CotizacionesPageState extends State<CotizacionesPage> {
                   ),
                   _chipProducto(
                     conStock
-                        ? 'STOCK: ${producto.stockTexto} ${producto.unidadVisible == 'ROLLO' ? 'ROLLOS' : 'MT'}'
+                        ? 'STOCK: ${producto.stockTexto} ${producto.unidadVisible == 'METRO (MT)' ? 'METRO' : producto.unidadVisible}'
                         : 'SIN STOCK',
                     color: estadoColor,
                   ),
@@ -1351,6 +1354,19 @@ class _CotizacionesPageState extends State<CotizacionesPage> {
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                   style: const TextStyle(color: Color(0xFF475569), fontSize: 11.5),
+                ),
+              ],
+              if (producto.fechaIngreso.trim().isNotEmpty) ...[
+                const SizedBox(height: 3),
+                Text(
+                  'Fecha ingreso Alm. 01: ${producto.fechaIngreso}',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    color: Color(0xFF475569),
+                    fontSize: 11.5,
+                    fontWeight: FontWeight.w600,
+                  ),
                 ),
               ],
               if (producto.vendedor.trim().isNotEmpty) ...[
@@ -1812,7 +1828,9 @@ class _CotizacionesPageState extends State<CotizacionesPage> {
       _mensaje('Ingrese primero el tipo de cambio del día para modificar precios en soles.');
       return;
     }
-    final precioActual = linea.precioPresentacion * _factorMoneda;
+    // Editamos el precio base por unidad técnica, no el precio convertido
+    // de la presentación.
+    final precioActual = linea.precio * _factorMoneda;
     final controller = TextEditingController(
       text: precioActual.toStringAsFixed(4),
     );
@@ -1925,9 +1943,11 @@ class _CotizacionesPageState extends State<CotizacionesPage> {
 
     if (!mounted || valor == null) return;
 
-    final factor = _factorPresentacion(linea);
+    // El valor ingresado es siempre el precio base por unidad técnica.
+    // No se divide por el factor de presentación porque el factor solo
+    // participa en el total de la línea.
     final valorEnUsd = _moneda == 'Soles (PEN)' ? valor / _factorMoneda : valor;
-    final nuevoPrecioBase = factor > 0 ? valorEnUsd / factor : valorEnUsd;
+    final nuevoPrecioBase = valorEnUsd;
 
     setState(() {
       _lineas[index] = _lineas[index].copyWith(
@@ -3179,13 +3199,15 @@ class _CotizacionesPageState extends State<CotizacionesPage> {
               : _validezController.text.trim(),
           lineas: _lineas.map((linea) {
             final factor = _factorPresentacion(linea);
-            final precioPresentacion = linea.precio * factor * _factorMoneda;
+            // En PDF, P. Unit. también es el precio base por unidad técnica.
+            // El factor de presentación se refleja solamente en el total.
+            final precioUnitarioBase = linea.precio * _factorMoneda;
             return <String, dynamic>{
               'codigo': linea.codigo,
               'descripcion': linea.descripcion,
               'cantidad': linea.cantidad,
               'presentacion': linea.presentacion,
-              'precio_unitario': precioPresentacion,
+              'precio_unitario': precioUnitarioBase,
               'descuento_porcentaje': _descuentoEsGlobal
                   ? _descuentoGlobalPorcentaje
                   : linea.descuentoPorcentaje,

@@ -41,8 +41,7 @@ class ProductoCotizacionStock {
 
   bool get tieneStock => stock > 0;
 
-  /// Código especial de Cotizaciones cuyo texto descriptivo lo define
-  /// manualmente el usuario.
+  /// Código especial utilizado por Cotizaciones como producto comodín.
   bool get esComodin => codigo.trim() == '199000000000000';
 
   String get stockTexto => _formatearNumero(stock);
@@ -71,6 +70,27 @@ class ProductoCotizacionStock {
     var unidad = unidadMedida.trim().toUpperCase();
     unidad = unidad.replaceAll('.', '').replaceAll(' ', '');
 
+    // Regla comercial: si el producto está definido como vendido por metro
+    // (unidad MT/M/METRO o descripción terminada en "(m)"), SIEMPRE se
+    // muestra y se cotiza como METRO. No se debe convertir a ROLLO solo
+    // porque el registro de stock tenga una presentación ROLx100MT.
+    final descripcionNormalizada = descripcion
+        .trim()
+        .toUpperCase()
+        .replaceAll(RegExp(r'\s+'), ' ');
+    final esDescripcionMetro = RegExp(
+      r'\(\s*M\s*\)\s*$',
+      caseSensitive: false,
+    ).hasMatch(descripcionNormalizada);
+
+    if (unidad == 'MT' ||
+        unidad == 'M' ||
+        unidad == 'METRO' ||
+        unidad == 'METROS' ||
+        esDescripcionMetro) {
+      return 'METRO (MT)';
+    }
+
     if (unidad == 'ROL' ||
         unidad == 'RO' ||
         unidad == 'ROLLO' ||
@@ -80,28 +100,20 @@ class ProductoCotizacionStock {
       return 'ROLLO';
     }
 
-    if (unidad == 'MT' ||
-        unidad == 'M' ||
-        unidad == 'METRO' ||
-        unidad == 'METROS') {
-      return 'METRO (MT)';
-    }
-
     final texto = '${presentacionStock.trim()} $descripcion $lote'.toUpperCase();
 
-    // El Excel de stock suele identificar metros como "(m)" o "...MT".
-    if (RegExp(r'\(\s*M\s*\)|\bMT\b|\bMETROS?\b|\bMETR[AO]S?\b')
-        .hasMatch(texto)) {
-      // Si además aparece ROL/BOB en una presentación explícita, prevalece ROLLO.
-      if (!RegExp(r'\bROL(?:LO|LOS)?\b|\bBOBIN(?:A|AS)\b', caseSensitive: false)
-          .hasMatch(texto)) {
-        return 'METRO (MT)';
-      }
+    // Solo inferimos ROLLO desde la presentación cuando el producto NO está
+    // definido como venta por metro.
+    if (RegExp(
+      r'(?:\d+\s*)?(?:ROL(?:LO|LOS)?|RO|BOBIN(?:A|AS)?|CARRETE(?:S)?|CAR)\s*[xX]',
+      caseSensitive: false,
+    ).hasMatch(texto)) {
+      return 'ROLLO';
     }
 
-    if (RegExp(r'\bROL(?:LO|LOS)?\b|\bBOBIN(?:A|AS)\b|\bCARRETE(?:S)?\b', caseSensitive: false)
+    if (RegExp(r'\(\s*M\s*\)|\bMT\b|\bMETROS?\b|\bMETR[AO]S?\b')
         .hasMatch(texto)) {
-      return 'ROLLO';
+      return 'METRO (MT)';
     }
 
     return unidad.isEmpty ? 'NO DEFINIDA' : unidad;
@@ -110,48 +122,50 @@ class ProductoCotizacionStock {
   /// Presentación comercial. Prioriza la columna del stock y luego intenta
   /// detectar formatos escritos en la descripción.
   String get presentacion {
+    // Si el producto se vende por metro, la presentación SIEMPRE es MT.
+    // No mostrar ROL x 100 metros aunque el stock haya sido registrado así.
+    if (unidadVisible == 'METRO (MT)') {
+      return 'METRO (MT)';
+    }
+
     final desdeStock = presentacionStock.trim();
     if (desdeStock.isNotEmpty) {
       final match = RegExp(
-        r'(rol(?:lo|los)?|bobinas?|carretes?|paquetes?|cajas?)\s*[xX]?\s*(\d+(?:[.,]\d+)?)?\s*(?:MT|M|METROS?)?',
+        r'(?:\d+\s*)?(rol(?:lo|los)?|ro|bob(?:ina|inas)?|carrete(?:s)?|car|paquete(?:s)?|caja(?:s)?)\s*[xX]\s*(\d+(?:[.,]\d+)?)\s*(?:MT|M|METROS?)?',
         caseSensitive: false,
       ).firstMatch(desdeStock);
 
       if (match != null) {
-        final tipoRaw = match.group(1) ?? 'Presentación';
-        final tipo = tipoRaw.toUpperCase().startsWith('ROL') ? 'Rollo' : _capitalizar(tipoRaw);
+        final tipo = _capitalizar(match.group(1) ?? 'Presentación');
         final cantidad = match.group(2);
-        return cantidad != null && cantidad.isNotEmpty
-            ? '$tipo x $cantidad metros'
-            : tipo;
+        return '$tipo x $cantidad metros';
       }
 
       return desdeStock;
     }
 
     final texto = descripcion.trim();
+
     final match = RegExp(
-      r'\(\s*(rol(?:lo|los)?|bobinas?|carretes?|paquetes?|cajas?)\s*[xX]\s*(\d+(?:[.,]\d+)?)\s*(?:MT|M|METROS?)?\s*\)',
+      r'\(\s*(?:\d+\s*)?(rol(?:lo|los)?|ro|bob(?:ina|inas)?|carrete(?:s)?|car|paquete(?:s)?|caja(?:s)?)\s*[xX]\s*(\d+(?:[.,]\d+)?)\s*(?:MT|M|METROS?)?\s*\)',
       caseSensitive: false,
     ).firstMatch(texto);
 
     if (match != null) {
-      final tipoRaw = match.group(1) ?? 'Presentación';
-      final tipo = tipoRaw.toUpperCase().startsWith('ROL') ? 'Rollo' : _capitalizar(tipoRaw);
+      final tipo = match.group(1) ?? 'Presentación';
       final cantidad = match.group(2) ?? '1';
-      return '$tipo x $cantidad metros';
+      return '${_capitalizar(tipo)} x $cantidad metros';
     }
 
     final simple = RegExp(
-      r'\b(rol(?:lo|los)?|bobinas?|carretes?|paquetes?|cajas?)\s*[xX]\s*(\d+(?:[.,]\d+)?)\s*(?:MT|M|METROS?)?\b',
+      r'(?:\d+\s*)?(rol(?:lo|los)?|ro|bob(?:ina|inas)?|carrete(?:s)?|car|paquete(?:s)?|caja(?:s)?)\s*[xX]\s*(\d+(?:[.,]\d+)?)\s*(?:MT|M|METROS?)?\b',
       caseSensitive: false,
     ).firstMatch(texto);
 
     if (simple != null) {
-      final tipoRaw = simple.group(1) ?? 'Presentación';
-      final tipo = tipoRaw.toUpperCase().startsWith('ROL') ? 'Rollo' : _capitalizar(tipoRaw);
+      final tipo = simple.group(1) ?? 'Presentación';
       final cantidad = simple.group(2) ?? '1';
-      return '$tipo x $cantidad metros';
+      return '${_capitalizar(tipo)} x $cantidad metros';
     }
 
     if (unidadVisible == 'ROLLO') return 'ROLLO';
@@ -160,9 +174,14 @@ class ProductoCotizacionStock {
   }
 
   double get factorPresentacion {
+    // En MT el precio siempre es unitario por metro.
+    if (unidadVisible == 'METRO (MT)') {
+      return 1;
+    }
+
     final texto = presentacion;
     final match = RegExp(
-      r'(?:rol(?:lo|los)?|bobinas?|carretes?|paquetes?|cajas?)\s*x\s*(\d+(?:[.,]\d+)?)|\bx\s*(\d+(?:[.,]\d+)?)\b',
+      r'(?:rollos?|rol|ro|bobinas?|bob|carretes?|car|paquetes?|paquete|cajas?|caja)\s*x\s*(\d+(?:[.,]\d+)?)|\bx\s*(\d+(?:[.,]\d+)?)\b',
       caseSensitive: false,
     ).firstMatch(texto);
 
@@ -510,58 +529,36 @@ class ProductoCotizacionService {
   ) async {
     final porCodigo = <String, Map<String, dynamic>>{};
 
+    String compactar(String value) =>
+        _normalizar(value).replaceAll(' ', '');
+
+    bool coincide(Map<String, dynamic> fila) {
+      final buscable = _textoBuscableProducto(fila);
+      final q = palabras.join(' ');
+      return _coincideBusqueda(q, buscable);
+    }
+
     for (final palabra in palabras) {
       final termino = palabra.trim();
       if (termino.isEmpty) continue;
 
-      final variantes = <String>{
-        termino,
-        termino.replaceAll('.', ''),
-      };
-      if (termino.contains('.')) {
-        variantes.add(termino.replaceAll('.', ' '));
-      }
+      final variantes = <String>{termino};
+      final compacto = compactar(termino);
 
-      // Para búsquedas compactas (NYY25, NYSY4, THW14, N2XOH10, etc.)
-      // consultamos también los componentes que pueden estar separados en la
-      // descripción del catálogo. Ejemplo:
-      //   N2XOH10 -> N2XOH + 10
-      //   NYY25   -> NYY + 25
-      //   N2XOH10MM2 -> N2XOH + 10 + MM + 2
-      // La validación final exige todos los componentes, evitando resultados
-      // falsos por consultar solamente un número.
-      final compacta = termino.replaceAll('.', '');
-      final numeros = RegExp(r'\d+').allMatches(compacta).toList();
-
-      if (numeros.isNotEmpty && RegExp(r'[a-z]').hasMatch(compacta)) {
-        if (numeros.length == 1) {
-          final inicioNumero = numeros.first.start;
-          final base = compacta.substring(0, inicioNumero);
-          if (base.isNotEmpty) variantes.add(base);
-          variantes.add(numeros.first.group(0)!);
-        } else {
-          // La primera parte alfanumérica representa la familia/modelo.
-          // Para N2XOH10MM2 tomamos N2XOH y luego los componentes posteriores.
-          final inicioSegundoNumero = numeros[1].start;
-          final base = compacta.substring(0, inicioSegundoNumero);
-          if (base.isNotEmpty && RegExp(r'[a-z]').hasMatch(base)) {
-            variantes.add(base);
-          }
-
-          for (int i = 1; i < numeros.length; i++) {
-            variantes.add(numeros[i].group(0)!);
-          }
-
-          final despuesSegundoNumero = compacta.substring(numeros[1].end);
-          for (final m in RegExp(r'[a-z]+').allMatches(despuesSegundoNumero)) {
-            variantes.add(m.group(0)!);
-          }
-        }
+      // THW14 / NLT14 / NYY25: probamos también la forma separada
+      // "THW 14" porque así puede estar guardado el modelo/descripción.
+      final match = RegExp(r'^([a-z]+)([0-9]+)$').firstMatch(compacto);
+      if (match != null) {
+        variantes.add('${match.group(1)} ${match.group(2)}');
+        variantes.add(match.group(1)!);
+        variantes.add(match.group(2)!);
       }
 
       for (final variante in variantes) {
         final patron = '%${variante.replaceAll('%', '')}%';
-        final respuesta = await _supabase
+
+        // Catálogo: incluye productos aunque tengan stock 0.
+        final productos = await _supabase
             .from('productos')
             .select(
               'codigo, descripcion, modelo, calibre, unidad, presentacion, '
@@ -572,22 +569,75 @@ class ProductoCotizacionService {
               'codigo.ilike.$patron,'
               'descripcion.ilike.$patron,'
               'modelo.ilike.$patron,'
-              'calibre.ilike.$patron,'
-              'unidad.ilike.$patron,'
-              'presentacion.ilike.$patron',
+              'calibre.ilike.$patron',
             )
             .limit(500);
 
-        for (final original in (respuesta as List)) {
+        for (final original in (productos as List)) {
           final fila = Map<String, dynamic>.from(original);
           final codigo = fila['codigo']?.toString().trim() ?? '';
-          if (codigo.isEmpty) continue;
+          if (codigo.isEmpty || !coincide(fila)) continue;
           porCodigo[_normalizar(codigo)] = fila;
+        }
+
+        // Stock: buscamos también directamente en lo que ya está ingresado
+        // al almacén. Se conservan después TODOS sus lotes/registros.
+        // En STOCK usamos únicamente columnas confirmadas por el modelo
+        // actual. codigo_articulo no forma parte de todos los registros y
+        // provocaba que PostgREST rechazara toda la consulta.
+        final stocks = await _supabase
+            .from('stock')
+            .select('*')
+            .or(
+              'codigo.ilike.$patron,'
+              'descripcion.ilike.$patron,'
+              'modelo.ilike.$patron',
+            )
+            .limit(1000);
+
+        for (final original in (stocks as List)) {
+          final fila = Map<String, dynamic>.from(original);
+          final codigo = _codigo(fila);
+          if (codigo.isEmpty || !coincide(fila)) continue;
+
+          final clave = _normalizar(codigo);
+          porCodigo.putIfAbsent(clave, () => fila);
         }
       }
     }
 
     return porCodigo.values.toList();
+  }
+
+  Future<List<Map<String, dynamic>>> _buscarTodosStockPorCodigos(
+    Iterable<String> codigos,
+  ) async {
+    final lista = codigos
+        .map((e) => e.trim())
+        .where((e) => e.isNotEmpty)
+        .toSet()
+        .toList();
+
+    final resultado = <Map<String, dynamic>>[];
+
+    // Supabase/PostgREST admite listas grandes, pero las procesamos en lotes
+    // para no perder registros cuando hay muchos códigos coincidentes.
+    for (int inicio = 0; inicio < lista.length; inicio += 100) {
+      final fin = (inicio + 100 < lista.length) ? inicio + 100 : lista.length;
+      final lote = lista.sublist(inicio, fin);
+
+      final filas = await _supabase
+          .from('stock')
+          .select('*')
+          .inFilter('codigo', lote)
+          .order('stock', ascending: false);
+
+      for (final original in (filas as List)) {
+        resultado.add(Map<String, dynamic>.from(original));
+      }
+    }
+
+    return resultado;
   }
 
   Future<Map<String, Map<String, dynamic>>> _buscarMejorStockPorCodigos(
@@ -706,113 +756,92 @@ class ProductoCotizacionService {
     final busqueda = _normalizar(texto);
     if (busqueda.isEmpty) return [];
 
-    final palabrasOriginales = busqueda
+    final palabras = busqueda
         .split(RegExp(r'\s+'))
         .where((p) => p.isNotEmpty)
         .toList();
-
-    // BOV = BÓVEDA. Es un alias comercial que el usuario escribe al
-    // buscar el artículo 00101002 (Caja de Registro).
-    // No se agrega BOV como campo del catálogo ni se altera el buscador
-    // general: solamente se traduce este alias.
-    final palabras = palabrasOriginales.length == 1 &&
-            palabrasOriginales.first == 'bov'
-        ? <String>['00101002']
-        : palabrasOriginales.where((p) => p != 'bov').toList();
 
     // 1) Catálogo: aquí están TODOS los códigos, incluso los que no tienen stock.
     final productos = await _buscarCatalogoPorTexto(palabras);
     if (productos.isEmpty) return [];
 
-    // 2) Traemos el mejor registro de stock para cada código encontrado.
-    final stocks = await _buscarMejorStockPorCodigos(
+    // 2) Traemos TODOS los registros de stock de los códigos encontrados.
+    // No agrupamos por código: un mismo código puede tener varios lotes,
+    // ingresos y existencias, y todos deben aparecer en la búsqueda.
+    final stocks = await _buscarTodosStockPorCodigos(
       productos.map((e) => e['codigo']?.toString() ?? ''),
     );
 
-    final candidatos = <Map<String, dynamic>>[];
+    final productosPorCodigo = <String, Map<String, dynamic>>{};
     for (final producto in productos) {
       final codigo = producto['codigo']?.toString().trim() ?? '';
       if (codigo.isEmpty) continue;
+      productosPorCodigo[_normalizar(codigo)] = producto;
+    }
 
-      final filaStock = stocks[_normalizar(codigo)];
-      if (filaStock != null) {
-        candidatos.add(_enriquecerFila(
-          filaStock,
-          {_normalizar(codigo): producto},
-        ));
-      } else {
-        candidatos.add({
-          'codigo': codigo,
-          'descripcion': producto['descripcion'] ?? 'SIN DESCRIPCIÓN',
-          'stock': 0,
-          'peso': 0,
-          'valor_lista_precio_dolar': ProductoCotizacionStock._numero(
-            producto['precio_vigente_dolar'],
+    final candidatos = <Map<String, dynamic>>[];
+
+    // Primero conservamos cada fila real de stock.
+    for (final filaStock in stocks) {
+      final codigo = _codigo(filaStock);
+      if (codigo.isEmpty) continue;
+
+      final producto = productosPorCodigo[_normalizar(codigo)];
+      if (producto != null) {
+        candidatos.add(
+          _enriquecerFila(
+            filaStock,
+            {_normalizar(codigo): producto},
           ),
-          'cliente': '',
-          'almacen': '',
-          'condicion': 'SIN STOCK',
-          'vendedor': '',
-          'lote': '',
-          'fecha_ingreso': '',
-          'modelo': producto['modelo'] ?? '',
-          'unidad': producto['unidad'] ?? '',
-          'presentacion': producto['presentacion'] ?? '',
-          'calibre': producto['calibre'] ?? '',
-        });
+        );
+      } else {
+        candidatos.add(filaStock);
       }
     }
 
-    // 3) Validación final: todas las palabras deben estar presentes en el
-    // código, descripción, modelo, unidad o presentación.
+    // Luego agregamos una fila SIN STOCK para cada producto del catálogo
+    // que no tenga ninguna fila en la tabla stock.
+    final codigosConStock = stocks
+        .map(_codigo)
+        .where((e) => e.trim().isNotEmpty)
+        .map(_normalizar)
+        .toSet();
+
+    for (final producto in productos) {
+      final codigo = producto['codigo']?.toString().trim() ?? '';
+      if (codigo.isEmpty) continue;
+      final clave = _normalizar(codigo);
+      if (codigosConStock.contains(clave)) continue;
+
+      candidatos.add({
+        'codigo': codigo,
+        'descripcion': producto['descripcion'] ?? 'SIN DESCRIPCIÓN',
+        'stock': 0,
+        'peso': 0,
+        'valor_lista_precio_dolar': ProductoCotizacionStock._numero(
+          producto['precio_vigente_dolar'],
+        ),
+        'cliente': '',
+        'almacen': '',
+        'condicion': 'SIN STOCK',
+        'vendedor': '',
+        'lote': '',
+        'fecha_ingreso': '',
+        'modelo': producto['modelo'] ?? '',
+        'unidad': producto['unidad'] ?? '',
+        'presentacion': producto['presentacion'] ?? '',
+        'calibre': producto['calibre'] ?? '',
+      });
+    }
+
+    // 3) Validación final: TODAS las partes de la búsqueda deben coincidir.
+    // Evita falsos positivos como buscar NLT14 y devolver un TW 18 AWG.
     final encontrados = <Map<String, dynamic>>[];
     for (final fila in candidatos) {
       final buscable = _textoBuscableProducto(fila);
-      final compacto = _compacto(buscable);
-      final coincide = palabras.every((palabra) {
-        final p = _normalizar(palabra);
-        final pc = _compacto(p);
-        if (buscable.contains(p) || compacto.contains(pc)) return true;
-
-        // Acepta formatos compactos cuando el origen los guarda separados.
-        // Esto cubre tanto NYY25/NYSY4/THW14 como N2XOH10.
-        final componentes = <String>[];
-        final numeros = RegExp(r'\d+').allMatches(pc).toList();
-
-        if (numeros.isNotEmpty && RegExp(r'[a-z]').hasMatch(pc)) {
-          if (numeros.length == 1) {
-            final base = pc.substring(0, numeros.first.start);
-            if (base.isNotEmpty) componentes.add(base);
-            componentes.add(numeros.first.group(0)!);
-          } else {
-            final base = pc.substring(0, numeros[1].start);
-            if (base.isNotEmpty && RegExp(r'[a-z]').hasMatch(base)) {
-              componentes.add(base);
-            }
-
-            for (int i = 1; i < numeros.length; i++) {
-              componentes.add(numeros[i].group(0)!);
-            }
-
-            final cola = pc.substring(numeros[1].end);
-            componentes.addAll(
-              RegExp(r'[a-z]+')
-                  .allMatches(cola)
-                  .map((m) => m.group(0)!),
-            );
-          }
-        }
-
-        if (componentes.isEmpty) return false;
-
-        // Cada componente puede estar separado por espacios/puntuación.
-        return componentes.every((componente) {
-          final c = _normalizar(componente);
-          if (c.isEmpty) return true;
-          return buscable.contains(c) || compacto.contains(c);
-        });
-      });
-      if (coincide) encontrados.add(fila);
+      if (_coincideBusqueda(busqueda, buscable)) {
+        encontrados.add(fila);
+      }
     }
 
     // 4) Stock disponible primero; dentro de cada grupo, código ascendente.
@@ -826,34 +855,66 @@ class ProductoCotizacionService {
       return _codigo(a).compareTo(_codigo(b));
     });
 
-    // Máximo 15 códigos distintos. Los códigos sin stock quedan disponibles
-    // para fabricación después de los que sí tienen existencia.
-    final unicos = <String, Map<String, dynamic>>{};
-    for (final fila in encontrados) {
-      final codigo = _codigo(fila);
-      if (codigo.isEmpty) continue;
-      final clave = _normalizar(codigo);
-      final existente = unicos[clave];
-      if (existente == null ||
-          ProductoCotizacionStock._numero(fila['stock']) >
-              ProductoCotizacionStock._numero(existente['stock'])) {
-        unicos[clave] = fila;
-      }
-    }
+    // No eliminamos filas por código: el usuario pidió ver TODO el stock
+    // asociado al modelo, incluidos lotes/ingresos distintos.
+    encontrados.sort((a, b) {
+      final stockA = ProductoCotizacionStock._numero(a['stock']);
+      final stockB = ProductoCotizacionStock._numero(b['stock']);
+      if ((stockA > 0) != (stockB > 0)) return stockA > 0 ? -1 : 1;
+      if (stockA != stockB) return stockB.compareTo(stockA);
 
-    final resultado = unicos.values.toList()
-      ..sort((a, b) {
-        final stockA = ProductoCotizacionStock._numero(a['stock']);
-        final stockB = ProductoCotizacionStock._numero(b['stock']);
-        if ((stockA > 0) != (stockB > 0)) return stockA > 0 ? -1 : 1;
-        if (stockA != stockB) return stockB.compareTo(stockA);
-        return _codigo(a).compareTo(_codigo(b));
-      });
+      final codigo = _codigo(a).compareTo(_codigo(b));
+      if (codigo != 0) return codigo;
 
-    return resultado
-        .take(15)
+      final fechaA = a['fecha_ingreso']?.toString() ?? '';
+      final fechaB = b['fecha_ingreso']?.toString() ?? '';
+      return fechaB.compareTo(fechaA);
+    });
+
+    // Límite de seguridad para la ventana de resultados, pero sin reducir
+    // artificialmente a un solo registro por código.
+    return encontrados
+        .take(100)
         .map(ProductoCotizacionStock.fromMap)
         .toList();
+  }
+
+  bool _coincideBusqueda(String consulta, String buscable) {
+    final q = _normalizar(consulta);
+    final b = _normalizar(buscable);
+    if (q.isEmpty || b.isEmpty) return false;
+
+    // Coincidencia completa: NLT14 también puede existir como modelo/código.
+    final qCompacto = _compacto(q);
+    final bCompacto = _compacto(b);
+    if (b.contains(q) || (qCompacto.length >= 4 && bCompacto.contains(qCompacto))) {
+      return true;
+    }
+
+    // Para términos compactos como NLT14, N2XOH10 o THW14:
+    // se separan letras y números, ignorando la x usada como separador.
+    final tokens = q.split(RegExp(r'\s+')).where((e) => e.isNotEmpty);
+    final componentes = <String>[];
+
+    for (final token in tokens) {
+      final compact = token.replaceAll('.', '');
+      final partes = RegExp(r'[a-z]+|\d+(?:\.\d+)?')
+          .allMatches(compact)
+          .map((m) => m.group(0)!)
+          .where((p) => p != 'x')
+          .toList();
+
+      if (partes.isEmpty) return false;
+      componentes.addAll(partes);
+    }
+
+    // No exigir una letra suelta que venga de un patrón alfanumérico raro.
+    // Sí exigimos cada componente significativo.
+    return componentes.every((componente) {
+      final c = _normalizar(componente);
+      if (c.isEmpty || c == 'x') return true;
+      return b.contains(c) || bCompacto.contains(c);
+    });
   }
 
   Future<List<ProductoCotizacionStock>> obtenerTodosProductos() async {

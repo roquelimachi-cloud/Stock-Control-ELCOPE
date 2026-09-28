@@ -12,6 +12,13 @@ dependencies:
     sdk: flutter
 
   # ==========================
+  # LOCALIZACIÓN
+  # ==========================
+
+  flutter_localizations:
+    sdk: flutter
+
+  # ==========================
   # GENERAL
   # ==========================
 
@@ -86,6 +93,8 @@ flutter:
   assets:
     - .env
     - assets/images/
+    - assets/crm/images/logo_elcope.png
+    - assets/crm/images/amperio.png
 
 # ==========================
 # ICONO DE LA APLICACIÓN

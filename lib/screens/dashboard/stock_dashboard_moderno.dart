@@ -20,6 +20,7 @@ import '../../services/supabase/supabase_service.dart';
 import '../../services/pdf/stock_dashboard_pdf_service.dart';
 import '../produccion/produccion_gerencial_dashboard.dart';
 import '../cotizaciones/cotizaciones_page.dart';
+import '../../features/crm/dashboard/crm_dashboard_page.dart';
 
 class DashboardPage extends StatefulWidget {
   const DashboardPage({super.key});
@@ -1408,22 +1409,6 @@ final ruc = _rucDe(r);
                       },
                     ),
 
-                  if (_puedeVer('cotizaciones'))
-                    ListTile(
-                      leading: const Icon(Icons.request_quote_outlined),
-                      title: const Text('Cotizaciones'),
-                      subtitle: const Text('Gestión de cotizaciones'),
-                      onTap: () {
-                        if (!lateral) Navigator.pop(context);
-                        Navigator.push(
-                          context,
-                          MaterialPageRoute(
-                            builder: (_) => const CotizacionesPage(),
-                          ),
-                        );
-                      },
-                    ),
-
                   ListTile(
                     leading: const Icon(Icons.person),
                     title: const Text('Mi Perfil'),
@@ -1454,7 +1439,37 @@ final ruc = _rucDe(r);
                         await _actualizar();
                       },
                     ),
+if (_puedeVer('cotizaciones'))
+  ListTile(
+    leading: const Icon(Icons.request_quote_outlined),
+    title: const Text('Cotizaciones'),
+    subtitle: const Text('Gestión de cotizaciones'),
+    onTap: () {
+      if (!lateral) Navigator.pop(context);
+      Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (_) => const CotizacionesPage(),
+        ),
+      );
+    },
+  ),
 
+if (_puedeVer('crm'))
+  ListTile(
+    leading: const Icon(Icons.business_center_outlined),
+    title: const Text('CRM'),
+    subtitle: const Text('Gestión comercial'),
+    onTap: () {
+      if (!lateral) Navigator.pop(context);
+      Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (_) => const CrmDashboardPage(),
+        ),
+      );
+    },
+  ),
                   if (_puedeVer('usuarios'))
                     ListTile(
                       leading: const Icon(Icons.people),
@@ -3098,206 +3113,6 @@ class _StockDetallePreviewPage extends StatelessWidget {
         'orden',
       ]);
 
-  Future<void> _exportarExcel(BuildContext context) async {
-    if (filas.isEmpty) return;
-
-    try {
-      final workbook = excel.Excel.createExcel();
-      final sheet = workbook['Sheet1'];
-
-      final totalStock = filas.fold<double>(
-        0,
-        (sum, r) => sum + _d(r['stock']),
-      );
-
-      final totalValor = filas.fold<double>(
-        0,
-        (sum, r) => sum + _d(
-          r['valor_lista_precio_dolar'] ??
-              r['valorStock'] ??
-              r['valor'],
-        ),
-      );
-
-      final totalPeso = filas.fold<double>(
-        0,
-        (sum, r) => sum + _d(
-          r['peso'] ??
-              r['peso_cobre'] ??
-              r['pesoCobre'],
-        ),
-      );
-
-      sheet.appendRow([
-        excel.TextCellValue('RESUMEN DE STOCK'),
-      ]);
-
-      sheet.appendRow([
-        excel.TextCellValue('Fecha de generación'),
-        excel.TextCellValue(
-          DateFormat('dd/MM/yyyy HH:mm').format(DateTime.now()),
-        ),
-      ]);
-
-      sheet.appendRow([
-        excel.TextCellValue('REGISTROS'),
-        excel.IntCellValue(filas.length),
-        excel.TextCellValue('STOCK'),
-        excel.DoubleCellValue(totalStock),
-        excel.TextCellValue('VALOR US\$'),
-        excel.DoubleCellValue(totalValor),
-        excel.TextCellValue('PESO kg'),
-        excel.DoubleCellValue(totalPeso),
-      ]);
-
-      sheet.appendRow([
-        excel.TextCellValue(''),
-      ]);
-
-      sheet.appendRow([
-        excel.TextCellValue('N°'),
-        excel.TextCellValue('CÓDIGO'),
-        excel.TextCellValue('DESCRIPCIÓN'),
-        excel.TextCellValue('CLIENTE'),
-        excel.TextCellValue('RUC'),
-        excel.TextCellValue('OP'),
-        excel.TextCellValue('ALMACÉN'),
-        excel.TextCellValue('STOCK'),
-        excel.TextCellValue('VALOR US\$'),
-        excel.TextCellValue('PESO kg'),
-        excel.TextCellValue('INGRESO'),
-      ]);
-
-      for (var i = 0; i < filas.length; i++) {
-        final r = filas[i];
-
-        final codigo = _campo(
-          r,
-          ['codigo_articulo', 'codigoArticulo', 'codigo'],
-          defecto: '-',
-        );
-
-        final descripcion = _campo(
-          r,
-          ['descripcion', 'articulo'],
-          defecto: 'SIN DESCRIPCIÓN',
-        );
-
-        final cliente = _campo(
-          r,
-          ['cliente'],
-          defecto: 'SIN CLIENTE',
-        );
-
-        final ruc = _campo(
-          r,
-          [
-            'codigo_cliente',
-            'codigoCliente',
-            'ruc',
-            'RUC',
-          ],
-          defecto: '-',
-        );
-
-        final op = _op(r);
-
-        final almacen = _campo(
-          r,
-          [
-            'almacen',
-            'almacén',
-            'almacen_nombre',
-            'almacenNombre',
-            'ubicacion',
-          ],
-          defecto: 'SIN ALMACÉN',
-        );
-
-        final stock = _d(r['stock']);
-
-        final valor = _d(
-          r['valor_lista_precio_dolar'] ??
-              r['valorStock'] ??
-              r['valor'],
-        );
-
-        final peso = _d(
-          r['peso'] ??
-              r['peso_cobre'] ??
-              r['pesoCobre'],
-        );
-
-        final fecha = _fecha(r);
-
-        sheet.appendRow([
-          excel.IntCellValue(i + 1),
-          excel.TextCellValue(codigo),
-          excel.TextCellValue(descripcion),
-          excel.TextCellValue(cliente),
-          excel.TextCellValue(ruc),
-          excel.TextCellValue(op.isEmpty ? '-' : op),
-          excel.TextCellValue(almacen),
-          excel.DoubleCellValue(stock),
-          excel.DoubleCellValue(valor),
-          excel.DoubleCellValue(peso),
-          excel.TextCellValue(
-            fecha == null
-                ? '-'
-                : DateFormat('dd/MM/yyyy').format(fecha),
-          ),
-        ]);
-      }
-
-      sheet.setColumnWidth(0, 8);
-      sheet.setColumnWidth(1, 22);
-      sheet.setColumnWidth(2, 55);
-      sheet.setColumnWidth(3, 35);
-      sheet.setColumnWidth(4, 18);
-      sheet.setColumnWidth(5, 18);
-      sheet.setColumnWidth(6, 18);
-      sheet.setColumnWidth(7, 14);
-      sheet.setColumnWidth(8, 16);
-      sheet.setColumnWidth(9, 14);
-      sheet.setColumnWidth(10, 18);
-
-      final bytes = workbook.encode();
-
-      if (bytes == null || bytes.isEmpty) {
-        throw Exception('No se pudo generar el archivo Excel.');
-      }
-
-      final nombreArchivo =
-          'Resumen_Stock_${DateFormat('yyyyMMdd_HHmm').format(DateTime.now())}.xlsx';
-
-      final ruta = await FilePicker.platform.saveFile(
-        dialogTitle: 'Guardar resumen de stock en Excel',
-        fileName: nombreArchivo,
-        bytes: Uint8List.fromList(bytes),
-        type: FileType.custom,
-        allowedExtensions: const ['xlsx'],
-      );
-
-      if (!context.mounted || ruta == null) return;
-
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Excel generado correctamente.'),
-          backgroundColor: Color(0xFF087A4A),
-        ),
-      );
-    } catch (e) {
-      if (!context.mounted) return;
-
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('No se pudo exportar a Excel: $e'),
-          backgroundColor: Colors.red,
-        ),
-      );
-    }
-  }
-
   @override
   Widget build(BuildContext context) {
     final money = NumberFormat('#,##0.00', 'en_US');
@@ -3344,43 +3159,6 @@ class _StockDetallePreviewPage extends StatelessWidget {
           ),
         ),
         actions: [
-          // En celular dejamos solo el ícono de Excel para no mover
-          // ni deformar el título ni el botón de imprimir.
-          Padding(
-            padding: const EdgeInsets.only(right: 2),
-            child: MediaQuery.sizeOf(context).width < 600
-                ? IconButton(
-                    tooltip: 'Exportar a Excel',
-                    onPressed: filas.isEmpty
-                        ? null
-                        : () => _exportarExcel(context),
-                    icon: const Icon(
-                      Icons.table_view_outlined,
-                      color: Color(0xFF087A4A),
-                    ),
-                  )
-                : OutlinedButton.icon(
-                    onPressed: filas.isEmpty
-                        ? null
-                        : () => _exportarExcel(context),
-                    icon: const Icon(
-                      Icons.table_view_outlined,
-                      size: 18,
-                    ),
-                    label: const Text('EXCEL'),
-                    style: OutlinedButton.styleFrom(
-                      foregroundColor: const Color(0xFF087A4A),
-                      side: const BorderSide(
-                        color: Color(0xFF087A4A),
-                      ),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(22),
-                      ),
-                    ),
-                  ),
-          ),
-
-          // IMPRIMIR queda exactamente con la función que ya tenía.
           Padding(
             padding: const EdgeInsets.only(right: 12),
             child: FilledButton.icon(

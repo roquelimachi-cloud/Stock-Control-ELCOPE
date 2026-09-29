@@ -1,5 +1,6 @@
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart' as services;
 import 'package:intl/intl.dart';
 import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
@@ -7,6 +8,13 @@ import 'package:printing/printing.dart';
 
 import '../../../services/sesion.dart';
 import '../../../services/supabase/supabase_service.dart';
+
+enum _CategoriaCartera {
+  nuevos,
+  crecieron,
+  disminuyeron,
+  sinCompra,
+}
 
 class CrmReportesPage extends StatefulWidget {
   const CrmReportesPage({super.key});
@@ -21,6 +29,7 @@ class _CrmReportesPageState extends State<CrmReportesPage> {
   static const verde = Color(0xFF079B63);
   static const naranja = Color(0xFFF08A00);
   static const morado = Color(0xFF5B45C5);
+  static const Color rojo = Color(0xFFD93838);
   static const fondo = Color(0xFFF4F7FA);
   static const borde = Color(0xFFE2E8F0);
 
@@ -51,7 +60,9 @@ class _CrmReportesPageState extends State<CrmReportesPage> {
   DateTime hasta = DateTime.now();
 
   Map<String, dynamic> data = {};
-  List<Map<String, dynamic>> clases = [];
+  Map<String, dynamic> dataAnterior = {};
+  int anioActual = DateTime.now().year;
+  int anioComparacion = DateTime.now().year - 1;
   String? error;
 
   bool get esGerencia => Sesion.rol.trim().toLowerCase() == 'gerencia';
@@ -87,6 +98,8 @@ class _CrmReportesPageState extends State<CrmReportesPage> {
   @override
   void initState() {
     super.initState();
+    anioActual = desde.year;
+    anioComparacion = anioActual - 1;
     _init();
   }
 
@@ -96,9 +109,15 @@ class _CrmReportesPageState extends State<CrmReportesPage> {
   }
 
   Future<void> _permisos() async {
+    final rol = Sesion.rol.trim().toLowerCase();
+
     if (esGerencia) {
       vendedoresPermitidos = null;
-    } else if (esJefatura) {
+      vendedores = await _cargarListaVendedores();
+    } else if (rol == 'jefe lima' || rol == 'jefe provincia') {
+      // La jefatura NO se queda solamente con su propio usuario.
+      // Su lista se toma de usuario_permisos para que "Todos" sea
+      // realmente TODO SU EQUIPO y también permita escoger un asesor.
       try {
         final result = await db
             .from('usuario_permisos')
@@ -111,42 +130,29 @@ class _CrmReportesPageState extends State<CrmReportesPage> {
           final nombre = _s(row['vendedor']);
           if (nombre.isNotEmpty) set.add(nombre);
         }
+
         if (Sesion.vendedor.trim().isNotEmpty) {
           set.add(Sesion.vendedor.trim());
         }
+
         vendedoresPermitidos = set.toList()..sort();
       } catch (_) {
         vendedoresPermitidos = Sesion.vendedor.trim().isEmpty
             ? <String>[]
             : <String>[Sesion.vendedor.trim()];
       }
+
+      vendedores = List<String>.from(vendedoresPermitidos ?? const <String>[]);
+      canal = rol == 'jefe provincia' ? 'PROVINCIAS' : 'LIMA';
     } else {
       vendedoresPermitidos = Sesion.vendedor.trim().isEmpty
           ? <String>[]
           : <String>[Sesion.vendedor.trim()];
-    }
-
-    vendedores = vendedoresPermitidos == null
-        ? await _cargarListaVendedores()
-        : List<String>.from(vendedoresPermitidos!);
-
-    final rol = Sesion.rol.trim().toLowerCase();
-
-    // Jefe Lima: el alcance geográfico es Canal LIMA y el reporte
-    // considera todos los asesores que facturan por ese canal.
-    if (rol == 'jefe lima') {
-      canal = 'LIMA';
-      vendedoresPermitidos = null;
-      vendedores = await _cargarListaVendedores();
-    } else if (rol == 'jefe provincia') {
-      canal = 'PROVINCIAS';
-    } else if (!esGerencia) {
+      vendedores = List<String>.from(vendedoresPermitidos!);
       canal = 'LIMA';
     }
 
-    if (vendedoresPermitidos != null &&
-        vendedor != 'TODOS' &&
-        !vendedores.contains(vendedor)) {
+    if (vendedor != 'TODOS' && !vendedores.contains(vendedor)) {
       vendedor = 'TODOS';
     }
   }
@@ -170,41 +176,50 @@ class _CrmReportesPageState extends State<CrmReportesPage> {
     }
   }
 
+  DateTime _fechaAnio(DateTime fecha, int anio) {
+    final ultimoDia = DateTime(anio, fecha.month + 1, 0).day;
+    final dia = fecha.day > ultimoDia ? ultimoDia : fecha.day;
+    return DateTime(anio, fecha.month, dia);
+  }
+
+  Future<Map<String, dynamic>> _reporte(
+    DateTime fechaDesde,
+    DateTime fechaHasta,
+  ) async {
+    final result = await db.rpc(
+      'crm_obtener_reportes',
+      params: {
+        'p_vendedores_permitidos': vendedoresPermitidos,
+        'p_vendedor': vendedor,
+        'p_desde': DateFormat('yyyy-MM-dd').format(fechaDesde),
+        'p_hasta': DateFormat('yyyy-MM-dd').format(fechaHasta),
+        'p_canal': canal,
+      },
+    );
+
+    return result is Map
+        ? Map<String, dynamic>.from(result)
+        : <String, dynamic>{};
+  }
+
   Future<void> _cargar() async {
     if (mounted) setState(() => loading = true);
 
     try {
-      final params = {
-        'p_vendedores_permitidos': vendedoresPermitidos,
-        'p_vendedor': vendedor,
-        'p_desde': DateFormat('yyyy-MM-dd').format(desde),
-        'p_hasta': DateFormat('yyyy-MM-dd').format(hasta),
-        'p_canal': canal,
-      };
+      final desdeAnterior = _fechaAnio(desde, anioComparacion);
+      final hastaAnterior = _fechaAnio(hasta, anioComparacion);
 
-      final result = await db.rpc(
-        'crm_obtener_reportes',
-        params: params,
-      );
-
-      final clasesResult = await db.rpc(
-        'crm_obtener_reportes_clases',
-        params: params,
-      );
-
-      final clasesCargadas = clasesResult is List
-          ? clasesResult
-              .whereType<Map>()
-              .map((e) => Map<String, dynamic>.from(e))
-              .toList()
-          : <Map<String, dynamic>>[];
+      final resultados = await Future.wait([
+        _reporte(desde, hasta),
+        _reporte(desdeAnterior, hastaAnterior),
+      ]);
 
       if (!mounted) return;
+
       setState(() {
-        data = result is Map
-            ? Map<String, dynamic>.from(result)
-            : <String, dynamic>{};
-        clases = clasesCargadas;
+        data = resultados[0];
+        dataAnterior = resultados[1];
+        anioActual = desde.year;
         loading = false;
         error = null;
       });
@@ -215,6 +230,71 @@ class _CrmReportesPageState extends State<CrmReportesPage> {
         error = e.toString();
       });
     }
+  }
+
+  Future<void> _seleccionarAnio(bool actual) async {
+    final elegido = await showDialog<int>(
+      context: context,
+      builder: (context) {
+        int valor = actual ? anioActual : anioComparacion;
+
+        return StatefulBuilder(
+          builder: (context, setLocal) {
+            return AlertDialog(
+              title: Text(
+                actual
+                    ? 'Seleccionar año actual'
+                    : 'Seleccionar año de comparación',
+              ),
+              content: DropdownButtonFormField<int>(
+                initialValue: valor,
+                decoration: const InputDecoration(
+                  labelText: 'Año',
+                  border: OutlineInputBorder(),
+                ),
+                items: List.generate(
+                  9,
+                  (i) => 2022 + i,
+                ).map(
+                  (year) => DropdownMenuItem(
+                    value: year,
+                    child: Text('$year'),
+                  ),
+                ).toList(),
+                onChanged: (v) {
+                  if (v != null) setLocal(() => valor = v);
+                },
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.pop(context),
+                  child: const Text('Cancelar'),
+                ),
+                FilledButton(
+                  onPressed: () => Navigator.pop(context, valor),
+                  child: const Text('Aceptar'),
+                ),
+              ],
+            );
+          },
+        );
+      },
+    );
+
+    if (elegido == null) return;
+
+    setState(() {
+      if (actual) {
+        final days = hasta.difference(desde).inDays;
+        anioActual = elegido;
+        desde = _fechaAnio(desde, elegido);
+        hasta = desde.add(Duration(days: days));
+      } else {
+        anioComparacion = elegido;
+      }
+    });
+
+    await _cargar();
   }
 
   Future<void> _fecha(bool inicio) async {
@@ -242,7 +322,9 @@ class _CrmReportesPageState extends State<CrmReportesPage> {
   }
 
   String _filtroTexto() {
-    final v = vendedor == 'TODOS' ? 'Todos los asesores' : vendedor;
+    final v = vendedor == 'TODOS'
+        ? (esJefatura ? 'Todos los asesores' : 'Todos')
+        : vendedor;
     final c = canal == 'TODOS' ? 'Todos los canales' : canal;
     return '$v · $c · ${date.format(desde)} al ${date.format(hasta)}';
   }
@@ -327,7 +409,7 @@ class _CrmReportesPageState extends State<CrmReportesPage> {
                               ),
                               const SizedBox(height: 3),
                               Text(
-                                'Canal: ${canal == 'TODOS' ? 'Todos' : canal} · ${vendedor == 'TODOS' ? 'Todos los asesores' : vendedor}',
+                                'Canal: ${canal == 'TODOS' ? 'Todos' : canal} · ${_etiquetaVendedorReporte()}',
                                 style: const TextStyle(
                                   color: Colors.black54,
                                   fontSize: 12,
@@ -704,13 +786,13 @@ class _CrmReportesPageState extends State<CrmReportesPage> {
                 pw.SizedBox(height: 12),
                 pw.Row(
                   children: [
-                    _pdfKpi('Facturación', 'US\$ ${money.format(fact)}'),
+                    _pdfKpiCompact('Facturación', 'US\$ ${money.format(fact)}'),
                     pw.SizedBox(width: 8),
-                    _pdfKpi('Peso cobre', '${money.format(peso)} kg'),
+                    _pdfKpiCompact('Peso cobre', '${money.format(peso)} kg'),
                     pw.SizedBox(width: 8),
-                    _pdfKpi('Facturas', integer.format(facturas)),
+                    _pdfKpiCompact('Facturas', integer.format(facturas)),
                     pw.SizedBox(width: 8),
-                    _pdfKpi('Clientes', integer.format(clientes)),
+                    _pdfKpiCompact('Clientes', integer.format(clientes)),
                   ],
                 ),
                 pw.SizedBox(height: 15),
@@ -718,11 +800,11 @@ class _CrmReportesPageState extends State<CrmReportesPage> {
                   crossAxisAlignment: pw.CrossAxisAlignment.start,
                   children: [
                     pw.Expanded(
-                      child: _pdfVendedores(asesores),
+                      child: _pdfVendedoresCompact(asesores),
                     ),
                     pw.SizedBox(width: 12),
                     pw.Expanded(
-                      child: _pdfClientes(clientesTop),
+                      child: _pdfClientesCompact(clientesTop),
                     ),
                   ],
                 ),
@@ -767,196 +849,428 @@ class _CrmReportesPageState extends State<CrmReportesPage> {
     );
   }
 
-  Future<void> _imprimir() async {
-    if (loading || data.isEmpty) return;
+  String _etiquetaVendedorReporte() {
+    if (vendedor != 'TODOS') return vendedor;
 
-    final k = Map<String, dynamic>.from(
+    final rol = Sesion.rol.trim().toLowerCase();
+    if (rol == 'gerencia') return 'Gerencia - Todos los asesores';
+    if (rol == 'jefe lima') return 'Jefatura - Todos Lima';
+    if (rol == 'jefe provincia') return 'Jefatura - Todos Provincias';
+    return 'Todos los asesores';
+  }
+
+  Future<void> _imprimir() async {
+    if (loading || data.isEmpty) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('El reporte todavía no tiene datos para imprimir.')),
+        );
+      }
+      return;
+    }
+
+    final kActual = Map<String, dynamic>.from(
       data['kpis'] is Map ? data['kpis'] as Map : <String, dynamic>{},
     );
-    final ven = _mapList(data['vendedores']);
-    final cli = _mapList(data['clientes']);
-    final mes = _mapList(data['mensual']);
-    final cls = [...clases]
+    final kAnterior = Map<String, dynamic>.from(
+      dataAnterior['kpis'] is Map
+          ? dataAnterior['kpis'] as Map
+          : <String, dynamic>{},
+    );
+    final venActual = _mapList(data['vendedores'])
       ..sort((a, b) => _n(b['facturacion']).compareTo(_n(a['facturacion'])));
+    final venAnterior = _mapList(dataAnterior['vendedores']);
+    final cliActual = _mapList(data['clientes'])
+      ..sort((a, b) => _n(b['facturacion']).compareTo(_n(a['facturacion'])));
+    final cliAnterior = _mapList(dataAnterior['clientes']);
+    final clasesActual = _mapList(data['asesores_clase']);
+    final clasesAnterior = _mapList(dataAnterior['asesores_clase']);
+    final mensual = _compararMensual();
+    final vendedorReporte = _etiquetaVendedorReporte();
+
+    int nuevos = 0;
+    int crecieron = 0;
+    int disminuyeron = 0;
+    int sinCompra = 0;
+    final mapA = {for (final r in cliActual) _s(r['cliente']): r};
+    final mapB = {for (final r in cliAnterior) _s(r['cliente']): r};
+    final nombres = <String>{...mapA.keys, ...mapB.keys}
+        .where((x) => x.isNotEmpty)
+        .toList();
+    for (final nombre in nombres) {
+      final va = _n(mapA[nombre]?['facturacion']);
+      final vb = _n(mapB[nombre]?['facturacion']);
+      if (vb == 0 && va > 0) {
+        nuevos++;
+      } else if (vb > 0 && va > vb) {
+        crecieron++;
+      } else if (va > 0 && va < vb) {
+        disminuyeron++;
+      } else if (va == 0 && vb > 0) {
+        sinCompra++;
+      }
+    }
+
+    final factActual = _n(kActual['facturacion']);
+    final factAnterior = _n(kAnterior['facturacion']);
+    final promedioMensual = mensual.isEmpty ? 0.0 : factActual / mensual.length;
+    final mejorMes = mensual.isEmpty
+        ? null
+        : mensual.reduce(
+            (a, b) => _n(a['facturacion']) >= _n(b['facturacion']) ? a : b,
+          );
+    final crecimiento = factAnterior == 0
+        ? 0.0
+        : ((factActual - factAnterior) / factAnterior) * 100;
+    final ticket = _n(kActual['facturas']) == 0
+        ? 0.0
+        : factActual / _n(kActual['facturas']);
+    final kgMil = factActual == 0 ? 0.0 : _n(kActual['peso']) / (factActual / 1000);
 
     try {
+      final logoData = await services.rootBundle.load(
+        'assets/crm/images/logo_elcope.png',
+      );
+      final logo = pw.MemoryImage(logoData.buffer.asUint8List());
+
       await Printing.layoutPdf(
+        name: 'ELCOPE_Reporte_Ejecutivo_${anioActual}_vs_$anioComparacion',
+        format: PdfPageFormat.a4.landscape,
         onLayout: (format) async {
           final pdf = pw.Document();
-          final generated = DateFormat('dd/MM/yyyy HH:mm').format(DateTime.now());
-
           pdf.addPage(
-            pw.MultiPage(
+            pw.Page(
               pageFormat: PdfPageFormat.a4.landscape,
-              margin: const pw.EdgeInsets.fromLTRB(26, 24, 26, 24),
-              header: (context) => pw.Container(
-                padding: const pw.EdgeInsets.only(bottom: 8),
-                decoration: pw.BoxDecoration(
-                  border: pw.Border(
-                    bottom: pw.BorderSide(
-                      color: PdfColor.fromHex('#0B4A78'),
-                      width: 2,
-                    ),
-                  ),
-                ),
-                child: pw.Row(
-                  mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
+              margin: const pw.EdgeInsets.fromLTRB(12, 8, 12, 7),
+              build: (context) {
+                return pw.Column(
+                  crossAxisAlignment: pw.CrossAxisAlignment.stretch,
                   children: [
-                    pw.Column(
-                      crossAxisAlignment: pw.CrossAxisAlignment.start,
-                      children: [
-                        pw.Text(
-                          'ELCOPE',
-                          style: pw.TextStyle(
-                            color: PdfColor.fromHex('#0B4A78'),
-                            fontSize: 18,
-                            fontWeight: pw.FontWeight.bold,
-                          ),
-                        ),
-                        pw.Text(
-                          'REPORTE EJECUTIVO CRM',
-                          style: pw.TextStyle(
-                            color: PdfColor.fromHex('#0B4A78'),
-                            fontSize: 11,
-                            fontWeight: pw.FontWeight.bold,
-                          ),
-                        ),
-                      ],
-                    ),
-                    pw.Column(
-                      crossAxisAlignment: pw.CrossAxisAlignment.end,
-                      children: [
-                        pw.Text(
-                          'Generado: $generated',
-                          style: const pw.TextStyle(fontSize: 8),
-                        ),
-                        pw.Text(
-                          _filtroTexto(),
-                          style: const pw.TextStyle(fontSize: 8),
-                        ),
-                      ],
-                    ),
-                  ],
-                ),
-              ),
-              footer: (context) => pw.Align(
-                alignment: pw.Alignment.centerRight,
-                child: pw.Text(
-                  'Página ${context.pageNumber} / ${context.pagesCount}',
-                  style: const pw.TextStyle(
-                    fontSize: 7,
-                    color: PdfColors.grey600,
-                  ),
-                ),
-              ),
-              build: (context) => [
-                pw.Container(
-                  padding: const pw.EdgeInsets.all(12),
-                  decoration: pw.BoxDecoration(
-                    color: PdfColor.fromHex('#0B4A78'),
-                    borderRadius: pw.BorderRadius.circular(9),
-                  ),
-                  child: pw.Column(
-                    crossAxisAlignment: pw.CrossAxisAlignment.start,
-                    children: [
-                      pw.Text(
-                        'RESUMEN EJECUTIVO COMERCIAL',
-                        style: pw.TextStyle(
-                          color: PdfColors.white,
-                          fontSize: 8,
-                          fontWeight: pw.FontWeight.bold,
-                        ),
-                      ),
-                      pw.SizedBox(height: 3),
-                      pw.Text(
-                        canal == 'TODOS'
-                            ? 'Resultado consolidado'
-                            : 'Resultado del canal $canal',
-                        style: pw.TextStyle(
-                          color: PdfColors.white,
-                          fontSize: 17,
-                          fontWeight: pw.FontWeight.bold,
-                        ),
-                      ),
-                      pw.SizedBox(height: 3),
-                      pw.Text(
-                        _filtroTexto(),
-                        style: const pw.TextStyle(
-                          color: PdfColors.white,
-                          fontSize: 8,
-                        ),
-                      ),
-                      pw.SizedBox(height: 9),
-                      pw.Row(
+                    // ENCABEZADO
+                    pw.SizedBox(
+                      height: 46,
+                      child: pw.Row(
                         children: [
-                          _pdfKpi('Facturación', 'US\$ ${money.format(_n(k['facturacion']))}'),
-                          pw.SizedBox(width: 7),
-                          _pdfKpi('Peso cobre', '${money.format(_n(k['peso']))} kg'),
-                          pw.SizedBox(width: 7),
-                          _pdfKpi('Facturas', integer.format(_n(k['facturas']).round())),
-                          pw.SizedBox(width: 7),
-                          _pdfKpi('Clientes', integer.format(_n(k['clientes']).round())),
+                          pw.SizedBox(
+                            width: 135,
+                            child: pw.Image(logo, width: 112, height: 38, fit: pw.BoxFit.contain),
+                          ),
+                          pw.Expanded(
+                            child: pw.Column(
+                              mainAxisAlignment: pw.MainAxisAlignment.center,
+                              children: [
+                                pw.Text(
+                                  'REPORTE EJECUTIVO CRM',
+                                  style: pw.TextStyle(
+                                    color: PdfColor.fromHex('#0B4A78'),
+                                    fontSize: 16,
+                                    fontWeight: pw.FontWeight.bold,
+                                  ),
+                                ),
+                                pw.SizedBox(height: 1),
+                                pw.Text(
+                                  'FACTURACIÓN COMERCIAL - COMPARATIVO $anioActual vs $anioComparacion',
+                                  style: pw.TextStyle(
+                                    color: PdfColor.fromHex('#0B4A78'),
+                                    fontSize: 8,
+                                    fontWeight: pw.FontWeight.bold,
+                                  ),
+                                ),
+                                pw.Text(
+                                  'Vendedor: $vendedorReporte',
+                                  style: pw.TextStyle(
+                                    color: PdfColor.fromHex('#1877D1'),
+                                    fontSize: 6.5,
+                                    fontWeight: pw.FontWeight.bold,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                          pw.SizedBox(
+                            width: 175,
+                            child: pw.Column(
+                              crossAxisAlignment: pw.CrossAxisAlignment.start,
+                              mainAxisAlignment: pw.MainAxisAlignment.center,
+                              children: [
+                                _pdfMetaLine('Canal:', canal == 'TODOS' ? 'Todos' : canal),
+                                _pdfMetaLine('Vendedor:', vendedorReporte),
+                                _pdfMetaLine('Periodo:', '${date.format(desde)} - ${date.format(hasta)}'),
+                                _pdfMetaLine('Comparar con:', '$anioComparacion'),
+                                _pdfMetaLine('Fecha de emisión:', DateFormat('dd/MM/yyyy HH:mm').format(DateTime.now())),
+                              ],
+                            ),
+                          ),
                         ],
                       ),
-                    ],
-                  ),
-                ),
-                pw.SizedBox(height: 12),
-                _pdfSectionTitle('Evolución mensual: Facturación y peso cobre'),
-                _pdfMonthlyChart(mes),
-                pw.SizedBox(height: 12),
-                pw.Row(
-                  crossAxisAlignment: pw.CrossAxisAlignment.start,
-                  children: [
-                    pw.Expanded(flex: 3, child: _pdfVendedores(ven)),
-                    pw.SizedBox(width: 12),
-                    pw.Expanded(flex: 2, child: _pdfClases(cls)),
+                    ),
+                    pw.Container(height: 1.5, color: PdfColor.fromHex('#0B4A78')),
+                    pw.SizedBox(height: 4),
+
+                    // KPIs
+                    pw.SizedBox(
+                      height: 45,
+                      child: pw.Row(
+                        children: [
+                          _pdfKpiComparativo('Facturación', _n(kActual['facturacion']), _n(kAnterior['facturacion']), prefix: 'US\$ ', suffix: '', compact: true),
+                          pw.SizedBox(width: 4),
+                          _pdfKpiComparativo('Peso cobre', _n(kActual['peso']), _n(kAnterior['peso']), prefix: '', suffix: ' kg', compact: true),
+                          pw.SizedBox(width: 4),
+                          _pdfKpiComparativo('Facturas', _n(kActual['facturas']), _n(kAnterior['facturas']), prefix: '', suffix: '', integerValue: true),
+                          pw.SizedBox(width: 4),
+                          _pdfKpiComparativo('Clientes', _n(kActual['clientes']), _n(kAnterior['clientes']), prefix: '', suffix: '', integerValue: true),
+                        ],
+                      ),
+                    ),
+                    pw.SizedBox(height: 4),
+
+                    // GRÁFICOS
+                    pw.SizedBox(
+                      height: 145,
+                      child: pw.Row(
+                        crossAxisAlignment: pw.CrossAxisAlignment.stretch,
+                        children: [
+                          pw.Expanded(
+                            child: _pdfMonthlyBars(
+                              mensual,
+                              field: 'facturacion',
+                              title: 'Evolución mensual de facturación (US\$)',
+                              subtitle: 'Comparativo $anioActual vs $anioComparacion',
+                              compactType: 'money',
+                            ),
+                          ),
+                          pw.SizedBox(width: 6),
+                          pw.Expanded(
+                            child: _pdfMonthlyBars(
+                              mensual,
+                              field: 'peso',
+                              title: 'Evolución mensual de peso cobre (kg)',
+                              subtitle: 'Comparativo $anioActual vs $anioComparacion',
+                              compactType: 'kg',
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    pw.SizedBox(height: 4),
+
+                    // RANKING + CLASE + TOP 10
+                    pw.SizedBox(
+                      height: 151,
+                      child: pw.Row(
+                        crossAxisAlignment: pw.CrossAxisAlignment.stretch,
+                        children: [
+                          pw.SizedBox(width: 202, child: _pdfVendedoresComparativo(venActual, venAnterior)),
+                          pw.SizedBox(width: 6),
+                          pw.SizedBox(width: 385, child: _pdfAsesorClase(clasesActual, clasesAnterior)),
+                          pw.SizedBox(width: 6),
+                          pw.Expanded(child: _pdfClientesCompactoCompleto(cliActual, cliAnterior)),
+                        ],
+                      ),
+                    ),
+                    pw.SizedBox(height: 4),
+
+                    // CARTERA + INDICADORES EJECUTIVOS
+                    pw.SizedBox(
+                      height: 74,
+                      child: pw.Row(
+                        crossAxisAlignment: pw.CrossAxisAlignment.stretch,
+                        children: [
+                          pw.Expanded(
+                            child: _pdfCarteraCompacta(nuevos, crecieron, disminuyeron, sinCompra),
+                          ),
+                          pw.SizedBox(width: 6),
+                          pw.Expanded(
+                            child: _pdfIndicadoresCompactos(
+                              promedioMensual: promedioMensual,
+                              mejorMes: mejorMes,
+                              crecimiento: crecimiento,
+                              ticket: ticket,
+                              kgMil: kgMil,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    pw.SizedBox(height: 3),
+                    pw.SizedBox(
+                      height: 12,
+                      child: pw.Row(
+                        mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
+                        children: [
+                          pw.Text('ELCOPE  |  Más de 35 años conectando el desarrollo del Perú', style: const pw.TextStyle(fontSize: 5.3, color: PdfColors.grey700)),
+                          pw.Text('Reporte generado el ${DateFormat('dd/MM/yyyy - HH:mm').format(DateTime.now())}   |   Página 1 de 1', style: const pw.TextStyle(fontSize: 5.3, color: PdfColors.grey700)),
+                        ],
+                      ),
+                    ),
                   ],
-                ),
-                pw.SizedBox(height: 12),
-                _pdfClientes(cli),
-              ]
+                );
+              },
             ),
           );
-
           return pdf.save();
         },
       );
-    } catch (e) {
+    } catch (e, st) {
+      debugPrint('ERROR AL GENERAR REPORTE PDF: $e');
+      debugPrint('$st');
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text('No se pudo imprimir: $e'),
+          content: Text('No se pudo imprimir el reporte: $e'),
           backgroundColor: Colors.red,
+          duration: const Duration(seconds: 10),
         ),
       );
     }
   }
 
-  pw.Widget _pdfKpi(String title, String value) {
+  pw.Widget _pdfClientesCompactoCompleto(
+    List<Map<String, dynamic>> actualRows,
+    List<Map<String, dynamic>> anteriorRows,
+  ) {
+    final mapA = {for (final r in actualRows) _s(r['cliente']): r};
+    final mapB = {for (final r in anteriorRows) _s(r['cliente']): r};
+    final names = <String>{...mapA.keys, ...mapB.keys}
+        .where((x) => x.isNotEmpty)
+        .toList()
+      ..sort((a, b) => _n(mapA[b]?['facturacion']).compareTo(_n(mapA[a]?['facturacion'])));
+    final top = names.take(10).toList();
+
+    return pw.Container(
+      padding: const pw.EdgeInsets.fromLTRB(5, 4, 5, 3),
+      decoration: pw.BoxDecoration(
+        color: PdfColors.white,
+        border: pw.Border.all(color: PdfColor.fromHex('#D6E0E8'), width: .6),
+        borderRadius: pw.BorderRadius.circular(5),
+      ),
+      child: pw.Column(
+        crossAxisAlignment: pw.CrossAxisAlignment.stretch,
+        children: [
+          pw.Text('Top 10 clientes - Facturación comparativa', style: pw.TextStyle(fontSize: 7.2, fontWeight: pw.FontWeight.bold, color: PdfColor.fromHex('#0B4A78'))),
+          pw.Text('Clientes con mayor facturación acumulada', style: const pw.TextStyle(fontSize: 5, color: PdfColors.grey600)),
+          pw.SizedBox(height: 2),
+          pw.Row(children: [
+            pw.SizedBox(width: 12, child: pw.Text('#', style: pw.TextStyle(fontSize: 4.8, fontWeight: pw.FontWeight.bold))),
+            pw.Expanded(flex: 5, child: pw.Text('Cliente', style: pw.TextStyle(fontSize: 4.8, fontWeight: pw.FontWeight.bold))),
+            pw.Expanded(flex: 2, child: pw.Text('$anioActual', style: pw.TextStyle(fontSize: 4.8, fontWeight: pw.FontWeight.bold))),
+            pw.Expanded(flex: 2, child: pw.Text('$anioComparacion', style: pw.TextStyle(fontSize: 4.8, fontWeight: pw.FontWeight.bold))),
+            pw.SizedBox(width: 30, child: pw.Text('Var.', style: pw.TextStyle(fontSize: 4.8, fontWeight: pw.FontWeight.bold))),
+          ]),
+          pw.Container(height: .4, color: PdfColor.fromHex('#CBD5E1')),
+          for (var i = 0; i < top.length; i++)
+            pw.Container(
+              height: 11.5,
+              padding: const pw.EdgeInsets.symmetric(vertical: 1),
+              child: pw.Row(children: [
+                pw.SizedBox(width: 12, child: pw.Text('${i + 1}', style: const pw.TextStyle(fontSize: 4.6))),
+                pw.Expanded(flex: 5, child: pw.Text(_s(top[i]), maxLines: 1, overflow: pw.TextOverflow.clip, style: const pw.TextStyle(fontSize: 4.5))),
+                pw.Expanded(flex: 2, child: pw.Text(_compactPdf(_n(mapA[top[i]]?['facturacion'])), style: const pw.TextStyle(fontSize: 4.5))),
+                pw.Expanded(flex: 2, child: pw.Text(_compactPdf(_n(mapB[top[i]]?['facturacion'])), style: const pw.TextStyle(fontSize: 4.5))),
+                pw.SizedBox(width: 30, child: pw.Text(_variationText(_n(mapA[top[i]]?['facturacion']), _n(mapB[top[i]]?['facturacion'])), style: const pw.TextStyle(fontSize: 4.2))),
+              ]),
+            ),
+        ],
+      ),
+    );
+  }
+
+  pw.Widget _pdfCarteraCompacta(int nuevos, int crecieron, int disminuyeron, int sinCompra) {
+    return pw.Container(
+      padding: const pw.EdgeInsets.fromLTRB(6, 4, 6, 3),
+      decoration: pw.BoxDecoration(color: PdfColors.white, border: pw.Border.all(color: PdfColor.fromHex('#D6E0E8'), width: .6), borderRadius: pw.BorderRadius.circular(5)),
+      child: pw.Column(crossAxisAlignment: pw.CrossAxisAlignment.stretch, children: [
+        pw.Text('Comportamiento de cartera', style: pw.TextStyle(fontSize: 7.2, fontWeight: pw.FontWeight.bold, color: PdfColor.fromHex('#0B4A78'))),
+        pw.Text('Comparativo $anioActual vs $anioComparacion', style: const pw.TextStyle(fontSize: 5, color: PdfColors.grey600)),
+        pw.SizedBox(height: 4),
+        pw.Row(children: [
+          _pdfCarteraMini('Nuevos', nuevos, '#08A66A'),
+          pw.SizedBox(width: 4),
+          _pdfCarteraMini('Crecieron', crecieron, '#1877D1'),
+          pw.SizedBox(width: 4),
+          _pdfCarteraMini('Disminuyeron', disminuyeron, '#F59E0B'),
+          pw.SizedBox(width: 4),
+          _pdfCarteraMini('Sin compra', sinCompra, '#E53935'),
+        ]),
+      ]),
+    );
+  }
+
+  pw.Widget _pdfCarteraMini(String label, int value, String hex) {
     return pw.Expanded(
       child: pw.Container(
-        padding: const pw.EdgeInsets.all(9),
-        decoration: pw.BoxDecoration(
-          color: PdfColor.fromHex('#FFFFFF'),
-          border: pw.Border.all(color: PdfColor.fromHex('#DDE5ED')),
-          borderRadius: pw.BorderRadius.circular(7),
-        ),
-        child: pw.Column(
-          crossAxisAlignment: pw.CrossAxisAlignment.start,
+        height: 38,
+        padding: const pw.EdgeInsets.all(4),
+        decoration: pw.BoxDecoration(color: PdfColor.fromHex('#F8FAFC'), border: pw.Border.all(color: PdfColor.fromHex(hex), width: .45), borderRadius: pw.BorderRadius.circular(4)),
+        child: pw.Column(mainAxisAlignment: pw.MainAxisAlignment.center, crossAxisAlignment: pw.CrossAxisAlignment.start, children: [
+          pw.Text(label, style: const pw.TextStyle(fontSize: 4.4, color: PdfColors.grey700)),
+          pw.Text('$value', style: pw.TextStyle(fontSize: 9, fontWeight: pw.FontWeight.bold, color: PdfColor.fromHex(hex))),
+        ]),
+      ),
+    );
+  }
+
+  pw.Widget _pdfIndicadoresCompactos({
+    required double promedioMensual,
+    required Map<String, dynamic>? mejorMes,
+    required double crecimiento,
+    required double ticket,
+    required double kgMil,
+  }) {
+    return pw.Container(
+      padding: const pw.EdgeInsets.fromLTRB(6, 4, 6, 3),
+      decoration: pw.BoxDecoration(color: PdfColors.white, border: pw.Border.all(color: PdfColor.fromHex('#D6E0E8'), width: .6), borderRadius: pw.BorderRadius.circular(5)),
+      child: pw.Column(crossAxisAlignment: pw.CrossAxisAlignment.stretch, children: [
+        pw.Text('Indicadores ejecutivos', style: pw.TextStyle(fontSize: 7.2, fontWeight: pw.FontWeight.bold, color: PdfColor.fromHex('#0B4A78'))),
+        pw.Text('Lectura rápida para gestión comercial', style: const pw.TextStyle(fontSize: 5, color: PdfColors.grey600)),
+        pw.SizedBox(height: 3),
+        pw.Row(children: [
+          pw.Expanded(child: _pdfIndicatorMini('Promedio mensual', 'US\$ ${money.format(promedioMensual)}')),
+          pw.SizedBox(width: 4),
+          pw.Expanded(child: _pdfIndicatorMini('Mejor mes', mejorMes == null ? '-' : '${_s(mejorMes['periodo'])} · US\$ ${money.format(_n(mejorMes['facturacion']))}')),
+        ]),
+        pw.SizedBox(height: 3),
+        pw.Row(children: [
+          pw.Expanded(child: _pdfIndicatorMini('Crecimiento acumulado', '${crecimiento >= 0 ? '+' : ''}${crecimiento.toStringAsFixed(1)}%')),
+          pw.SizedBox(width: 4),
+          pw.Expanded(child: _pdfIndicatorMini('Ticket promedio', 'US\$ ${money.format(ticket)}')),
+        ]),
+        pw.SizedBox(height: 2),
+        pw.Text('Kg / US\$ 1,000: ${kgMil.toStringAsFixed(2)} kg', style: const pw.TextStyle(fontSize: 4.8, color: PdfColors.grey700)),
+      ]),
+    );
+  }
+
+  pw.Widget _pdfIndicatorMini(String title, String value) {
+    return pw.Container(
+      height: 20,
+      padding: const pw.EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+      decoration: pw.BoxDecoration(color: PdfColor.fromHex('#F4F8FC'), border: pw.Border.all(color: PdfColor.fromHex('#D7E5F1'), width: .4), borderRadius: pw.BorderRadius.circular(3)),
+      child: pw.Column(crossAxisAlignment: pw.CrossAxisAlignment.start, mainAxisAlignment: pw.MainAxisAlignment.center, children: [
+        pw.Text(title, style: const pw.TextStyle(fontSize: 4, color: PdfColors.grey600)),
+        pw.Text(value, maxLines: 1, overflow: pw.TextOverflow.clip, style: pw.TextStyle(fontSize: 5.2, fontWeight: pw.FontWeight.bold, color: PdfColor.fromHex('#1877D1'))),
+      ]),
+    );
+  }
+
+  pw.Widget _pdfMetaLine(String label, String value) {
+    return pw.Padding(
+      padding: const pw.EdgeInsets.only(bottom: 1.2),
+      child: pw.RichText(
+        text: pw.TextSpan(
           children: [
-            pw.Text(
-              title,
-              style: const pw.TextStyle(
-                fontSize: 7,
-                color: PdfColors.grey700,
+            pw.TextSpan(
+              text: '$label ',
+              style: pw.TextStyle(
+                fontSize: 6,
+                fontWeight: pw.FontWeight.bold,
+                color: PdfColor.fromHex('#334155'),
               ),
             ),
-            pw.SizedBox(height: 3),
-            pw.Text(
-              value,
+            pw.TextSpan(
+              text: value,
               style: pw.TextStyle(
-                fontSize: 12,
+                fontSize: 6,
                 fontWeight: pw.FontWeight.bold,
                 color: PdfColor.fromHex('#0B4A78'),
               ),
@@ -967,174 +1281,263 @@ class _CrmReportesPageState extends State<CrmReportesPage> {
     );
   }
 
-  pw.Widget _pdfSectionTitle(String title) {
-    return pw.Padding(
-      padding: const pw.EdgeInsets.only(bottom: 5),
-      child: pw.Text(
-        title,
-        style: pw.TextStyle(
-          fontSize: 11,
-          fontWeight: pw.FontWeight.bold,
-          color: PdfColor.fromHex('#0B4A78'),
+  pw.Widget _pdfKpiComparativo(
+    String title,
+    double actual,
+    double anterior, {
+    required String prefix,
+    required String suffix,
+    bool integerValue = false,
+    bool compact = true,
+  }) {
+    final variacion =
+        anterior == 0 ? 0.0 : ((actual - anterior) / anterior) * 100;
+    final positivo = variacion >= 0;
+    final color = positivo
+        ? PdfColor.fromHex('#079B63')
+        : PdfColor.fromHex('#D93838');
+
+    String value(double v) {
+      if (integerValue) return integer.format(v.round());
+      if (compact) {
+        return prefix +
+            (suffix.isEmpty ? _compactPdf(v) : _compactPdf(v)) +
+            suffix;
+      }
+      return prefix + money.format(v) + suffix;
+    }
+
+    return pw.Expanded(
+      child: pw.Container(
+        height: 53,
+        padding: const pw.EdgeInsets.fromLTRB(9, 6, 9, 5),
+        decoration: pw.BoxDecoration(
+          color: PdfColor.fromHex('#F3F8FC'),
+          border: pw.Border.all(
+            color: PdfColor.fromHex('#B7D1E3'),
+            width: .7,
+          ),
+          borderRadius: pw.BorderRadius.circular(6),
+        ),
+        child: pw.Column(
+          crossAxisAlignment: pw.CrossAxisAlignment.start,
+          children: [
+            pw.Text(
+              title,
+              style: pw.TextStyle(
+                fontSize: 6.5,
+                fontWeight: pw.FontWeight.bold,
+                color: PdfColor.fromHex('#0B4A78'),
+              ),
+            ),
+            pw.SizedBox(height: 3),
+            pw.Row(
+              children: [
+                pw.Expanded(
+                  child: pw.Column(
+                    crossAxisAlignment: pw.CrossAxisAlignment.start,
+                    children: [
+                      pw.Text(
+                        '$anioActual',
+                        style: const pw.TextStyle(
+                          fontSize: 5.5,
+                          color: PdfColors.grey600,
+                        ),
+                      ),
+                      pw.Text(
+                        value(actual),
+                        style: pw.TextStyle(
+                          fontSize: 8.2,
+                          fontWeight: pw.FontWeight.bold,
+                          color: PdfColor.fromHex('#0B4A78'),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                pw.Container(
+                  width: .5,
+                  height: 22,
+                  color: PdfColor.fromHex('#CBD5E1'),
+                ),
+                pw.SizedBox(width: 7),
+                pw.Expanded(
+                  child: pw.Column(
+                    crossAxisAlignment: pw.CrossAxisAlignment.start,
+                    children: [
+                      pw.Text(
+                        '$anioComparacion',
+                        style: const pw.TextStyle(
+                          fontSize: 5.5,
+                          color: PdfColors.grey600,
+                        ),
+                      ),
+                      pw.Text(
+                        value(anterior),
+                        style: const pw.TextStyle(
+                          fontSize: 7.8,
+                          color: PdfColors.grey700,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+            pw.SizedBox(height: 1),
+            pw.Text(
+              '${positivo ? '▲' : '▼'} ${variacion >= 0 ? '+' : ''}${variacion.toStringAsFixed(1)}% vs $anioComparacion',
+              style: pw.TextStyle(
+                fontSize: 5.8,
+                fontWeight: pw.FontWeight.bold,
+                color: color,
+              ),
+            ),
+          ],
         ),
       ),
     );
   }
 
+  pw.Widget _pdfMonthlyBars(
+    List<Map<String, dynamic>> rows, {
+    required String field,
+    required String title,
+    required String subtitle,
+    required String compactType,
+  }) {
+    // IMPORTANTE: el PDF no puede reutilizar el gráfico Flutter del dashboard.
+    // Aquí dibujamos las barras directamente con widgets de pdf.
+    // Se usan anchos/alturas fijos para evitar que Expanded/Flex deje el
+    // gráfico vacío al imprimir en Windows.
+    double maxValue = 0;
+    for (final row in rows) {
+      final a = _n(row['a']?[field]);
+      final b = _n(row['b']?[field]);
+      if (a > maxValue) maxValue = a;
+      if (b > maxValue) maxValue = b;
+    }
+    if (maxValue <= 0) maxValue = 1;
 
-  pw.Widget _pdfMonthlyChart(List<Map<String, dynamic>> rows) {
-    if (rows.isEmpty) {
-      return pw.Container(
-        height: 190,
-        alignment: pw.Alignment.center,
-        child: pw.Text('Sin datos mensuales'),
-      );
+    String label(double value) {
+      // En impresión evitamos K/M: ocupan poco espacio y se leen mal.
+      // Para facturación mostramos US$ en una línea y el monto completo debajo.
+      if (compactType == 'kg') {
+        return '${money.format(value)} kg';
+      }
+      return 'US\$\n${money.format(value)}';
     }
 
-    final maxFact = rows.fold<double>(
-      0,
-      (m, r) => _n(r['facturacion']) > m ? _n(r['facturacion']) : m,
-    );
-    final maxPeso = rows.fold<double>(
-      0,
-      (m, r) => _n(r['peso']) > m ? _n(r['peso']) : m,
-    );
+    final visibleRows = rows.take(12).toList();
+    final monthWidth = visibleRows.length <= 9 ? 44.0 : 34.0;
 
     return pw.Container(
-      height: 245,
-      padding: const pw.EdgeInsets.fromLTRB(10, 6, 10, 5),
+      padding: const pw.EdgeInsets.fromLTRB(6, 5, 6, 4),
       decoration: pw.BoxDecoration(
         color: PdfColors.white,
-        border: pw.Border.all(color: PdfColor.fromHex('#DDE5ED')),
-        borderRadius: pw.BorderRadius.circular(8),
+        border: pw.Border.all(
+          color: PdfColor.fromHex('#D6E0E8'),
+          width: .7,
+        ),
+        borderRadius: pw.BorderRadius.circular(6),
       ),
       child: pw.Column(
+        crossAxisAlignment: pw.CrossAxisAlignment.stretch,
         children: [
+          pw.Text(
+            title,
+            style: pw.TextStyle(
+              fontSize: 7.5,
+              fontWeight: pw.FontWeight.bold,
+              color: PdfColor.fromHex('#0B4A78'),
+            ),
+          ),
+          pw.Text(
+            subtitle,
+            style: const pw.TextStyle(
+              fontSize: 5.5,
+              color: PdfColors.grey600,
+            ),
+          ),
+          pw.SizedBox(height: 3),
           pw.Row(
-            mainAxisAlignment: pw.MainAxisAlignment.center,
+            mainAxisAlignment: pw.MainAxisAlignment.end,
             children: [
               pw.Container(
-                width: 9,
-                height: 9,
+                width: 7,
+                height: 7,
                 color: PdfColor.fromHex('#1877D1'),
               ),
-              pw.SizedBox(width: 4),
-              pw.Text(
-                'Facturación (US\$)',
-                style: pw.TextStyle(fontSize: 7, fontWeight: pw.FontWeight.bold),
-              ),
-              pw.SizedBox(width: 18),
+              pw.SizedBox(width: 2),
+              pw.Text('$anioActual', style: const pw.TextStyle(fontSize: 5.2)),
+              pw.SizedBox(width: 8),
               pw.Container(
-                width: 9,
-                height: 9,
+                width: 7,
+                height: 7,
                 color: PdfColor.fromHex('#F08A00'),
               ),
-              pw.SizedBox(width: 4),
-              pw.Text(
-                'Peso cobre (kg)',
-                style: pw.TextStyle(fontSize: 7, fontWeight: pw.FontWeight.bold),
-              ),
+              pw.SizedBox(width: 2),
+              pw.Text('$anioComparacion', style: const pw.TextStyle(fontSize: 5.2)),
             ],
           ),
-          pw.SizedBox(height: 4),
-          pw.Expanded(
+          pw.SizedBox(height: 3),
+          pw.SizedBox(
+            height: 103,
             child: pw.Row(
+              mainAxisAlignment: pw.MainAxisAlignment.center,
               crossAxisAlignment: pw.CrossAxisAlignment.end,
-              children: rows.map((r) {
-                final fact = _n(r['facturacion']);
-                final peso = _n(r['peso']);
-                final factH = maxFact == 0 ? 5.0 : fact / maxFact * 135;
-                final pesoH = maxPeso == 0 ? 5.0 : peso / maxPeso * 135;
-
-                return pw.Expanded(
-                  child: pw.Column(
-                    mainAxisAlignment: pw.MainAxisAlignment.end,
-                    children: [
-                      pw.Expanded(
-                        child: pw.Row(
-                          mainAxisAlignment: pw.MainAxisAlignment.center,
-                          crossAxisAlignment: pw.CrossAxisAlignment.end,
-                          children: [
-                            pw.Column(
-                              mainAxisAlignment: pw.MainAxisAlignment.end,
-                              children: [
-                                pw.Container(
-                                  height: 16,
-                                  width: 36,
-                                  alignment: pw.Alignment.center,
-                                  child: pw.FittedBox(
-                                    fit: pw.BoxFit.scaleDown,
-                                    child: pw.Text(
-                                      _factLabel(fact),
-                                      style: pw.TextStyle(
-                                        fontSize: 6.2,
-                                        fontWeight: pw.FontWeight.bold,
-                                        color: PdfColor.fromHex('#1877D1'),
-                                      ),
-                                    ),
-                                  ),
-                                ),
-                                pw.SizedBox(height: 2),
-                                pw.Container(
-                                  width: 16,
-                                  height: factH,
-                                  decoration: pw.BoxDecoration(
-                                    color: PdfColor.fromHex('#1877D1'),
-                                    borderRadius: pw.BorderRadius.vertical(
-                                      top: pw.Radius.circular(3),
-                                    ),
-                                  ),
-                                ),
-                              ],
-                            ),
-                            pw.SizedBox(width: 3),
-                            pw.Column(
-                              mainAxisAlignment: pw.MainAxisAlignment.end,
-                              children: [
-                                pw.Container(
-                                  height: 16,
-                                  width: 36,
-                                  alignment: pw.Alignment.center,
-                                  child: pw.FittedBox(
-                                    fit: pw.BoxFit.scaleDown,
-                                    child: pw.Text(
-                                      _pesoLabel(peso),
-                                      style: pw.TextStyle(
-                                        fontSize: 6.2,
-                                        fontWeight: pw.FontWeight.bold,
-                                        color: PdfColor.fromHex('#F08A00'),
-                                      ),
-                                    ),
-                                  ),
-                                ),
-                                pw.SizedBox(height: 2),
-                                pw.Container(
-                                  width: 16,
-                                  height: pesoH,
-                                  decoration: pw.BoxDecoration(
-                                    color: PdfColor.fromHex('#F08A00'),
-                                    borderRadius: pw.BorderRadius.vertical(
-                                      top: pw.Radius.circular(3),
-                                    ),
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ],
+              children: [
+                for (final row in visibleRows)
+                  pw.SizedBox(
+                    width: monthWidth,
+                    child: pw.Column(
+                      mainAxisAlignment: pw.MainAxisAlignment.end,
+                      children: [
+                        pw.SizedBox(
+                          height: 75,
+                          child: pw.Row(
+                            mainAxisAlignment: pw.MainAxisAlignment.center,
+                            crossAxisAlignment: pw.CrossAxisAlignment.end,
+                            children: [
+                              _pdfBarFixed(
+                                value: _n(row['a']?[field]),
+                                maxValue: maxValue,
+                                color: PdfColor.fromHex('#1877D1'),
+                                label: label(_n(row['a']?[field])),
+                              ),
+                              pw.SizedBox(width: 1.5),
+                              _pdfBarFixed(
+                                value: _n(row['b']?[field]),
+                                maxValue: maxValue,
+                                color: PdfColor.fromHex('#F08A00'),
+                                label: label(_n(row['b']?[field])),
+                              ),
+                            ],
+                          ),
                         ),
-                      ),
-                      pw.SizedBox(height: 3),
-                      pw.Text(
-                        _s(r['periodo']),
-                        style: pw.TextStyle(
-                          fontSize: 6.5,
-                          fontWeight: pw.FontWeight.bold,
+                        pw.SizedBox(height: 2),
+                        pw.Container(
+                          width: monthWidth - 2,
+                          alignment: pw.Alignment.center,
+                          padding: const pw.EdgeInsets.symmetric(vertical: 2),
+                          decoration: pw.BoxDecoration(
+                            color: PdfColor.fromHex('#F1F5F9'),
+                            borderRadius: pw.BorderRadius.circular(3),
+                          ),
+                          child: pw.Text(
+                            _s(row['label']),
+                            textAlign: pw.TextAlign.center,
+                            style: pw.TextStyle(
+                              fontSize: 5.2,
+                              fontWeight: pw.FontWeight.bold,
+                              color: PdfColor.fromHex('#0F172A'),
+                            ),
+                          ),
                         ),
-                      ),
-                    ],
+                      ],
+                    ),
                   ),
-                );
-              }).toList(),
+              ],
             ),
           ),
         ],
@@ -1142,96 +1545,729 @@ class _CrmReportesPageState extends State<CrmReportesPage> {
     );
   }
 
-  pw.Widget _pdfClases(List<Map<String, dynamic>> rows) {
-    final top = rows.take(8).toList();
-    final colors = [
-      PdfColor.fromHex('#1877D1'),
-      PdfColor.fromHex('#F08A00'),
-      PdfColor.fromHex('#079B63'),
-      PdfColor.fromHex('#5B45C5'),
-      PdfColor.fromHex('#64748B'),
-    ];
+  pw.Widget _pdfBarFixed({
+    required double value,
+    required double maxValue,
+    required PdfColor color,
+    required String label,
+  }) {
+    final ratio = maxValue <= 0 ? 0.0 : (value / maxValue).clamp(0.0, 1.0).toDouble();
+    final barHeight = value <= 0 ? 1.0 : 48.0 * ratio.clamp(0.06, 1.0).toDouble();
 
-    return pw.Container(
-      padding: const pw.EdgeInsets.all(9),
-      decoration: pw.BoxDecoration(
-        color: PdfColors.white,
-        border: pw.Border.all(color: PdfColor.fromHex('#DDE5ED')),
-        borderRadius: pw.BorderRadius.circular(8),
-      ),
+    return pw.SizedBox(
+      width: 15,
+      height: 75,
       child: pw.Column(
-        crossAxisAlignment: pw.CrossAxisAlignment.start,
+        mainAxisAlignment: pw.MainAxisAlignment.end,
+        crossAxisAlignment: pw.CrossAxisAlignment.center,
         children: [
-          _pdfSectionTitle('Distribución por clase'),
-          pw.SizedBox(height: 4),
-          pw.Row(
-            crossAxisAlignment: pw.CrossAxisAlignment.center,
-            children: [
-              pw.SizedBox(
-                width: 145,
-                height: 145,
-                child: pw.Chart(
-                  grid: pw.PieGrid(),
-                  datasets: [
-                    for (var i = 0; i < top.length; i++)
-                      pw.PieDataSet(
-                        value: _n(top[i]['facturacion']),
-                        legend: '',
-                        color: colors[i % colors.length],
-                        borderColor: PdfColors.white,
-                        borderWidth: 1.2,
-                        innerRadius: 38,
-                        legendStyle: const pw.TextStyle(fontSize: 1),
-                      ),
-                  ],
-                ),
+          pw.SizedBox(
+            height: 23,
+            width: 34,
+            child: pw.Text(
+              label,
+              maxLines: 2,
+              textAlign: pw.TextAlign.center,
+              style: pw.TextStyle(
+                fontSize: 5.0,
+                lineSpacing: 0.4,
+                fontWeight: pw.FontWeight.bold,
+                color: color,
               ),
-              pw.SizedBox(width: 8),
-              pw.Expanded(
-                child: pw.Column(
-                  crossAxisAlignment: pw.CrossAxisAlignment.start,
-                  children: top.map((r) {
-                    final i = top.indexOf(r);
-                    return pw.Padding(
-                      padding: const pw.EdgeInsets.only(bottom: 5),
-                      child: pw.Row(
-                        children: [
-                          pw.Container(
-                            width: 8,
-                            height: 8,
-                            decoration: pw.BoxDecoration(
-                              color: colors[i % colors.length],
-                              shape: pw.BoxShape.circle,
-                            ),
-                          ),
-                          pw.SizedBox(width: 5),
-                          pw.Expanded(
-                            child: pw.Text(
-                              '${_s(r['clase'])}  ${_n(r['porcentaje']).toStringAsFixed(1)}%',
-                              style: pw.TextStyle(
-                                fontSize: 7,
-                                fontWeight: pw.FontWeight.bold,
-                              ),
-                            ),
-                          ),
-                          pw.Text(
-                            'US\$ ${money.format(_n(r['facturacion']))}',
-                            style: const pw.TextStyle(fontSize: 6.5),
-                          ),
-                        ],
-                      ),
-                    );
-                  }).toList(),
-                ),
+            ),
+          ),
+          pw.Container(
+            width: 8,
+            height: barHeight,
+            decoration: pw.BoxDecoration(
+              color: color,
+              borderRadius: const pw.BorderRadius.only(
+                topLeft: pw.Radius.circular(2),
+                topRight: pw.Radius.circular(2),
               ),
-            ],
+            ),
           ),
         ],
       ),
     );
   }
 
-  pw.Widget _pdfMonthly(List<Map<String, dynamic>> rows) {
+  pw.Widget _pdfBar({
+    required double value,
+    required double maxValue,
+    required PdfColor color,
+    required String label,
+  }) {
+    final h = value <= 0 ? 1.0 : 72.0 * (value / maxValue).clamp(0.04, 1.0).toDouble();
+
+    return pw.Column(
+      mainAxisAlignment: pw.MainAxisAlignment.end,
+      children: [
+        pw.SizedBox(
+          height: 17,
+          child: pw.Text(
+            label,
+            textAlign: pw.TextAlign.center,
+            style: pw.TextStyle(
+              fontSize: 4.1,
+              fontWeight: pw.FontWeight.bold,
+              color: color,
+            ),
+          ),
+        ),
+        pw.Container(
+          width: 9,
+          height: h,
+          decoration: pw.BoxDecoration(
+            color: color,
+            borderRadius: pw.BorderRadius.only(
+              topLeft: pw.Radius.circular(2),
+              topRight: pw.Radius.circular(2),
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  pw.Widget _pdfAsesorClase(
+    List<Map<String, dynamic>> actualRows,
+    List<Map<String, dynamic>> anteriorRows,
+  ) {
+    final mapA = <String, Map<String, double>>{};
+    final mapB = <String, Map<String, double>>{};
+    final totalA = <String, double>{};
+    final totalB = <String, double>{};
+
+    void load(
+      List<Map<String, dynamic>> rows,
+      Map<String, Map<String, double>> map,
+      Map<String, double> totals,
+    ) {
+      for (final r in rows) {
+        final asesor =
+            _s(r['vendedor']).isEmpty ? 'SIN ASESOR' : _s(r['vendedor']);
+        final clase = _s(r['clase']).isEmpty
+            ? 'SIN CLASE'
+            : _s(r['clase']).toUpperCase();
+        final monto = _n(r['facturacion']);
+        map.putIfAbsent(asesor, () => <String, double>{});
+        map[asesor]![clase] = (map[asesor]![clase] ?? 0) + monto;
+        totals[asesor] = (totals[asesor] ?? 0) + monto;
+      }
+    }
+
+    load(actualRows, mapA, totalA);
+    load(anteriorRows, mapB, totalB);
+
+    final asesores = <String>{...mapA.keys, ...mapB.keys}.toList()
+      ..sort(
+        (a, b) => (totalA[b] ?? 0).compareTo(totalA[a] ?? 0),
+      );
+
+    const prioridad = <String>[
+      'CL5',
+      'CL2',
+      'CL1',
+      'SIN CLASE',
+      'CL6',
+    ];
+
+    final clases = <String>{
+      ...mapA.values.expand((m) => m.keys),
+      ...mapB.values.expand((m) => m.keys),
+    };
+    final clasesOrdenadas = <String>[];
+    for (final clase in prioridad) {
+      if (clases.remove(clase)) clasesOrdenadas.add(clase);
+    }
+    final restantes = clases.toList()..sort();
+    clasesOrdenadas.addAll(restantes);
+
+    double pct(
+      Map<String, Map<String, double>> source,
+      Map<String, double> totals,
+      String asesor,
+      String clase,
+    ) {
+      final total = totals[asesor] ?? 0;
+      if (total <= 0) return 0;
+      return ((source[asesor]?[clase] ?? 0) / total) * 100;
+    }
+
+    final headers = <pw.Widget>[
+      pw.Text(
+        'Asesor',
+        style: pw.TextStyle(
+          fontSize: 5.5,
+          fontWeight: pw.FontWeight.bold,
+          color: PdfColor.fromHex('#0B4A78'),
+        ),
+      ),
+      for (final clase in clasesOrdenadas.take(6))
+        pw.Center(
+          child: pw.Text(
+            clase,
+            style: pw.TextStyle(
+              fontSize: 5.5,
+              fontWeight: pw.FontWeight.bold,
+              color: PdfColor.fromHex('#0B4A78'),
+            ),
+          ),
+        ),
+      pw.Center(
+        child: pw.Text(
+          'Total fact.',
+          style: pw.TextStyle(
+            fontSize: 5.5,
+            fontWeight: pw.FontWeight.bold,
+            color: PdfColor.fromHex('#0B4A78'),
+          ),
+        ),
+      ),
+    ];
+
+    final table = pw.Table(
+      border: pw.TableBorder.all(
+        color: PdfColor.fromHex('#DCE5ED'),
+        width: .35,
+      ),
+      columnWidths: {
+        0: const pw.FlexColumnWidth(1.7),
+        for (var i = 1; i <= clasesOrdenadas.take(6).length; i++)
+          i: const pw.FlexColumnWidth(1),
+        clasesOrdenadas.take(6).length + 1: const pw.FlexColumnWidth(1.35),
+      },
+      children: [
+        pw.TableRow(
+          decoration: pw.BoxDecoration(
+            color: PdfColor.fromHex('#F2F6FA'),
+          ),
+          children: headers
+              .map(
+                (w) => pw.Padding(
+                  padding: const pw.EdgeInsets.symmetric(
+                    horizontal: 2,
+                    vertical: 3,
+                  ),
+                  child: w,
+                ),
+              )
+              .toList(),
+        ),
+        for (final asesor in asesores.take(8))
+          pw.TableRow(
+            children: [
+              pw.Padding(
+                padding: const pw.EdgeInsets.symmetric(
+                  horizontal: 3,
+                  vertical: 2,
+                ),
+                child: pw.Text(
+                  asesor,
+                  maxLines: 1,
+                  overflow: pw.TextOverflow.clip,
+                  style: const pw.TextStyle(fontSize: 5.2),
+                ),
+              ),
+              for (final clase in clasesOrdenadas.take(6))
+                pw.Padding(
+                  padding: const pw.EdgeInsets.symmetric(
+                    horizontal: 1,
+                    vertical: 1,
+                  ),
+                  child: pw.Column(
+                    mainAxisAlignment: pw.MainAxisAlignment.center,
+                    children: [
+                      pw.Text(
+                        '${pct(mapA, totalA, asesor, clase).toStringAsFixed(1)}%',
+                        style: pw.TextStyle(
+                          fontSize: 5.5,
+                          fontWeight: pw.FontWeight.bold,
+                          color: PdfColor.fromHex('#1877D1'),
+                        ),
+                      ),
+                      pw.Text(
+                        '${pct(mapB, totalB, asesor, clase).toStringAsFixed(1)}%',
+                        style: const pw.TextStyle(
+                          fontSize: 4.8,
+                          color: PdfColors.grey600,
+                        ),
+                      ),
+                      pw.Text(
+                        _ppText(
+                          pct(mapA, totalA, asesor, clase) -
+                              pct(mapB, totalB, asesor, clase),
+                        ),
+                        style: pw.TextStyle(
+                          fontSize: 4.5,
+                          fontWeight: pw.FontWeight.bold,
+                          color: PdfColor.fromHex(
+                            pct(mapA, totalA, asesor, clase) -
+                                        pct(mapB, totalB, asesor, clase) >=
+                                    0
+                                ? '#079B63'
+                                : '#D93838',
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              pw.Padding(
+                padding: const pw.EdgeInsets.symmetric(
+                  horizontal: 2,
+                  vertical: 2,
+                ),
+                child: pw.Column(
+                  children: [
+                    pw.Text(
+                      'US\$ ${_compactPdf(totalA[asesor] ?? 0)}',
+                      style: pw.TextStyle(
+                        fontSize: 5.2,
+                        fontWeight: pw.FontWeight.bold,
+                        color: PdfColor.fromHex('#1877D1'),
+                      ),
+                    ),
+                    pw.Text(
+                      'US\$ ${_compactPdf(totalB[asesor] ?? 0)}',
+                      style: const pw.TextStyle(
+                        fontSize: 4.6,
+                        color: PdfColors.grey600,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+      ],
+    );
+
+    return pw.Container(
+      padding: const pw.EdgeInsets.fromLTRB(6, 5, 6, 4),
+      decoration: pw.BoxDecoration(
+        color: PdfColors.white,
+        border: pw.Border.all(
+          color: PdfColor.fromHex('#D6E0E8'),
+          width: .7,
+        ),
+        borderRadius: pw.BorderRadius.circular(6),
+      ),
+      child: pw.Column(
+        crossAxisAlignment: pw.CrossAxisAlignment.stretch,
+        children: [
+          pw.Text(
+            'Facturación por asesor y clase - Comparativo',
+            style: pw.TextStyle(
+              fontSize: 7.5,
+              fontWeight: pw.FontWeight.bold,
+              color: PdfColor.fromHex('#0B4A78'),
+            ),
+          ),
+          pw.SizedBox(height: 1),
+          pw.Text(
+            '$anioActual / $anioComparacion / variación en puntos porcentuales de la mezcla de cada asesor',
+            style: const pw.TextStyle(
+              fontSize: 5.2,
+              color: PdfColors.grey600,
+            ),
+          ),
+          pw.SizedBox(height: 3),
+          pw.Row(
+            children: [
+              pw.Container(
+                width: 7,
+                height: 7,
+                decoration: pw.BoxDecoration(
+                  shape: pw.BoxShape.circle,
+                  color: PdfColor.fromHex('#1877D1'),
+                ),
+              ),
+              pw.SizedBox(width: 2),
+              pw.Text('$anioActual', style: const pw.TextStyle(fontSize: 5)),
+              pw.SizedBox(width: 7),
+              pw.Container(
+                width: 7,
+                height: 7,
+                decoration: pw.BoxDecoration(
+                  shape: pw.BoxShape.circle,
+                  color: PdfColors.grey600,
+                ),
+              ),
+              pw.SizedBox(width: 2),
+              pw.Text('$anioComparacion', style: const pw.TextStyle(fontSize: 5)),
+              pw.SizedBox(width: 7),
+              pw.Text(
+                'pp = variación de participación',
+                style: const pw.TextStyle(
+                  fontSize: 4.8,
+                  color: PdfColors.grey600,
+                ),
+              ),
+            ],
+          ),
+          pw.SizedBox(height: 2),
+          pw.Expanded(child: table),
+        ],
+      ),
+    );
+  }
+
+  String _ppText(double value) {
+    return '${value >= 0 ? '+' : ''}${value.toStringAsFixed(1)} pp';
+  }
+
+  pw.Widget _pdfVendedoresComparativo(
+    List<Map<String, dynamic>> actualRows,
+    List<Map<String, dynamic>> anteriorRows,
+  ) {
+    final mapA = {for (final r in actualRows) _s(r['vendedor']): r};
+    final mapB = {for (final r in anteriorRows) _s(r['vendedor']): r};
+    final names = <String>{...mapA.keys, ...mapB.keys}
+        .where((x) => x.isNotEmpty)
+        .toList()
+      ..sort(
+        (a, b) => _n(mapA[b]?['facturacion'])
+            .compareTo(_n(mapA[a]?['facturacion'])),
+      );
+
+    return pw.Container(
+      padding: const pw.EdgeInsets.fromLTRB(6, 5, 6, 4),
+      decoration: pw.BoxDecoration(
+        color: PdfColors.white,
+        border: pw.Border.all(
+          color: PdfColor.fromHex('#D6E0E8'),
+          width: .7,
+        ),
+        borderRadius: pw.BorderRadius.circular(6),
+      ),
+      child: pw.Column(
+        crossAxisAlignment: pw.CrossAxisAlignment.stretch,
+        children: [
+          pw.Text(
+            'Ranking de asesores - Facturación comparativa',
+            style: pw.TextStyle(
+              fontSize: 7.5,
+              fontWeight: pw.FontWeight.bold,
+              color: PdfColor.fromHex('#0B4A78'),
+            ),
+          ),
+          pw.Text(
+            'Facturación acumulada y variación',
+            style: const pw.TextStyle(
+              fontSize: 5.2,
+              color: PdfColors.grey600,
+            ),
+          ),
+          pw.SizedBox(height: 3),
+          pw.Row(
+            children: [
+              pw.Expanded(
+                flex: 1,
+                child: pw.Text(
+                  '#',
+                  style: pw.TextStyle(
+                    fontSize: 5.2,
+                    fontWeight: pw.FontWeight.bold,
+                    color: PdfColor.fromHex('#0B4A78'),
+                  ),
+                ),
+              ),
+              pw.Expanded(
+                flex: 4,
+                child: pw.Text(
+                  'Asesor',
+                  style: pw.TextStyle(
+                    fontSize: 5.2,
+                    fontWeight: pw.FontWeight.bold,
+                    color: PdfColor.fromHex('#0B4A78'),
+                  ),
+                ),
+              ),
+              pw.Expanded(
+                flex: 3,
+                child: pw.Text(
+                  '$anioActual',
+                  style: pw.TextStyle(
+                    fontSize: 5.2,
+                    fontWeight: pw.FontWeight.bold,
+                    color: PdfColor.fromHex('#0B4A78'),
+                  ),
+                ),
+              ),
+              pw.Expanded(
+                flex: 3,
+                child: pw.Text(
+                  '$anioComparacion',
+                  style: const pw.TextStyle(
+                    fontSize: 5.2,
+                    fontWeight: pw.FontWeight.bold,
+                    color: PdfColors.grey600,
+                  ),
+                ),
+              ),
+              pw.Expanded(
+                flex: 2,
+                child: pw.Text(
+                  'Variación',
+                  style: pw.TextStyle(
+                    fontSize: 5.2,
+                    fontWeight: pw.FontWeight.bold,
+                    color: PdfColor.fromHex('#0B4A78'),
+                  ),
+                ),
+              ),
+            ],
+          ),
+          pw.Divider(
+            color: PdfColor.fromHex('#DCE5ED'),
+            height: 3,
+          ),
+          for (var i = 0; i < names.take(8).length; i++)
+            _pdfRankingRow(
+              mapA[names[i]] ?? <String, dynamic>{'vendedor': names[i]},
+              mapB[names[i]] ?? <String, dynamic>{},
+              i + 1,
+            ),
+        ],
+      ),
+    );
+  }
+
+  pw.Widget _pdfRankingRow(
+    Map<String, dynamic> rowActual,
+    Map<String, dynamic> rowAnterior,
+    int index,
+  ) {
+    final current = _n(rowActual['facturacion']);
+    final previous = _n(rowAnterior['facturacion']);
+    final variation = previous == 0
+        ? 0.0
+        : ((current - previous) / previous) * 100;
+    final color = variation >= 0
+        ? PdfColor.fromHex('#079B63')
+        : PdfColor.fromHex('#D93838');
+
+    return pw.Padding(
+      padding: const pw.EdgeInsets.symmetric(vertical: 2),
+      child: pw.Row(
+        children: [
+          pw.Expanded(
+            flex: 1,
+            child: pw.Text(
+              '$index',
+              style: const pw.TextStyle(fontSize: 5.2),
+            ),
+          ),
+          pw.Expanded(
+            flex: 4,
+            child: pw.Text(
+              _s(rowActual['vendedor']).isEmpty
+                  ? _s(rowAnterior['vendedor'])
+                  : _s(rowActual['vendedor']),
+              maxLines: 1,
+              overflow: pw.TextOverflow.clip,
+              style: const pw.TextStyle(fontSize: 5.2),
+            ),
+          ),
+          pw.Expanded(
+            flex: 3,
+            child: pw.Text(
+              'US\$ ${money.format(current)}',
+              style: pw.TextStyle(
+                fontSize: 5.1,
+                fontWeight: pw.FontWeight.bold,
+                color: PdfColor.fromHex('#1877D1'),
+              ),
+            ),
+          ),
+          pw.Expanded(
+            flex: 3,
+            child: pw.Text(
+              'US\$ ${money.format(previous)}',
+              style: const pw.TextStyle(
+                fontSize: 4.9,
+                color: PdfColors.grey600,
+              ),
+            ),
+          ),
+          pw.Expanded(
+            flex: 2,
+            child: pw.Text(
+              '${variation >= 0 ? '▲ +' : '▼ '}${variation.toStringAsFixed(1)}%',
+              style: pw.TextStyle(
+                fontSize: 4.9,
+                fontWeight: pw.FontWeight.bold,
+                color: color,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  pw.Widget _pdfClientesComparativo(
+    List<Map<String, dynamic>> actualRows,
+    List<Map<String, dynamic>> anteriorRows,
+  ) {
+    final mapA = {for (final r in actualRows) _s(r['cliente']): r};
+    final mapB = {for (final r in anteriorRows) _s(r['cliente']): r};
+    final names = <String>{...mapA.keys, ...mapB.keys}
+        .where((x) => x.isNotEmpty)
+        .toList()
+      ..sort(
+        (a, b) => _n(mapA[b]?['facturacion'])
+            .compareTo(_n(mapA[a]?['facturacion'])),
+      );
+
+    final top = names.take(10).toList();
+
+    return pw.Container(
+      padding: const pw.EdgeInsets.fromLTRB(6, 5, 6, 4),
+      decoration: pw.BoxDecoration(
+        color: PdfColors.white,
+        border: pw.Border.all(
+          color: PdfColor.fromHex('#D6E0E8'),
+          width: .7,
+        ),
+        borderRadius: pw.BorderRadius.circular(6),
+      ),
+      child: pw.Column(
+        crossAxisAlignment: pw.CrossAxisAlignment.stretch,
+        children: [
+          pw.Text(
+            'Top 10 clientes - Facturación comparativa',
+            style: pw.TextStyle(
+              fontSize: 7.5,
+              fontWeight: pw.FontWeight.bold,
+              color: PdfColor.fromHex('#0B4A78'),
+            ),
+          ),
+          pw.Text(
+            'Clientes con mayor facturación acumulada',
+            style: const pw.TextStyle(
+              fontSize: 5.2,
+              color: PdfColors.grey600,
+            ),
+          ),
+          pw.SizedBox(height: 3),
+          pw.Table.fromTextArray(
+            headers: ['#', 'Cliente', '$anioActual', '$anioComparacion', 'Var.'],
+            data: [
+              for (var i = 0; i < top.length; i++)
+                [
+                  '${i + 1}',
+                  top[i],
+                  'US\$ ${_compactPdf(_n(mapA[top[i]]?['facturacion']))}',
+                  'US\$ ${_compactPdf(_n(mapB[top[i]]?['facturacion']))}',
+                  _variationText(
+                    _n(mapA[top[i]]?['facturacion']),
+                    _n(mapB[top[i]]?['facturacion']),
+                  ),
+                ],
+            ],
+            headerStyle: pw.TextStyle(
+              color: PdfColor.fromHex('#0B4A78'),
+              fontSize: 4.8,
+              fontWeight: pw.FontWeight.bold,
+            ),
+            headerDecoration: pw.BoxDecoration(
+              color: PdfColor.fromHex('#F2F6FA'),
+            ),
+            cellStyle: const pw.TextStyle(fontSize: 4.5),
+            cellPadding: const pw.EdgeInsets.symmetric(
+              horizontal: 1.5,
+              vertical: 1.8,
+            ),
+            border: pw.TableBorder.all(
+              color: PdfColor.fromHex('#DDE5ED'),
+              width: .3,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  String _variationText(double actual, double previous) {
+    if (previous == 0) return '▲ +0.0%';
+    final v = ((actual - previous) / previous) * 100;
+    return '${v >= 0 ? '▲ +' : '▼ '}${v.toStringAsFixed(1)}%';
+  }
+
+  String _compactPdf(double value) {
+    if (value >= 1000000) return '${(value / 1000000).toStringAsFixed(2)} M';
+    if (value >= 1000) return '${(value / 1000).toStringAsFixed(0)} K';
+    return money.format(value);
+  }
+
+
+  // -------------------------------------------------------------------------
+  // Compatibilidad con la vista previa/impresión mensual existente.
+  // -------------------------------------------------------------------------
+  pw.Widget _pdfKpiCompact(String title, String value) {
+    return pw.Expanded(
+      child: pw.Container(
+        height: 38,
+        padding: const pw.EdgeInsets.symmetric(horizontal: 8, vertical: 5),
+        decoration: pw.BoxDecoration(
+          color: PdfColor.fromHex('#F4F7FA'),
+          border: pw.Border.all(color: PdfColor.fromHex('#C9D7E3')),
+          borderRadius: pw.BorderRadius.circular(6),
+        ),
+        child: pw.Column(
+          crossAxisAlignment: pw.CrossAxisAlignment.start,
+          mainAxisAlignment: pw.MainAxisAlignment.center,
+          children: [
+            pw.Text(
+              title,
+              style: const pw.TextStyle(
+                fontSize: 6.5,
+                color: PdfColors.grey700,
+              ),
+            ),
+            pw.SizedBox(height: 1),
+            pw.Text(
+              value,
+              style: pw.TextStyle(
+                fontSize: 10,
+                fontWeight: pw.FontWeight.bold,
+                color: PdfColor.fromHex('#0B4A78'),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  pw.Widget _pdfSectionTitleCompact(String title) {
+    return pw.Padding(
+      padding: const pw.EdgeInsets.only(bottom: 3),
+      child: pw.Text(
+        title,
+        style: pw.TextStyle(
+          fontSize: 8,
+          fontWeight: pw.FontWeight.bold,
+          color: PdfColor.fromHex('#0B4A78'),
+        ),
+      ),
+    );
+  }
+
+  pw.Widget _pdfMonthlyCompact(List<Map<String, dynamic>> rows) {
+    final dataRows = rows.map((r) {
+      return [
+        _s(r['periodo']),
+        'US\$ ${money.format(_n(r['facturacion']))}',
+        '${money.format(_n(r['peso']))} kg',
+        integer.format(_n(r['facturas']).round()),
+        integer.format(_n(r['clientes']).round()),
+      ];
+    }).toList();
+
     return pw.Table.fromTextArray(
       headers: const [
         'Periodo',
@@ -1240,95 +2276,81 @@ class _CrmReportesPageState extends State<CrmReportesPage> {
         'Facturas',
         'Clientes',
       ],
-      data: rows.map((r) {
-        return [
-          _s(r['periodo']),
-          'US\$ ${money.format(_n(r['facturacion']))}',
-          '${money.format(_n(r['peso']))} kg',
-          integer.format(_n(r['facturas']).round()),
-          integer.format(_n(r['clientes']).round()),
-        ];
-      }).toList(),
+      data: dataRows,
       headerStyle: pw.TextStyle(
         color: PdfColors.white,
-        fontSize: 8,
+        fontSize: 6.5,
         fontWeight: pw.FontWeight.bold,
       ),
       headerDecoration: pw.BoxDecoration(
         color: PdfColor.fromHex('#0B4A78'),
       ),
-      cellStyle: const pw.TextStyle(fontSize: 8),
-      cellPadding: const pw.EdgeInsets.all(5),
+      cellStyle: const pw.TextStyle(fontSize: 6.5),
+      cellPadding: const pw.EdgeInsets.symmetric(horizontal: 4, vertical: 2),
       border: pw.TableBorder.all(
         color: PdfColor.fromHex('#DDE5ED'),
-        width: .5,
+        width: .4,
       ),
     );
   }
 
-  pw.Widget _pdfVendedores(List<Map<String, dynamic>> rows) {
-    final top = rows.take(10).toList();
-
+  pw.Widget _pdfVendedoresCompact(List<Map<String, dynamic>> rows) {
+    final top = rows.take(8).toList();
     return pw.Column(
       crossAxisAlignment: pw.CrossAxisAlignment.start,
       children: [
-        _pdfSectionTitle('Ranking de asesores'),
+        _pdfSectionTitleCompact('RANKING ASESORES'),
         pw.Table.fromTextArray(
-          headers: const ['#', 'Asesor', 'Facturación', 'Peso', 'Facturas'],
+          headers: const ['#', 'Asesor', 'Facturación'],
           data: [
             for (var i = 0; i < top.length; i++)
               [
                 '${i + 1}',
                 _s(top[i]['vendedor']),
-                'US\$ ${money.format(_n(top[i]['facturacion']))}',
-                '${money.format(_n(top[i]['peso']))} kg',
-                integer.format(_n(top[i]['facturas']).round()),
+                'US\$ ${_compactPdf(_n(top[i]['facturacion']))}',
               ],
           ],
           headerStyle: pw.TextStyle(
             color: PdfColors.white,
-            fontSize: 7,
+            fontSize: 5.8,
             fontWeight: pw.FontWeight.bold,
           ),
           headerDecoration: pw.BoxDecoration(
             color: PdfColor.fromHex('#1877D1'),
           ),
-          cellStyle: const pw.TextStyle(fontSize: 7),
-          cellPadding: const pw.EdgeInsets.all(4),
+          cellStyle: const pw.TextStyle(fontSize: 5.8),
+          cellPadding: const pw.EdgeInsets.symmetric(horizontal: 2, vertical: 2),
         ),
       ],
     );
   }
 
-  pw.Widget _pdfClientes(List<Map<String, dynamic>> rows) {
-    final top = rows.take(10).toList();
-
+  pw.Widget _pdfClientesCompact(List<Map<String, dynamic>> rows) {
+    final top = rows.take(8).toList();
     return pw.Column(
       crossAxisAlignment: pw.CrossAxisAlignment.start,
       children: [
-        _pdfSectionTitle('Top clientes'),
+        _pdfSectionTitleCompact('TOP 10 CLIENTES'),
         pw.Table.fromTextArray(
-          headers: const ['#', 'Cliente', 'RUC', 'Facturación', 'Facturas'],
+          headers: const ['#', 'Cliente', 'Facturación'],
           data: [
             for (var i = 0; i < top.length; i++)
               [
                 '${i + 1}',
                 _s(top[i]['cliente']),
-                _s(top[i]['codigo_cliente']),
-                'US\$ ${money.format(_n(top[i]['facturacion']))}',
-                integer.format(_n(top[i]['facturas']).round()),
+                'US\$ ${_compactPdf(_n(top[i]['facturacion']))}',
               ],
           ],
           headerStyle: pw.TextStyle(
             color: PdfColors.white,
-            fontSize: 7,
+            fontSize: 5.8,
             fontWeight: pw.FontWeight.bold,
           ),
           headerDecoration: pw.BoxDecoration(
             color: PdfColor.fromHex('#5B45C5'),
           ),
-          cellStyle: const pw.TextStyle(fontSize: 7),
-          cellPadding: const pw.EdgeInsets.all(4),
+          cellStyle: const pw.TextStyle(fontSize: 5.8),
+          cellPadding: const pw.EdgeInsets.symmetric(horizontal: 2, vertical: 2),
         ),
       ],
     );
@@ -1471,9 +2493,16 @@ class _CrmReportesPageState extends State<CrmReportesPage> {
                       Icons.person_outline,
                     ),
                     items: [
-                      const DropdownMenuItem(
+                      DropdownMenuItem(
                         value: 'TODOS',
-                        child: Text('Todos'),
+                        child: Text(
+                          esGerencia
+                              ? 'Todos los asesores · ${canal == 'TODOS' ? 'Todos los canales' : canal}'
+                              : esJefatura
+                                  ? 'Todos los asesores · ${canal == 'PROVINCIAS' ? 'Provincias' : 'Lima'}'
+                                  : 'Todos',
+                          overflow: TextOverflow.ellipsis,
+                        ),
                       ),
                       ...vendedores.map(
                         (v) => DropdownMenuItem(
@@ -1487,7 +2516,17 @@ class _CrmReportesPageState extends State<CrmReportesPage> {
                     ],
                     onChanged: (value) async {
                       if (value == null) return;
-                      setState(() => vendedor = value);
+
+                      setState(() {
+                        vendedor = value;
+                        if (esJefatura) {
+                          canal = Sesion.rol.trim().toLowerCase() ==
+                                  'jefe provincia'
+                              ? 'PROVINCIAS'
+                              : 'LIMA';
+                        }
+                      });
+
                       await _cargar();
                     },
                   ),
@@ -1521,6 +2560,44 @@ class _CrmReportesPageState extends State<CrmReportesPage> {
                             await _cargar();
                           }
                         : null,
+                  ),
+                ),
+                SizedBox(
+                  width: fieldWidth(145),
+                  child: OutlinedButton.icon(
+                    onPressed: () => _seleccionarAnio(true),
+                    style: OutlinedButton.styleFrom(
+                      foregroundColor: const Color(0xFF4F5D95),
+                      side: const BorderSide(color: Color(0xFFB9B8C8)),
+                      padding: const EdgeInsets.symmetric(horizontal: 12),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(24),
+                      ),
+                    ),
+                    icon: const Icon(Icons.calendar_month_outlined, size: 18),
+                    label: Text(
+                      'Año actual $anioActual',
+                      style: const TextStyle(fontWeight: FontWeight.w800),
+                    ),
+                  ),
+                ),
+                SizedBox(
+                  width: fieldWidth(160),
+                  child: OutlinedButton.icon(
+                    onPressed: () => _seleccionarAnio(false),
+                    style: OutlinedButton.styleFrom(
+                      foregroundColor: const Color(0xFF4F5D95),
+                      side: const BorderSide(color: Color(0xFFB9B8C8)),
+                      padding: const EdgeInsets.symmetric(horizontal: 12),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(24),
+                      ),
+                    ),
+                    icon: const Icon(Icons.compare_arrows_outlined, size: 18),
+                    label: Text(
+                      'Comparar $anioComparacion',
+                      style: const TextStyle(fontWeight: FontWeight.w800),
+                    ),
                   ),
                 ),
                 SizedBox(
@@ -1615,29 +2692,53 @@ class _CrmReportesPageState extends State<CrmReportesPage> {
   }
 
   Widget _contenido(bool mobile) {
-    final k = Map<String, dynamic>.from(
-      data['kpis'] is Map ? data['kpis'] as Map : <String, dynamic>{},
-    );
-    final ven = _mapList(data['vendedores']);
-    final cli = _mapList(data['clientes']);
-    final mes = _mapList(data['mensual']);
+    final venA = _mapList(data['vendedores']);
+    final venB = _mapList(dataAnterior['vendedores']);
+    final cliA = _mapList(data['clientes']);
+    final cliB = _mapList(dataAnterior['clientes']);
+
+    venA.sort((a, b) => _n(b['facturacion']).compareTo(_n(a['facturacion'])));
+    venB.sort((a, b) => _n(b['facturacion']).compareTo(_n(a['facturacion'])));
+    cliA.sort((a, b) => _n(b['facturacion']).compareTo(_n(a['facturacion'])));
+    cliB.sort((a, b) => _n(b['facturacion']).compareTo(_n(a['facturacion'])));
 
     return ListView(
       physics: const AlwaysScrollableScrollPhysics(),
       children: [
-        _hero(k),
-        const SizedBox(height: 14),
-        _mensual(mes),
+        _heroComparativo(),
         const SizedBox(height: 14),
         LayoutBuilder(
           builder: (context, constraints) {
-            final stacked = constraints.maxWidth < 1100;
-            if (stacked) {
+            if (constraints.maxWidth < 1000) {
               return Column(
                 children: [
-                  _distribucionClases(clases),
+                  _graficoComparativoFacturacion(),
                   const SizedBox(height: 14),
-                  _rankingAsesores(ven),
+                  _graficoComparativoPeso(),
+                ],
+              );
+            }
+            return Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Expanded(child: _graficoComparativoFacturacion()),
+                const SizedBox(width: 12),
+                Expanded(child: _graficoComparativoPeso()),
+              ],
+            );
+          },
+        ),
+        const SizedBox(height: 14),
+        LayoutBuilder(
+          builder: (context, constraints) {
+            if (constraints.maxWidth < 1200) {
+              return Column(
+                children: [
+                  _rankingComparativo(venA, venB),
+                  const SizedBox(height: 14),
+                  _distribucionClases(),
+                  const SizedBox(height: 14),
+                  _clientesComparativo(cliA, cliB),
                 ],
               );
             }
@@ -1645,18 +2746,2294 @@ class _CrmReportesPageState extends State<CrmReportesPage> {
             return Row(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Expanded(child: _rankingAsesores(ven)),
-                const SizedBox(width: 14),
-                Expanded(child: _distribucionClases(clases)),
+                Expanded(flex: 3, child: _rankingComparativo(venA, venB)),
+                const SizedBox(width: 12),
+                Expanded(flex: 6, child: _distribucionClases()),
+                const SizedBox(width: 12),
+                Expanded(flex: 3, child: _clientesComparativo(cliA, cliB)),
               ],
             );
           },
         ),
         const SizedBox(height: 14),
-        _rankingClientes(cli),
-        const SizedBox(height: 14),
-        _conclusiones(k, ven, cli, mes),
+        LayoutBuilder(
+          builder: (context, constraints) {
+            if (constraints.maxWidth < 900) {
+              return Column(
+                children: [
+                  _carteraComparativa(cliA, cliB),
+                  const SizedBox(height: 14),
+                  _indicadoresComparativos(venA, cliA),
+                ],
+              );
+            }
+
+            return Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Expanded(child: _carteraComparativa(cliA, cliB)),
+                const SizedBox(width: 12),
+                Expanded(child: _indicadoresComparativos(venA, cliA)),
+              ],
+            );
+          },
+        ),
       ],
+    );
+  }
+
+  Widget _heroComparativo() {
+    final a = Map<String, dynamic>.from(
+      data['kpis'] is Map ? data['kpis'] as Map : <String, dynamic>{},
+    );
+    final b = Map<String, dynamic>.from(
+      dataAnterior['kpis'] is Map
+          ? dataAnterior['kpis'] as Map
+          : <String, dynamic>{},
+    );
+
+    final cards = [
+      _comparativeKpi(
+        'Facturación',
+        _n(a['facturacion']),
+        _n(b['facturacion']),
+        (v) => 'US\$ ${money.format(v)}',
+        Icons.bar_chart_outlined,
+      ),
+      _comparativeKpi(
+        'Peso cobre',
+        _n(a['peso']),
+        _n(b['peso']),
+        (v) => '${money.format(v)} kg',
+        Icons.scale_outlined,
+      ),
+      _comparativeKpi(
+        'Facturas',
+        _n(a['facturas']),
+        _n(b['facturas']),
+        (v) => integer.format(v.round()),
+        Icons.description_outlined,
+      ),
+      _comparativeKpi(
+        'Clientes',
+        _n(a['clientes']),
+        _n(b['clientes']),
+        (v) => integer.format(v.round()),
+        Icons.groups_outlined,
+      ),
+    ];
+
+    return Container(
+      padding: const EdgeInsets.all(18),
+      decoration: BoxDecoration(
+        gradient: const LinearGradient(
+          colors: [Color(0xFF0B4A78), Color(0xFF1673A8)],
+        ),
+        borderRadius: BorderRadius.circular(17),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text(
+            'RESUMEN EJECUTIVO COMERCIAL',
+            style: TextStyle(
+              color: Colors.white70,
+              fontSize: 12,
+              fontWeight: FontWeight.w900,
+              letterSpacing: .7,
+            ),
+          ),
+          const SizedBox(height: 3),
+          Text(
+            'Comparativo $anioActual vs $anioComparacion',
+            style: const TextStyle(
+              color: Colors.white,
+              fontSize: 24,
+              fontWeight: FontWeight.w900,
+            ),
+          ),
+          const SizedBox(height: 4),
+          Text(
+            '${_filtroTexto()} · mismo periodo del año anterior',
+            style: const TextStyle(
+              color: Colors.white70,
+              fontSize: 11,
+            ),
+          ),
+          const SizedBox(height: 16),
+          LayoutBuilder(
+            builder: (context, constraints) {
+              final columns = constraints.maxWidth < 700 ? 1 : 4;
+              const gap = 10.0;
+              final width = columns == 1
+                  ? constraints.maxWidth
+                  : (constraints.maxWidth - gap * 3) / 4;
+
+              return Wrap(
+                spacing: gap,
+                runSpacing: gap,
+                children: cards
+                    .map((c) => SizedBox(width: width, child: c))
+                    .toList(),
+              );
+            },
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _comparativeKpi(
+    String title,
+    double current,
+    double previous,
+    String Function(double) formatter,
+    IconData icon,
+  ) {
+    final pct = previous == 0
+        ? 0.0
+        : ((current - previous) / previous) * 100;
+    final positive = pct >= 0;
+    final color = positive ? verde : rojo;
+
+    return Container(
+      padding: const EdgeInsets.all(13),
+      decoration: BoxDecoration(
+        color: Colors.white.withValues(alpha: .10),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: Colors.white24),
+      ),
+      child: Row(
+        children: [
+          Icon(icon, color: Colors.white, size: 26),
+          const SizedBox(width: 9),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  title,
+                  style: const TextStyle(
+                    color: Colors.white70,
+                    fontSize: 10,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Row(
+                  children: [
+                    Expanded(
+                      child: _yearValue('$anioActual', formatter(current)),
+                    ),
+                    Container(
+                      width: 1,
+                      height: 30,
+                      color: Colors.white24,
+                    ),
+                    Expanded(
+                      child: _yearValue(
+                        '$anioComparacion',
+                        formatter(previous),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 5),
+                Text(
+                  '${positive ? '▲' : '▼'} ${pct >= 0 ? '+' : ''}${pct.toStringAsFixed(1)}%  vs $anioComparacion',
+                  style: TextStyle(
+                    color: color,
+                    fontSize: 11,
+                    fontWeight: FontWeight.w900,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _yearValue(String year, String value) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 6),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            year,
+            style: const TextStyle(
+              color: Colors.white70,
+              fontSize: 9,
+            ),
+          ),
+          const SizedBox(height: 2),
+          FittedBox(
+            fit: BoxFit.scaleDown,
+            alignment: Alignment.centerLeft,
+            child: Text(
+              value,
+              style: const TextStyle(
+                color: Colors.white,
+                fontSize: 14,
+                fontWeight: FontWeight.w900,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  List<Map<String, dynamic>> _compararMensual() {
+    final a = _mapList(data['mensual']);
+    final b = _mapList(dataAnterior['mensual']);
+
+    final ma = <int, Map<String, dynamic>>{};
+    final mb = <int, Map<String, dynamic>>{};
+
+    for (final row in a) {
+      final raw = _s(row['periodo']);
+      final match = RegExp(r'\d{4}[-/](\d{1,2})').firstMatch(raw);
+      if (match != null) {
+        ma[int.parse(match.group(1)!)] = row;
+      }
+    }
+
+    for (final row in b) {
+      final raw = _s(row['periodo']);
+      final match = RegExp(r'\d{4}[-/](\d{1,2})').firstMatch(raw);
+      if (match != null) {
+        mb[int.parse(match.group(1)!)] = row;
+      }
+    }
+
+    // Siempre construimos el mismo rango mensual del filtro.
+    // Esto evita que septiembre desaparezca cuando una de las dos
+    // series no trae una fila explícita para ese mes.
+    final inicioMes = desde.month;
+    final finMes = hasta.month;
+
+    final result = <Map<String, dynamic>>[];
+
+    if (finMes >= inicioMes) {
+      for (int month = inicioMes; month <= finMes; month++) {
+        result.add({
+          'month': month,
+          'label': _nombreMes(month),
+          'a': ma[month] ?? <String, dynamic>{},
+          'b': mb[month] ?? <String, dynamic>{},
+        });
+      }
+    }
+
+    return result;
+  }
+
+  String _nombreMes(int month) {
+    const nombres = [
+      'Ene',
+      'Feb',
+      'Mar',
+      'Abr',
+      'May',
+      'Jun',
+      'Jul',
+      'Ago',
+      'Sep',
+      'Oct',
+      'Nov',
+      'Dic',
+    ];
+    return month >= 1 && month <= 12 ? nombres[month - 1] : '';
+  }
+
+  String _compactMoney(double value) {
+    if (value >= 1000000) {
+      return 'US\$ ${(value / 1000000).toStringAsFixed(2)} M';
+    }
+    if (value >= 1000) {
+      return 'US\$ ${(value / 1000).toStringAsFixed(0)} K';
+    }
+    return 'US\$ ${money.format(value)}';
+  }
+
+  String _compactKg(double value) {
+    if (value >= 1000) {
+      return '${(value / 1000).toStringAsFixed(2)} K';
+    }
+    return money.format(value);
+  }
+
+  Widget _graficoComparativoFacturacion() {
+    final rows = _compararMensual();
+
+    double maxValue = 0;
+    for (final row in rows) {
+      final va = _n(row['a']['facturacion']);
+      final vb = _n(row['b']['facturacion']);
+      if (va > maxValue) maxValue = va;
+      if (vb > maxValue) maxValue = vb;
+    }
+
+    return _panel(
+      title: 'Evolución mensual de facturación (US\$)',
+      subtitle: 'Comparativo $anioActual vs $anioComparacion (mismo periodo)',
+      icon: Icons.bar_chart_outlined,
+      child: Column(
+        children: [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(14, 8, 14, 2),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.end,
+              children: [
+                _LegendDot(
+                  color: azulClaro,
+                  label: '$anioActual',
+                ),
+                const SizedBox(width: 18),
+                _LegendDot(
+                  color: naranja,
+                  label: '$anioComparacion',
+                ),
+              ],
+            ),
+          ),
+          SizedBox(
+            height: 315,
+            child: LayoutBuilder(
+              builder: (context, constraints) {
+                if (rows.isEmpty) {
+                  return const Center(
+                    child: Text(
+                      'No hay información mensual para el periodo seleccionado.',
+                      style: TextStyle(color: Colors.black54),
+                    ),
+                  );
+                }
+
+                final monthWidth = constraints.maxWidth / rows.length;
+                final barWidth = (monthWidth * .25).clamp(13.0, 28.0);
+                final gap = (monthWidth * .035).clamp(2.0, 6.0);
+
+                return Padding(
+                  padding: const EdgeInsets.fromLTRB(8, 2, 8, 8),
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.end,
+                    children: rows.map((row) {
+                      final va = _n(row['a']['facturacion']);
+                      final vb = _n(row['b']['facturacion']);
+
+                      return Expanded(
+                        child: InkWell(
+                          borderRadius: BorderRadius.circular(10),
+                          onTap: () => _mostrarComparativoMes(row),
+                          child: Padding(
+                            padding: const EdgeInsets.symmetric(horizontal: 2),
+                            child: Column(
+                              mainAxisAlignment: MainAxisAlignment.end,
+                              children: [
+                                SizedBox(
+                                  height: 235,
+                                  child: Row(
+                                    crossAxisAlignment: CrossAxisAlignment.end,
+                                    mainAxisAlignment: MainAxisAlignment.center,
+                                    children: [
+                                      _barComparativoCompact(
+                                        va,
+                                        maxValue,
+                                        azulClaro,
+                                        _compactMoney(va),
+                                        barWidth,
+                                      ),
+                                      SizedBox(width: gap),
+                                      _barComparativoCompact(
+                                        vb,
+                                        maxValue,
+                                        naranja,
+                                        _compactMoney(vb),
+                                        barWidth,
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                                const SizedBox(height: 6),
+                                Container(
+                                  constraints: BoxConstraints(
+                                    minWidth: monthWidth - 8,
+                                  ),
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 6,
+                                    vertical: 5,
+                                  ),
+                                  decoration: BoxDecoration(
+                                    color: const Color(0xFFF1F5F9),
+                                    borderRadius: BorderRadius.circular(7),
+                                  ),
+                                  child: Text(
+                                    _s(row['label']),
+                                    textAlign: TextAlign.center,
+                                    style: const TextStyle(
+                                      fontSize: 11,
+                                      fontWeight: FontWeight.w900,
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                      );
+                    }).toList(),
+                  ),
+                );
+              },
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _barComparativoCompact(
+    double value,
+    double max,
+    Color color,
+    String label,
+    double width,
+  ) {
+    final height = max <= 0 ? 8.0 : (value / max) * 195;
+
+    return SizedBox(
+      width: width,
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.end,
+        children: [
+          SizedBox(
+            height: 30,
+            child: OverflowBox(
+              minWidth: 78,
+              maxWidth: 78,
+              alignment: Alignment.center,
+              child: Text(
+                label,
+                maxLines: 1,
+                softWrap: false,
+                overflow: TextOverflow.visible,
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                  color: color,
+                  fontSize: 10,
+                  fontWeight: FontWeight.w900,
+                ),
+              ),
+            ),
+          ),
+          const SizedBox(height: 2),
+          Container(
+            width: width,
+            height: height.clamp(8.0, 195.0),
+            decoration: BoxDecoration(
+              color: color,
+              borderRadius: const BorderRadius.vertical(
+                top: Radius.circular(5),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+
+  Widget _graficoComparativoPeso() {
+    final rows = _compararMensual();
+
+    double maxValue = 0;
+    for (final row in rows) {
+      final va = _n(row['a']['peso']);
+      final vb = _n(row['b']['peso']);
+      if (va > maxValue) maxValue = va;
+      if (vb > maxValue) maxValue = vb;
+    }
+
+    return _panel(
+      title: 'Evolución mensual de peso cobre (kg)',
+      subtitle: 'Comparativo $anioActual vs $anioComparacion',
+      icon: Icons.scale_outlined,
+      child: Column(
+        children: [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(14, 8, 14, 2),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.end,
+              children: [
+                _LegendDot(
+                  color: azulClaro,
+                  label: '$anioActual',
+                ),
+                const SizedBox(width: 18),
+                _LegendDot(
+                  color: naranja,
+                  label: '$anioComparacion',
+                ),
+              ],
+            ),
+          ),
+          SizedBox(
+            height: 315,
+            child: LayoutBuilder(
+              builder: (context, constraints) {
+                if (rows.isEmpty) {
+                  return const Center(
+                    child: Text(
+                      'No hay información mensual para el periodo seleccionado.',
+                      style: TextStyle(color: Colors.black54),
+                    ),
+                  );
+                }
+
+                final monthWidth = constraints.maxWidth / rows.length;
+                final barWidth = (monthWidth * .25).clamp(13.0, 28.0);
+                final gap = (monthWidth * .035).clamp(2.0, 6.0);
+
+                return Padding(
+                  padding: const EdgeInsets.fromLTRB(8, 2, 8, 8),
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.end,
+                    children: rows.map((row) {
+                      final va = _n(row['a']['peso']);
+                      final vb = _n(row['b']['peso']);
+
+                      return Expanded(
+                        child: InkWell(
+                          borderRadius: BorderRadius.circular(10),
+                          onTap: () => _mostrarComparativoMes(row),
+                          child: Padding(
+                            padding: const EdgeInsets.symmetric(horizontal: 2),
+                            child: Column(
+                              mainAxisAlignment: MainAxisAlignment.end,
+                              children: [
+                                SizedBox(
+                                  height: 235,
+                                  child: Row(
+                                    crossAxisAlignment: CrossAxisAlignment.end,
+                                    mainAxisAlignment: MainAxisAlignment.center,
+                                    children: [
+                                      _barComparativoCompact(
+                                        va,
+                                        maxValue,
+                                        azulClaro,
+                                        _compactKg(va),
+                                        barWidth,
+                                      ),
+                                      SizedBox(width: gap),
+                                      _barComparativoCompact(
+                                        vb,
+                                        maxValue,
+                                        naranja,
+                                        _compactKg(vb),
+                                        barWidth,
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                                const SizedBox(height: 6),
+                                Container(
+                                  constraints: BoxConstraints(
+                                    minWidth: monthWidth - 8,
+                                  ),
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 6,
+                                    vertical: 5,
+                                  ),
+                                  decoration: BoxDecoration(
+                                    color: const Color(0xFFF1F5F9),
+                                    borderRadius: BorderRadius.circular(7),
+                                  ),
+                                  child: Text(
+                                    _s(row['label']),
+                                    textAlign: TextAlign.center,
+                                    style: const TextStyle(
+                                      fontSize: 11,
+                                      fontWeight: FontWeight.w900,
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                      );
+                    }).toList(),
+                  ),
+                );
+              },
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+
+  Widget _rankingComparativo(
+    List<Map<String, dynamic>> a,
+    List<Map<String, dynamic>> b,
+  ) {
+    final mapA = {for (final r in a) _s(r['vendedor']): r};
+    final mapB = {for (final r in b) _s(r['vendedor']): r};
+
+    final names = <String>{...mapA.keys, ...mapB.keys}
+        .where((x) => x.isNotEmpty)
+        .toList();
+
+    names.sort(
+      (x, y) => _n(mapA[y]?['facturacion'])
+          .compareTo(_n(mapA[x]?['facturacion'])),
+    );
+
+    return _panel(
+      title: 'Ranking de asesores - Facturación comparativa',
+      subtitle: 'Facturación acumulada y variación',
+      icon: Icons.groups_outlined,
+      child: Column(
+        children: [
+          _cabeceraComparativa('Asesor'),
+          const Divider(height: 1),
+          for (var i = 0; i < names.take(10).length; i++)
+            _filaComparativa(
+              i + 1,
+              names[i],
+              _n(mapA[names[i]]?['facturacion']),
+              _n(mapB[names[i]]?['facturacion']),
+              azulClaro,
+            ),
+        ],
+      ),
+    );
+  }
+
+  Widget _cabeceraComparativa(String titulo) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(14, 8, 14, 4),
+      child: Row(
+        children: [
+          const SizedBox(width: 32),
+          Expanded(
+            child: Text(
+              titulo,
+              style: const TextStyle(
+                color: azul,
+                fontSize: 10,
+                fontWeight: FontWeight.w900,
+              ),
+            ),
+          ),
+          SizedBox(
+            width: 105,
+            child: Text(
+              '$anioActual',
+              textAlign: TextAlign.right,
+              style: const TextStyle(
+                color: azul,
+                fontSize: 10,
+                fontWeight: FontWeight.w900,
+              ),
+            ),
+          ),
+          SizedBox(
+            width: 105,
+            child: Text(
+              '$anioComparacion',
+              textAlign: TextAlign.right,
+              style: const TextStyle(
+                color: Colors.black54,
+                fontSize: 10,
+                fontWeight: FontWeight.w900,
+              ),
+            ),
+          ),
+          const SizedBox(
+            width: 70,
+            child: Text(
+              'Variación',
+              textAlign: TextAlign.right,
+              style: TextStyle(
+                fontSize: 10,
+                fontWeight: FontWeight.w900,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _filaComparativa(
+    int index,
+    String nombre,
+    double actualValue,
+    double previousValue,
+    Color color,
+  ) {
+    final pct = previousValue == 0
+        ? 0.0
+        : ((actualValue - previousValue) / previousValue) * 100;
+
+    final positive = pct >= 0;
+
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(14, 7, 14, 7),
+      child: Row(
+        children: [
+          CircleAvatar(
+            radius: 12,
+            backgroundColor: const Color(0xFFEAF3FB),
+            child: Text(
+              '$index',
+              style: const TextStyle(
+                color: azulClaro,
+                fontSize: 10,
+                fontWeight: FontWeight.w900,
+              ),
+            ),
+          ),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              nombre,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(
+                fontSize: 10,
+                fontWeight: FontWeight.w800,
+              ),
+            ),
+          ),
+          SizedBox(
+            width: 105,
+            child: Text(
+              'US\$ ${money.format(actualValue)}',
+              textAlign: TextAlign.right,
+              style: TextStyle(
+                color: color,
+                fontSize: 10,
+                fontWeight: FontWeight.w900,
+              ),
+            ),
+          ),
+          SizedBox(
+            width: 105,
+            child: Text(
+              'US\$ ${money.format(previousValue)}',
+              textAlign: TextAlign.right,
+              style: const TextStyle(
+                color: Colors.black54,
+                fontSize: 10,
+              ),
+            ),
+          ),
+          SizedBox(
+            width: 70,
+            child: Text(
+              '${positive ? '▲' : '▼'} ${pct >= 0 ? '+' : ''}${pct.toStringAsFixed(1)}%',
+              textAlign: TextAlign.right,
+              style: TextStyle(
+                color: positive ? verde : rojo,
+                fontSize: 9,
+                fontWeight: FontWeight.w900,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _clientesComparativo(
+    List<Map<String, dynamic>> a,
+    List<Map<String, dynamic>> b,
+  ) {
+    final mapA = {for (final r in a) _s(r['cliente']): r};
+    final mapB = {for (final r in b) _s(r['cliente']): r};
+
+    final names = <String>{...mapA.keys, ...mapB.keys}
+        .where((x) => x.isNotEmpty)
+        .toList();
+
+    names.sort(
+      (x, y) => _n(mapA[y]?['facturacion'])
+          .compareTo(_n(mapA[x]?['facturacion'])),
+    );
+
+    return _panel(
+      title: 'Top 10 clientes - Facturación comparativa',
+      subtitle: 'Clientes con mayor facturación acumulada',
+      icon: Icons.business_outlined,
+      child: Column(
+        children: [
+          _cabeceraComparativa('Cliente'),
+          const Divider(height: 1),
+          for (var i = 0; i < names.take(10).length; i++)
+            _filaComparativa(
+              i + 1,
+              names[i],
+              _n(mapA[names[i]]?['facturacion']),
+              _n(mapB[names[i]]?['facturacion']),
+              morado,
+            ),
+        ],
+      ),
+    );
+  }
+
+  Widget _distribucionClases() {
+    final a = _mapList(data['asesores_clase']);
+    final b = _mapList(dataAnterior['asesores_clase']);
+
+    if (a.isEmpty && b.isEmpty) {
+      return _panel(
+        title: 'Facturación por asesor y clase - Comparativo',
+        subtitle: 'Participación de cada clase dentro de la facturación del asesor',
+        icon: Icons.groups_outlined,
+        child: const Padding(
+          padding: EdgeInsets.all(20),
+          child: Text(
+            'La RPC no devolvió el detalle asesor-clase para el periodo seleccionado.',
+            style: TextStyle(
+              color: Colors.black54,
+              fontSize: 11,
+            ),
+          ),
+        ),
+      );
+    }
+
+    final mapA = <String, Map<String, double>>{};
+    final mapB = <String, Map<String, double>>{};
+    final totalA = <String, double>{};
+    final totalB = <String, double>{};
+
+    for (final row in a) {
+      final asesor = _s(row['vendedor']).isEmpty ? 'SIN ASESOR' : _s(row['vendedor']);
+      final clase = _s(row['clase']).isEmpty ? 'SIN CLASE' : _s(row['clase']).toUpperCase();
+      final monto = _n(row['facturacion']);
+      mapA.putIfAbsent(asesor, () => <String, double>{});
+      mapA[asesor]![clase] = (mapA[asesor]![clase] ?? 0) + monto;
+      totalA[asesor] = (totalA[asesor] ?? 0) + monto;
+    }
+
+    for (final row in b) {
+      final asesor = _s(row['vendedor']).isEmpty ? 'SIN ASESOR' : _s(row['vendedor']);
+      final clase = _s(row['clase']).isEmpty ? 'SIN CLASE' : _s(row['clase']).toUpperCase();
+      final monto = _n(row['facturacion']);
+      mapB.putIfAbsent(asesor, () => <String, double>{});
+      mapB[asesor]![clase] = (mapB[asesor]![clase] ?? 0) + monto;
+      totalB[asesor] = (totalB[asesor] ?? 0) + monto;
+    }
+
+    final asesores = <String>{...mapA.keys, ...mapB.keys}.toList();
+    asesores.sort((x, y) {
+      final c = (totalA[y] ?? 0).compareTo(totalA[x] ?? 0);
+      return c != 0 ? c : x.compareTo(y);
+    });
+
+    const prioridad = <String>[
+      'CL5',
+      'CL2',
+      'CL1',
+      'SIN CLASE',
+      'CL6',
+    ];
+
+    final clases = <String>{
+      ...mapA.values.expand((m) => m.keys),
+      ...mapB.values.expand((m) => m.keys),
+    };
+    final clasesOrdenadas = <String>[];
+    for (final clase in prioridad) {
+      if (clases.remove(clase)) clasesOrdenadas.add(clase);
+    }
+    final restantes = clases.toList()..sort();
+    clasesOrdenadas.addAll(restantes);
+
+    double porcentaje(
+      Map<String, Map<String, double>> source,
+      Map<String, double> totals,
+      String asesor,
+      String clase,
+    ) {
+      final total = totals[asesor] ?? 0;
+      if (total <= 0) return 0;
+      return ((source[asesor]?[clase] ?? 0) / total) * 100;
+    }
+
+    Widget celdaClase(String asesor, String clase) {
+      final pa = porcentaje(mapA, totalA, asesor, clase);
+      final pb = porcentaje(mapB, totalB, asesor, clase);
+      final diff = pa - pb;
+      final colorDiff = diff >= 0 ? verde : rojo;
+
+      return Container(
+        width: 105,
+        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 7),
+        decoration: BoxDecoration(
+          border: Border(
+            left: BorderSide(color: borde.withValues(alpha: .7)),
+          ),
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(
+              '${pa.toStringAsFixed(1)}%',
+              style: const TextStyle(
+                color: azulClaro,
+                fontSize: 12,
+                fontWeight: FontWeight.w900,
+              ),
+            ),
+            Text(
+              '${pb.toStringAsFixed(1)}%',
+              style: const TextStyle(
+                color: Colors.black54,
+                fontSize: 10,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+            const SizedBox(height: 1),
+            Text(
+              '${diff >= 0 ? '+' : ''}${diff.toStringAsFixed(1)} pp',
+              style: TextStyle(
+                color: colorDiff,
+                fontSize: 9,
+                fontWeight: FontWeight.w800,
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+
+    Widget encabezadoClase(String clase) {
+      return Container(
+        width: 105,
+        padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 7),
+        decoration: const BoxDecoration(
+          color: Color(0xFFF5F8FC),
+          border: Border(
+            left: BorderSide(color: borde),
+          ),
+        ),
+        child: Text(
+          clase,
+          textAlign: TextAlign.center,
+          style: const TextStyle(
+            color: azul,
+            fontSize: 10,
+            fontWeight: FontWeight.w700,
+          ),
+        ),
+      );
+    }
+
+    Widget filaAsesor(String asesor) {
+      final actual = totalA[asesor] ?? 0;
+      final anterior = totalB[asesor] ?? 0;
+
+      return Container(
+        decoration: const BoxDecoration(
+          border: Border(
+            top: BorderSide(color: borde),
+          ),
+        ),
+        child: Row(
+          children: [
+            SizedBox(
+              width: 155,
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
+                child: Text(
+                  asesor,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    fontSize: 10,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ),
+            ),
+            for (final clase in clasesOrdenadas) celdaClase(asesor, clase),
+            Container(
+              width: 120,
+              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 5),
+              decoration: BoxDecoration(
+                border: Border(left: BorderSide(color: borde.withValues(alpha: .7))),
+              ),
+              child: Column(
+                children: [
+                  Text(
+                    _compactMoney(actual),
+                    style: const TextStyle(
+                      color: azulClaro,
+                      fontSize: 9,
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
+                  Text(
+                    _compactMoney(anterior),
+                    style: const TextStyle(
+                      color: Colors.black54,
+                      fontSize: 8,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+
+    return _panel(
+      title: 'Facturación por asesor y clase - Comparativo',
+      subtitle: '2026 / 2025 / variación en puntos porcentuales de la mezcla de cada asesor',
+      icon: Icons.groups_outlined,
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(10, 8, 10, 10),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Container(width: 9, height: 9, decoration: const BoxDecoration(color: azulClaro, shape: BoxShape.circle)),
+                const SizedBox(width: 5),
+                const Text('2026', style: TextStyle(fontSize: 9, fontWeight: FontWeight.w700, color: azulClaro)),
+                const SizedBox(width: 12),
+                Container(width: 9, height: 9, decoration: const BoxDecoration(color: Colors.black54, shape: BoxShape.circle)),
+                const SizedBox(width: 5),
+                const Text('2025', style: TextStyle(fontSize: 9, fontWeight: FontWeight.w600, color: Colors.black54)),
+                const SizedBox(width: 12),
+                const Text('pp = variación de participación', style: TextStyle(fontSize: 9, color: Colors.black45)),
+              ],
+            ),
+            const SizedBox(height: 6),
+            SingleChildScrollView(
+              scrollDirection: Axis.horizontal,
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      const SizedBox(
+                        width: 145,
+                        child: Padding(
+                          padding: EdgeInsets.symmetric(horizontal: 10, vertical: 7),
+                          child: Text(
+                            'Asesor',
+                            style: TextStyle(
+                              color: azul,
+                              fontSize: 10,
+                              fontWeight: FontWeight.w800,
+                            ),
+                          ),
+                        ),
+                      ),
+                      for (final clase in clasesOrdenadas) encabezadoClase(clase),
+                      const SizedBox(
+                        width: 110,
+                        child: Center(
+                          child: Text(
+                            'Total facturación',
+                            textAlign: TextAlign.center,
+                            style: TextStyle(
+                              color: azul,
+                              fontSize: 10,
+                              fontWeight: FontWeight.w800,
+                            ),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                  for (final asesor in asesores.take(12)) filaAsesor(asesor),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _donut(
+    String year,
+    double total,
+    Map<String, double> values,
+  ) {
+    return Column(
+      children: [
+        SizedBox(
+          width: 130,
+          height: 130,
+          child: CustomPaint(
+            painter: _DonutPainter(values: values),
+            child: Center(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    year,
+                    style: const TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w900,
+                    ),
+                  ),
+                  Text(
+                    _compactMoney(total),
+                    style: const TextStyle(
+                      color: azul,
+                      fontSize: 10,
+                      fontWeight: FontWeight.w900,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _claseFila(
+    String name,
+    double a,
+    double totalA,
+    double b,
+    double totalB,
+  ) {
+    final pa = totalA == 0 ? 0.0 : a / totalA * 100;
+    final pb = totalB == 0 ? 0.0 : b / totalB * 100;
+    final diff = pa - pb;
+
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 3),
+      child: Row(
+        children: [
+          Container(
+            width: 9,
+            height: 9,
+            decoration: BoxDecoration(
+              color: _colorClase(name),
+              shape: BoxShape.circle,
+            ),
+          ),
+          const SizedBox(width: 6),
+          Expanded(
+            child: Text(
+              name,
+              style: const TextStyle(
+                fontSize: 10,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+          ),
+          SizedBox(
+            width: 62,
+            child: Text(
+              '${pa.toStringAsFixed(2)}%',
+              textAlign: TextAlign.right,
+              style: const TextStyle(
+                color: azulClaro,
+                fontSize: 10,
+                fontWeight: FontWeight.w800,
+              ),
+            ),
+          ),
+          SizedBox(
+            width: 62,
+            child: Text(
+              '${pb.toStringAsFixed(2)}%',
+              textAlign: TextAlign.right,
+              style: const TextStyle(
+                color: Colors.black54,
+                fontSize: 10,
+              ),
+            ),
+          ),
+          SizedBox(
+            width: 65,
+            child: Text(
+              '${diff >= 0 ? '+' : ''}${diff.toStringAsFixed(2)} pp',
+              textAlign: TextAlign.right,
+              style: TextStyle(
+                color: diff >= 0 ? verde : rojo,
+                fontSize: 9,
+                fontWeight: FontWeight.w900,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Color _colorClase(String name) {
+    switch (name.toUpperCase()) {
+      case 'CL5':
+        return verde;
+      case 'CL2':
+        return naranja;
+      case 'CL1':
+        return azulClaro;
+      case 'CL6':
+        return morado;
+      default:
+        return const Color(0xFF64748B);
+    }
+  }
+
+  Widget _carteraComparativa(
+    List<Map<String, dynamic>> a,
+    List<Map<String, dynamic>> b,
+  ) {
+    final mapA = {for (final r in a) _s(r['cliente']): r};
+    final mapB = {for (final r in b) _s(r['cliente']): r};
+
+    final names = <String>{...mapA.keys, ...mapB.keys}
+        .where((x) => x.isNotEmpty)
+        .toList();
+
+    int nuevos = 0;
+    int crecieron = 0;
+    int disminuyeron = 0;
+    int sinCompra = 0;
+
+    for (final name in names) {
+      final va = _n(mapA[name]?['facturacion']);
+      final vb = _n(mapB[name]?['facturacion']);
+
+      if (vb == 0 && va > 0) {
+        nuevos++;
+      } else if (vb > 0 && va > vb) {
+        crecieron++;
+      } else if (va > 0 && va < vb) {
+        disminuyeron++;
+      } else if (va == 0 && vb > 0) {
+        sinCompra++;
+      }
+    }
+
+    return _panel(
+      title: 'Comportamiento de cartera',
+      subtitle: 'Comparativo $anioActual vs $anioComparacion',
+      icon: Icons.groups_outlined,
+      child: Padding(
+        padding: const EdgeInsets.all(12),
+        child: LayoutBuilder(
+          builder: (context, constraints) {
+            final columns = constraints.maxWidth < 700 ? 2 : 4;
+            const gap = 10.0;
+            final width =
+                (constraints.maxWidth - gap * (columns - 1)) /
+                    columns;
+
+            final cards = [
+              _carteraCard(
+                'Clientes nuevos',
+                nuevos,
+                verde,
+                Icons.group_add_outlined,
+                onTap: () => _mostrarDetalleCartera(
+                  titulo: 'Clientes nuevos',
+                  categoria: _CategoriaCartera.nuevos,
+                  actual: a,
+                  anterior: b,
+                  color: verde,
+                ),
+              ),
+              _carteraCard(
+                'Clientes que crecieron',
+                crecieron,
+                azulClaro,
+                Icons.trending_up_outlined,
+                onTap: () => _mostrarDetalleCartera(
+                  titulo: 'Clientes que crecieron',
+                  categoria: _CategoriaCartera.crecieron,
+                  actual: a,
+                  anterior: b,
+                  color: azulClaro,
+                ),
+              ),
+              _carteraCard(
+                'Clientes que disminuyeron',
+                disminuyeron,
+                naranja,
+                Icons.trending_down_outlined,
+                onTap: () => _mostrarDetalleCartera(
+                  titulo: 'Clientes que disminuyeron',
+                  categoria: _CategoriaCartera.disminuyeron,
+                  actual: a,
+                  anterior: b,
+                  color: naranja,
+                ),
+              ),
+              _carteraCard(
+                'Clientes sin compra',
+                sinCompra,
+                rojo,
+                Icons.person_off_outlined,
+                onTap: () => _mostrarDetalleCartera(
+                  titulo: 'Clientes sin compra',
+                  categoria: _CategoriaCartera.sinCompra,
+                  actual: a,
+                  anterior: b,
+                  color: rojo,
+                ),
+              ),
+            ];
+
+            return Wrap(
+              spacing: gap,
+              runSpacing: gap,
+              children: cards
+                  .map(
+                    (c) => SizedBox(
+                      width: width,
+                      child: c,
+                    ),
+                  )
+                  .toList(),
+            );
+          },
+        ),
+      ),
+    );
+  }
+
+  Widget _carteraCard(
+    String title,
+    int value,
+    Color color,
+    IconData icon, {
+    VoidCallback? onTap,
+  }) {
+    final card = Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: .055),
+        borderRadius: BorderRadius.circular(11),
+        border: Border.all(
+          color: color.withValues(alpha: .15),
+        ),
+      ),
+      child: Row(
+        children: [
+          Icon(icon, color: color, size: 22),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  title,
+                  style: const TextStyle(
+                    color: Colors.black54,
+                    fontSize: 10,
+                  ),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  integer.format(value),
+                  style: TextStyle(
+                    color: color,
+                    fontSize: 18,
+                    fontWeight: FontWeight.w900,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          if (onTap != null)
+            Icon(
+              Icons.open_in_new_rounded,
+              color: color.withValues(alpha: .65),
+              size: 16,
+            ),
+        ],
+      ),
+    );
+
+    if (onTap == null) return card;
+
+    return MouseRegion(
+      cursor: SystemMouseCursors.click,
+      child: GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onTap: onTap,
+        child: card,
+      ),
+    );
+  }
+
+  Future<void> _mostrarDetalleCartera({
+    required String titulo,
+    required _CategoriaCartera categoria,
+    required List<Map<String, dynamic>> actual,
+    required List<Map<String, dynamic>> anterior,
+    required Color color,
+  }) async {
+    final mapA = <String, Map<String, dynamic>>{
+      for (final r in actual)
+        if (_s(r['cliente']).isNotEmpty) _s(r['cliente']): r,
+    };
+    final mapB = <String, Map<String, dynamic>>{
+      for (final r in anterior)
+        if (_s(r['cliente']).isNotEmpty) _s(r['cliente']): r,
+    };
+
+    final nombres = <String>{...mapA.keys, ...mapB.keys};
+
+    final rows = <Map<String, dynamic>>[];
+
+    for (final nombre in nombres) {
+      final a = mapA[nombre];
+      final b = mapB[nombre];
+
+      final factA = _n(a?['facturacion']);
+      final factB = _n(b?['facturacion']);
+      final pesoA = _n(a?['peso']);
+      final pesoB = _n(b?['peso']);
+
+      bool incluir = false;
+
+      switch (categoria) {
+        case _CategoriaCartera.nuevos:
+          incluir = factB == 0 && factA > 0;
+          break;
+        case _CategoriaCartera.crecieron:
+          // No incluye clientes nuevos: esos tienen su propia categoría.
+          incluir = factB > 0 && factA > factB;
+          break;
+        case _CategoriaCartera.disminuyeron:
+          incluir = factA > 0 && factA < factB;
+          break;
+        case _CategoriaCartera.sinCompra:
+          incluir = factA == 0 && factB > 0;
+          break;
+      }
+
+      if (!incluir) continue;
+
+      final variacionMonto = factB == 0
+          ? null
+          : ((factA - factB) / factB) * 100;
+
+      final variacionPeso = pesoB == 0
+          ? null
+          : ((pesoA - pesoB) / pesoB) * 100;
+
+      rows.add({
+        'cliente': nombre,
+        'factA': factA,
+        'factB': factB,
+        'pesoA': pesoA,
+        'pesoB': pesoB,
+        'varMonto': variacionMonto,
+        'varPeso': variacionPeso,
+      });
+    }
+
+    rows.sort(
+      (x, y) => _n(y['factA']).compareTo(_n(x['factA'])),
+    );
+
+    if (!mounted) return;
+
+    await showDialog<void>(
+      context: context,
+      builder: (dialogContext) {
+        final ancho = MediaQuery.of(dialogContext).size.width;
+        final alto = MediaQuery.of(dialogContext).size.height;
+
+        return AlertDialog(
+          backgroundColor: Colors.white,
+          surfaceTintColor: Colors.white,
+          titlePadding: const EdgeInsets.fromLTRB(22, 18, 18, 8),
+          contentPadding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+          title: Row(
+            children: [
+              Icon(Icons.groups_outlined, color: color, size: 25),
+              const SizedBox(width: 9),
+              Expanded(
+                child: Text(
+                  titulo,
+                  style: const TextStyle(
+                    color: azul,
+                    fontSize: 19,
+                    fontWeight: FontWeight.w900,
+                  ),
+                ),
+              ),
+              Container(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 10,
+                  vertical: 6,
+                ),
+                decoration: BoxDecoration(
+                  color: color.withValues(alpha: .08),
+                  borderRadius: BorderRadius.circular(20),
+                ),
+                child: Text(
+                  '${rows.length} clientes',
+                  style: TextStyle(
+                    color: color,
+                    fontSize: 11,
+                    fontWeight: FontWeight.w900,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          content: SizedBox(
+            width: ancho > 1200 ? 1100 : ancho * .90,
+            height: alto > 800 ? 570 : alto * .70,
+            child: Column(
+              children: [
+                Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.all(10),
+                  decoration: BoxDecoration(
+                    color: fondo,
+                    borderRadius: BorderRadius.circular(9),
+                    border: Border.all(color: borde),
+                  ),
+                  child: Text(
+                    'Comparación $anioActual vs $anioComparacion  •  '
+                    'Facturación y peso de cobre por cliente',
+                    style: const TextStyle(
+                      color: Colors.black54,
+                      fontSize: 11,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 10),
+                Expanded(
+                  child: rows.isEmpty
+                      ? Center(
+                          child: Text(
+                            'No hay clientes en esta categoría para el periodo seleccionado.',
+                            style: const TextStyle(
+                              color: Colors.black54,
+                              fontSize: 13,
+                            ),
+                          ),
+                        )
+                      : Container(
+                          decoration: BoxDecoration(
+                            border: Border.all(color: borde),
+                            borderRadius: BorderRadius.circular(9),
+                          ),
+                          child: ClipRRect(
+                            borderRadius: BorderRadius.circular(9),
+                            child: SingleChildScrollView(
+                              child: SingleChildScrollView(
+                                scrollDirection: Axis.horizontal,
+                                child: DataTable(
+                                  headingRowHeight: 42,
+                                  dataRowMinHeight: 48,
+                                  dataRowMaxHeight: 58,
+                                  columnSpacing: 22,
+                                  headingRowColor:
+                                      WidgetStatePropertyAll(
+                                    fondo,
+                                  ),
+                                  columns: [
+                                    const DataColumn(
+                                      label: Text(
+                                        'Cliente',
+                                        style: TextStyle(
+                                          color: azul,
+                                          fontWeight: FontWeight.w900,
+                                        ),
+                                      ),
+                                    ),
+                                    DataColumn(
+                                      numeric: true,
+                                      label: Text(
+                                        '$anioActual Fact.',
+                                        style: const TextStyle(
+                                          color: azul,
+                                          fontWeight: FontWeight.w900,
+                                        ),
+                                      ),
+                                    ),
+                                    DataColumn(
+                                      numeric: true,
+                                      label: Text(
+                                        '$anioComparacion Fact.',
+                                        style: const TextStyle(
+                                          color: azul,
+                                          fontWeight: FontWeight.w900,
+                                        ),
+                                      ),
+                                    ),
+                                    const DataColumn(
+                                      numeric: true,
+                                      label: Text(
+                                        'Var. monto',
+                                        style: TextStyle(
+                                          color: azul,
+                                          fontWeight: FontWeight.w900,
+                                        ),
+                                      ),
+                                    ),
+                                    DataColumn(
+                                      numeric: true,
+                                      label: Text(
+                                        '$anioActual Peso',
+                                        style: const TextStyle(
+                                          color: azul,
+                                          fontWeight: FontWeight.w900,
+                                        ),
+                                      ),
+                                    ),
+                                    DataColumn(
+                                      numeric: true,
+                                      label: Text(
+                                        '$anioComparacion Peso',
+                                        style: const TextStyle(
+                                          color: azul,
+                                          fontWeight: FontWeight.w900,
+                                        ),
+                                      ),
+                                    ),
+                                    const DataColumn(
+                                      numeric: true,
+                                      label: Text(
+                                        'Var. peso',
+                                        style: TextStyle(
+                                          color: azul,
+                                          fontWeight: FontWeight.w900,
+                                        ),
+                                      ),
+                                    ),
+                                  ],
+                                  rows: [
+                                    for (final row in rows)
+                                      DataRow(
+                                        cells: [
+                                          DataCell(
+                                            SizedBox(
+                                              width: 270,
+                                              child: Text(
+                                                _s(row['cliente']),
+                                                overflow:
+                                                    TextOverflow.ellipsis,
+                                                style: const TextStyle(
+                                                  fontSize: 11,
+                                                  fontWeight:
+                                                      FontWeight.w700,
+                                                ),
+                                              ),
+                                            ),
+                                          ),
+                                          DataCell(
+                                            Text(
+                                              'US\$ ${money.format(_n(row['factA']))}',
+                                              style: const TextStyle(
+                                                color: azulClaro,
+                                                fontSize: 11,
+                                                fontWeight:
+                                                    FontWeight.w800,
+                                              ),
+                                            ),
+                                          ),
+                                          DataCell(
+                                            Text(
+                                              'US\$ ${money.format(_n(row['factB']))}',
+                                              style: const TextStyle(
+                                                color: Colors.black54,
+                                                fontSize: 11,
+                                              ),
+                                            ),
+                                          ),
+                                          DataCell(
+                                            _variacionCell(
+                                              row['varMonto'] as double?,
+                                            ),
+                                          ),
+                                          DataCell(
+                                            Text(
+                                              '${money.format(_n(row['pesoA']))} kg',
+                                              style: const TextStyle(
+                                                color: azulClaro,
+                                                fontSize: 11,
+                                                fontWeight:
+                                                    FontWeight.w700,
+                                              ),
+                                            ),
+                                          ),
+                                          DataCell(
+                                            Text(
+                                              '${money.format(_n(row['pesoB']))} kg',
+                                              style: const TextStyle(
+                                                color: Colors.black54,
+                                                fontSize: 11,
+                                              ),
+                                            ),
+                                          ),
+                                          DataCell(
+                                            _variacionCell(
+                                              row['varPeso'] as double?,
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                  ],
+                                ),
+                              ),
+                            ),
+                          ),
+                        ),
+                ),
+              ],
+            ),
+          ),
+          actionsPadding: const EdgeInsets.fromLTRB(16, 0, 16, 14),
+          actions: [
+            FilledButton.icon(
+              onPressed: rows.isEmpty
+                  ? null
+                  : () => _imprimirDetalleCartera(
+                        titulo: titulo,
+                        categoria: categoria,
+                        rows: rows,
+                        color: color,
+                      ),
+              style: FilledButton.styleFrom(
+                backgroundColor: color,
+                foregroundColor: Colors.white,
+              ),
+              icon: const Icon(Icons.print_outlined, size: 18),
+              label: const Text(
+                'Imprimir detalle',
+                style: TextStyle(fontWeight: FontWeight.w800),
+              ),
+            ),
+            TextButton.icon(
+              onPressed: () => Navigator.of(dialogContext).pop(),
+              icon: const Icon(Icons.close),
+              label: const Text('Cerrar'),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  Future<void> _imprimirDetalleCartera({
+    required String titulo,
+    required _CategoriaCartera categoria,
+    required List<Map<String, dynamic>> rows,
+    required Color color,
+  }) async {
+    if (rows.isEmpty) return;
+
+    try {
+      final logoData = await services.rootBundle.load(
+        'assets/crm/images/logo_elcope.png',
+      );
+      final logo = pw.MemoryImage(logoData.buffer.asUint8List());
+
+      final pdfColor = PdfColor.fromHex(
+        '#${color.value.toRadixString(16).substring(2)}',
+      );
+
+      await Printing.layoutPdf(
+        name: 'ELCOPE_${titulo.replaceAll(' ', '_')}_${anioActual}_vs_$anioComparacion',
+        format: PdfPageFormat.a4.landscape,
+        onLayout: (format) async {
+          final pdf = pw.Document();
+
+          pdf.addPage(
+            pw.MultiPage(
+              pageFormat: PdfPageFormat.a4.landscape,
+              margin: const pw.EdgeInsets.fromLTRB(24, 18, 24, 18),
+              header: (context) => pw.Column(
+                children: [
+                  pw.Row(
+                    crossAxisAlignment: pw.CrossAxisAlignment.start,
+                    children: [
+                      pw.Container(
+                        width: 125,
+                        height: 40,
+                        alignment: pw.Alignment.centerLeft,
+                        child: pw.Image(logo, fit: pw.BoxFit.contain),
+                      ),
+                      pw.Expanded(
+                        child: pw.Column(
+                          crossAxisAlignment: pw.CrossAxisAlignment.center,
+                          children: [
+                            pw.Text(
+                              'DETALLE DE CARTERA',
+                              style: pw.TextStyle(
+                                color: PdfColor.fromHex('#0B4A78'),
+                                fontSize: 16,
+                                fontWeight: pw.FontWeight.bold,
+                              ),
+                            ),
+                            pw.SizedBox(height: 2),
+                            pw.Text(
+                              titulo.toUpperCase(),
+                              style: pw.TextStyle(
+                                color: pdfColor,
+                                fontSize: 10,
+                                fontWeight: pw.FontWeight.bold,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      pw.Container(
+                        width: 180,
+                        child: pw.Column(
+                          crossAxisAlignment: pw.CrossAxisAlignment.start,
+                          children: [
+                            _pdfMetaLine('Canal:', canal == 'TODOS' ? 'Todos' : canal),
+                            _pdfMetaLine('Vendedor:', _etiquetaVendedorReporte()),
+                            _pdfMetaLine('Periodo:', '${date.format(desde)} - ${date.format(hasta)}'),
+                            _pdfMetaLine('Comparar con:', '$anioComparacion'),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                  pw.SizedBox(height: 5),
+                  pw.Container(height: 2, color: PdfColor.fromHex('#0B4A78')),
+                  pw.SizedBox(height: 5),
+                  pw.Container(
+                    padding: const pw.EdgeInsets.symmetric(horizontal: 8, vertical: 5),
+                    decoration: pw.BoxDecoration(
+                      color: PdfColor.fromHex('#F4F7FA'),
+                      border: pw.Border.all(color: PdfColor.fromHex('#E2E8F0')),
+                    ),
+                    child: pw.Row(
+                      mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
+                      children: [
+                        pw.Text(
+                          'Comparación $anioActual vs $anioComparacion · Facturación y peso de cobre por cliente',
+                          style: const pw.TextStyle(fontSize: 7.5, color: PdfColors.grey700),
+                        ),
+                        pw.Text(
+                          '${rows.length} clientes',
+                          style: pw.TextStyle(fontSize: 7.5, color: pdfColor, fontWeight: pw.FontWeight.bold),
+                        ),
+                      ],
+                    ),
+                  ),
+                  pw.SizedBox(height: 7),
+                ],
+              ),
+              footer: (context) => pw.Row(
+                mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
+                children: [
+                  pw.Text(
+                    'ELCOPE · Reporte de cartera',
+                    style: const pw.TextStyle(fontSize: 6, color: PdfColors.grey700),
+                  ),
+                  pw.Text(
+                    'Página ${context.pageNumber} de ${context.pagesCount}',
+                    style: const pw.TextStyle(fontSize: 6, color: PdfColors.grey700),
+                  ),
+                ],
+              ),
+              build: (context) => [
+                pw.TableHelper.fromTextArray(
+                  border: pw.TableBorder.all(
+                    color: PdfColor.fromHex('#D9E1E8'),
+                    width: .5,
+                  ),
+                  headerDecoration: pw.BoxDecoration(
+                    color: PdfColor.fromHex('#EAF1F7'),
+                  ),
+                  headerStyle: pw.TextStyle(
+                    color: PdfColor.fromHex('#0B4A78'),
+                    fontSize: 7,
+                    fontWeight: pw.FontWeight.bold,
+                  ),
+                  cellStyle: const pw.TextStyle(fontSize: 6.5),
+                  cellPadding: const pw.EdgeInsets.symmetric(horizontal: 5, vertical: 4),
+                  columnWidths: {
+                    0: const pw.FlexColumnWidth(3.2),
+                    1: const pw.FlexColumnWidth(1.35),
+                    2: const pw.FlexColumnWidth(1.35),
+                    3: const pw.FlexColumnWidth(1.15),
+                    4: const pw.FlexColumnWidth(1.25),
+                    5: const pw.FlexColumnWidth(1.25),
+                    6: const pw.FlexColumnWidth(1.15),
+                  },
+                  headers: [
+                    'Cliente',
+                    '$anioActual Fact.',
+                    '$anioComparacion Fact.',
+                    'Var. monto',
+                    '$anioActual Peso',
+                    '$anioComparacion Peso',
+                    'Var. peso',
+                  ],
+                  data: [
+                    for (final row in rows)
+                      [
+                        _s(row['cliente']),
+                        'US\$ ${money.format(_n(row['factA']))}',
+                        'US\$ ${money.format(_n(row['factB']))}',
+                        _pdfVariationText(row['varMonto'] as double?),
+                        '${money.format(_n(row['pesoA']))} kg',
+                        '${money.format(_n(row['pesoB']))} kg',
+                        _pdfVariationText(row['varPeso'] as double?),
+                      ],
+                  ],
+                ),
+              ],
+            ),
+          );
+
+          return pdf.save();
+        },
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('No se pudo imprimir el detalle: $e')),
+      );
+    }
+  }
+
+  String _pdfVariationText(double? value) {
+    if (value == null || value.isNaN || value.isInfinite) return '—';
+    return '${value >= 0 ? '+' : ''}${value.toStringAsFixed(1)}%';
+  }
+
+  Widget _variacionCell(double? value) {
+    if (value == null || value.isNaN || value.isInfinite) {
+      return const Text(
+        '—',
+        style: TextStyle(
+          color: Colors.black45,
+          fontSize: 11,
+        ),
+      );
+    }
+
+    final positivo = value >= 0;
+
+    return Text(
+      '${positivo ? '+' : ''}${value.toStringAsFixed(1)}%',
+      style: TextStyle(
+        color: positivo ? verde : rojo,
+        fontSize: 11,
+        fontWeight: FontWeight.w900,
+      ),
+    );
+  }
+
+  Widget _indicadoresComparativos(
+    List<Map<String, dynamic>> vendedoresActuales,
+    List<Map<String, dynamic>> clientesActuales,
+  ) {
+    final k = Map<String, dynamic>.from(
+      data['kpis'] is Map ? data['kpis'] as Map : <String, dynamic>{},
+    );
+    final ka = Map<String, dynamic>.from(
+      dataAnterior['kpis'] is Map
+          ? dataAnterior['kpis'] as Map
+          : <String, dynamic>{},
+    );
+
+    final mensual = _mapList(data['mensual']);
+    final fact = _n(k['facturacion']);
+    final factAnterior = _n(ka['facturacion']);
+
+    final promedio = mensual.isEmpty ? 0.0 : fact / mensual.length;
+
+    Map<String, dynamic>? mejor;
+    if (mensual.isNotEmpty) {
+      mejor = mensual.reduce(
+        (x, y) => _n(x['facturacion']) >= _n(y['facturacion'])
+            ? x
+            : y,
+      );
+    }
+
+    final crecimiento = factAnterior == 0
+        ? 0.0
+        : ((fact - factAnterior) / factAnterior) * 100;
+
+    final ticket = _n(k['facturas']) == 0
+        ? 0.0
+        : fact / _n(k['facturas']);
+
+    final peso = _n(k['peso']);
+    final kgMil = fact == 0 ? 0.0 : peso / (fact / 1000);
+
+    return _panel(
+      title: 'Indicadores ejecutivos',
+      subtitle: 'Lectura rápida para gestión comercial',
+      icon: Icons.insights_outlined,
+      child: Padding(
+        padding: const EdgeInsets.all(12),
+        child: LayoutBuilder(
+          builder: (context, constraints) {
+            final columns = constraints.maxWidth < 800 ? 2 : 5;
+            const gap = 10.0;
+            final width =
+                (constraints.maxWidth - gap * (columns - 1)) /
+                    columns;
+
+            final cards = [
+              _indicatorCard(
+                'Promedio mensual',
+                'US\$ ${money.format(promedio)}',
+                Icons.show_chart,
+                azulClaro,
+              ),
+              _indicatorCard(
+                'Mejor mes',
+                mejor == null
+                    ? '-'
+                    : '${_s(mejor['periodo'])} · US\$ ${money.format(_n(mejor['facturacion']))}',
+                Icons.calendar_today_outlined,
+                verde,
+              ),
+              _indicatorCard(
+                'Crecimiento acumulado',
+                '${crecimiento >= 0 ? '+' : ''}${crecimiento.toStringAsFixed(1)}%',
+                Icons.percent_outlined,
+                azulClaro,
+              ),
+              _indicatorCard(
+                'Ticket promedio',
+                'US\$ ${money.format(ticket)}',
+                Icons.shopping_cart_outlined,
+                naranja,
+              ),
+              _indicatorCard(
+                'Kg / US\$ 1,000',
+                '${money.format(kgMil)} kg',
+                Icons.scale_outlined,
+                rojo,
+              ),
+            ];
+
+            return Wrap(
+              spacing: gap,
+              runSpacing: gap,
+              children: cards
+                  .map(
+                    (c) => SizedBox(
+                      width: width,
+                      child: c,
+                    ),
+                  )
+                  .toList(),
+            );
+          },
+        ),
+      ),
+    );
+  }
+
+  Widget _indicatorCard(
+    String title,
+    String value,
+    IconData icon,
+    Color color,
+  ) {
+    return Container(
+      padding: const EdgeInsets.all(11),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: .05),
+        borderRadius: BorderRadius.circular(11),
+        border: Border.all(
+          color: color.withValues(alpha: .15),
+        ),
+      ),
+      child: Row(
+        children: [
+          Icon(icon, color: color, size: 22),
+          const SizedBox(width: 7),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  title,
+                  style: const TextStyle(
+                    color: Colors.black54,
+                    fontSize: 9,
+                  ),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  value,
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    color: color,
+                    fontSize: 12,
+                    fontWeight: FontWeight.w900,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _mostrarComparativoMes(
+    Map<String, dynamic> row,
+  ) async {
+    final label = _s(row['label']);
+    final a = Map<String, dynamic>.from(
+      row['a'] is Map ? row['a'] as Map : <String, dynamic>{},
+    );
+    final b = Map<String, dynamic>.from(
+      row['b'] is Map ? row['b'] as Map : <String, dynamic>{},
+    );
+
+    final factA = _n(a['facturacion']);
+    final factB = _n(b['facturacion']);
+    final pesoA = _n(a['peso']);
+    final pesoB = _n(b['peso']);
+
+    await showDialog<void>(
+      context: context,
+      builder: (context) {
+        return AlertDialog(
+          title: Text(
+            'Comparativo comercial — $label',
+            style: const TextStyle(
+              color: azul,
+              fontWeight: FontWeight.w900,
+            ),
+          ),
+          content: SizedBox(
+            width: 680,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Row(
+                  children: [
+                    Expanded(
+                      child: _dialogMetric(
+                        '$anioActual',
+                        'US\$ ${money.format(factA)}',
+                        azulClaro,
+                      ),
+                    ),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: _dialogMetric(
+                        '$anioComparacion',
+                        'US\$ ${money.format(factB)}',
+                        naranja,
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 10),
+                Row(
+                  children: [
+                    Expanded(
+                      child: _dialogMetric(
+                        'Peso $anioActual',
+                        '${money.format(pesoA)} kg',
+                        azulClaro,
+                      ),
+                    ),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: _dialogMetric(
+                        'Peso $anioComparacion',
+                        '${money.format(pesoB)} kg',
+                        naranja,
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 14),
+                Text(
+                  'Variación facturación: ${factB == 0 ? '0.0' : ((factA - factB) / factB * 100).toStringAsFixed(1)}%',
+                  style: TextStyle(
+                    color: factA >= factB ? verde : rojo,
+                    fontWeight: FontWeight.w900,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  'Variación peso: ${pesoB == 0 ? '0.0' : ((pesoA - pesoB) / pesoB * 100).toStringAsFixed(1)}%',
+                  style: TextStyle(
+                    color: pesoA >= pesoB ? verde : rojo,
+                    fontWeight: FontWeight.w900,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('Cerrar'),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  Widget _dialogMetric(
+    String title,
+    String value,
+    Color color,
+  ) {
+    return Container(
+      padding: const EdgeInsets.all(13),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: .06),
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(
+          color: color.withValues(alpha: .16),
+        ),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            title,
+            style: const TextStyle(
+              color: Colors.black54,
+              fontSize: 10,
+            ),
+          ),
+          const SizedBox(height: 3),
+          Text(
+            value,
+            style: TextStyle(
+              color: color,
+              fontSize: 16,
+              fontWeight: FontWeight.w900,
+            ),
+          ),
+        ],
+      ),
     );
   }
 
@@ -2027,145 +5404,6 @@ class _CrmReportesPageState extends State<CrmReportesPage> {
     );
   }
 
-
-  Color _colorClase(String clase) {
-    switch (clase.toUpperCase()) {
-      case 'CL1':
-        return azulClaro;
-      case 'CL2':
-        return naranja;
-      case 'CL5':
-        return verde;
-      case 'CL6':
-        return morado;
-      default:
-        return const Color(0xFF64748B);
-    }
-  }
-
-  Widget _distribucionClases(List<Map<String, dynamic>> rows) {
-    final ordered = [...rows]
-      ..sort((a, b) => _n(b['facturacion']).compareTo(_n(a['facturacion'])));
-
-    final total = ordered.fold<double>(
-      0,
-      (sum, row) => sum + _n(row['facturacion']),
-    );
-
-    return _panel(
-      title: 'Distribución por clase',
-      subtitle: 'Participación de la facturación por clase de cable',
-      icon: Icons.donut_large_outlined,
-      child: ordered.isEmpty
-          ? const Padding(
-              padding: EdgeInsets.all(24),
-              child: Text('No hay información de clases.'),
-            )
-          : SizedBox(
-              height: 330,
-              child: LayoutBuilder(
-                builder: (context, constraints) {
-                  final compact = constraints.maxWidth < 500;
-                  final size = compact ? 175.0 : 210.0;
-
-                  return Row(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      SizedBox(
-                        width: size,
-                        height: size,
-                        child: Stack(
-                          alignment: Alignment.center,
-                          children: [
-                            CustomPaint(
-                              size: Size(size, size),
-                              painter: _DonutPainter(
-                                rows: ordered,
-                                colors: [
-                                  for (final row in ordered)
-                                    _colorClase(_s(row['clase'])),
-                                ],
-                              ),
-                            ),
-                            Column(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                const Text(
-                                  'FACTURACIÓN',
-                                  style: TextStyle(
-                                    fontSize: 9,
-                                    color: Colors.black45,
-                                    fontWeight: FontWeight.w800,
-                                  ),
-                                ),
-                                const SizedBox(height: 3),
-                                Text(
-                                  'US\$ ${_factLabel(total)}',
-                                  style: const TextStyle(
-                                    fontSize: 14,
-                                    color: azul,
-                                    fontWeight: FontWeight.w900,
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ],
-                        ),
-                      ),
-                      const SizedBox(width: 22),
-                      Expanded(
-                        child: ListView.separated(
-                          shrinkWrap: true,
-                          itemCount: ordered.length,
-                          separatorBuilder: (_, __) => const SizedBox(height: 9),
-                          itemBuilder: (context, index) {
-                            final row = ordered[index];
-                            final clase = _s(row['clase']).isEmpty
-                                ? 'SIN CLASE'
-                                : _s(row['clase']);
-                            final color = _colorClase(clase);
-
-                            return Row(
-                              children: [
-                                Container(
-                                  width: 12,
-                                  height: 12,
-                                  decoration: BoxDecoration(
-                                    color: color,
-                                    borderRadius: BorderRadius.circular(3),
-                                  ),
-                                ),
-                                const SizedBox(width: 7),
-                                Expanded(
-                                  child: Text(
-                                    clase,
-                                    style: const TextStyle(
-                                      fontSize: 12,
-                                      fontWeight: FontWeight.w800,
-                                    ),
-                                  ),
-                                ),
-                                Text(
-                                  '${_n(row['porcentaje']).toStringAsFixed(2)}%',
-                                  style: TextStyle(
-                                    color: color,
-                                    fontSize: 11,
-                                    fontWeight: FontWeight.w900,
-                                  ),
-                                ),
-                              ],
-                            );
-                          },
-                        ),
-                      ),
-                    ],
-                  );
-                },
-              ),
-            ),
-    );
-  }
-
   Widget _rankingAsesores(List<Map<String, dynamic>> rows) {
     final top = rows.take(10).toList();
     final max = top.isEmpty ? 0.0 : _n(top.first['facturacion']);
@@ -2479,54 +5717,6 @@ class _CrmReportesPageState extends State<CrmReportesPage> {
 }
 
 
-
-class _DonutPainter extends CustomPainter {
-  final List<Map<String, dynamic>> rows;
-  final List<Color> colors;
-
-  _DonutPainter({
-    required this.rows,
-    required this.colors,
-  });
-
-  double _value(dynamic value) {
-    if (value is num) return value.toDouble();
-    return double.tryParse(value?.toString() ?? '') ?? 0;
-  }
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    final total = rows.fold<double>(
-      0,
-      (sum, row) => sum + _value(row['facturacion']),
-    );
-
-    if (total <= 0) return;
-
-    final center = size.center(Offset.zero);
-    final radius = size.shortestSide / 2 - 8;
-    final rect = Rect.fromCircle(center: center, radius: radius);
-
-    var start = -3.141592653589793 / 2;
-
-    final paint = Paint()
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = radius * .30;
-
-    for (var i = 0; i < rows.length; i++) {
-      final value = _value(rows[i]['facturacion']);
-      final sweep = value / total * 2 * 3.141592653589793;
-
-      paint.color = colors[i % colors.length];
-      canvas.drawArc(rect, start, sweep, false, paint);
-      start += sweep;
-    }
-  }
-
-  @override
-  bool shouldRepaint(covariant _DonutPainter oldDelegate) => true;
-}
-
 class _LegendDot extends StatelessWidget {
   final Color color;
   final String label;
@@ -2560,5 +5750,91 @@ class _LegendDot extends StatelessWidget {
         ),
       ],
     );
+  }
+}
+
+
+class _DonutPainter extends CustomPainter {
+  final Map<String, double> values;
+
+  const _DonutPainter({
+    required this.values,
+  });
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final entries = values.entries
+        .where((entry) => entry.value > 0)
+        .toList();
+
+    final total = entries.fold<double>(
+      0,
+      (sum, entry) => sum + entry.value,
+    );
+
+    final center = Offset(
+      size.width / 2,
+      size.height / 2,
+    );
+
+    final radius = size.shortestSide / 2 - 7;
+
+    final colors = <Color>[
+      const Color(0xFF079B63),
+      const Color(0xFFF08A00),
+      const Color(0xFF1877D1),
+      const Color(0xFF64748B),
+      const Color(0xFF5B45C5),
+      const Color(0xFF0F766E),
+    ];
+
+    final paint = Paint()
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 25
+      ..strokeCap = StrokeCap.butt;
+
+    if (total <= 0) {
+      paint.color = const Color(0xFFE5E7EB);
+      canvas.drawCircle(center, radius, paint);
+      return;
+    }
+
+    double start = -3.141592653589793 / 2;
+
+    for (var i = 0; i < entries.length; i++) {
+      final value = entries[i].value;
+      final sweep =
+          value / total * 3.141592653589793 * 2;
+
+      paint.color = colors[i % colors.length];
+
+      canvas.drawArc(
+        Rect.fromCircle(
+          center: center,
+          radius: radius,
+        ),
+        start,
+        sweep,
+        false,
+        paint,
+      );
+
+      start += sweep;
+    }
+  }
+
+  @override
+  bool shouldRepaint(covariant _DonutPainter oldDelegate) {
+    if (oldDelegate.values.length != values.length) {
+      return true;
+    }
+
+    for (final entry in values.entries) {
+      if (oldDelegate.values[entry.key] != entry.value) {
+        return true;
+      }
+    }
+
+    return false;
   }
 }

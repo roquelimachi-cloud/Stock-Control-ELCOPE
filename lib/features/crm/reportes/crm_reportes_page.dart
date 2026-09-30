@@ -1,4 +1,8 @@
 
+import 'dart:io';
+
+import 'package:excel/excel.dart' hide Border;
+import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart' as services;
 import 'package:intl/intl.dart';
@@ -1221,7 +1225,7 @@ class _CrmReportesPageState extends State<CrmReportesPage> {
       padding: const pw.EdgeInsets.fromLTRB(6, 4, 6, 3),
       decoration: pw.BoxDecoration(color: PdfColors.white, border: pw.Border.all(color: PdfColor.fromHex('#D6E0E8'), width: .6), borderRadius: pw.BorderRadius.circular(5)),
       child: pw.Column(crossAxisAlignment: pw.CrossAxisAlignment.stretch, children: [
-        pw.Text('Indicadores ejecutivos', style: pw.TextStyle(fontSize: 7.2, fontWeight: pw.FontWeight.bold, color: PdfColor.fromHex('#0B4A78'))),
+        pw.Text('Indicadores ejecutivos-Promedio', style: pw.TextStyle(fontSize: 7.2, fontWeight: pw.FontWeight.bold, color: PdfColor.fromHex('#0B4A78'))),
         pw.Text('Lectura rápida para gestión comercial', style: const pw.TextStyle(fontSize: 5, color: PdfColors.grey600)),
         pw.SizedBox(height: 3),
         pw.Row(children: [
@@ -4180,6 +4184,177 @@ class _CrmReportesPageState extends State<CrmReportesPage> {
     );
   }
 
+  Future<Map<String, String>> _cargarVendedorPorCliente(
+    Iterable<String> clientes,
+  ) async {
+    // IMPORTANTE:
+    // No consultamos crm_facturas directamente desde Flutter para obtener
+    // el vendedor porque esa tabla puede estar protegida por RLS.
+    // El RPC crm_obtener_vendedor_clientes es SECURITY DEFINER y devuelve
+    // el asesor real aun cuando el usuario solo tenga acceso al reporte.
+    final objetivo = clientes
+        .map((e) => e.trim())
+        .where((e) => e.isNotEmpty)
+        .toSet();
+
+    if (objetivo.isEmpty) return <String, String>{};
+
+    final salida = <String, String>{};
+
+    Future<void> leerPeriodo(DateTime ini, DateTime fin) async {
+      final result = await db.rpc(
+        'crm_obtener_vendedor_clientes',
+        params: {
+          'p_clientes': objetivo.toList(),
+          'p_desde': DateFormat('yyyy-MM-dd').format(ini),
+          'p_hasta': DateFormat('yyyy-MM-dd').format(fin),
+          'p_vendedores_permitidos': vendedoresPermitidos,
+          'p_vendedor': vendedor,
+          'p_canal': canal,
+        },
+      );
+
+      if (result is! List) return;
+
+      for (final raw in result) {
+        if (raw is! Map) continue;
+
+        final cliente = _s(raw['cliente']).trim().toUpperCase();
+        final asesor = _s(raw['vendedor']).trim();
+
+        if (cliente.isEmpty || asesor.isEmpty) continue;
+        if (!objetivo.map((e) => e.toUpperCase()).contains(cliente)) continue;
+
+        // El periodo actual tiene prioridad. Para clientes sin compra en
+        // el año actual, el segundo periodo (comparativo) completa el dato.
+        salida[cliente] = asesor;
+      }
+    }
+
+    try {
+      // Primero el año actual.
+      await leerPeriodo(
+        desde,
+        hasta,
+      );
+
+      // Después el año comparativo. Solo completa los que todavía no tienen
+      // vendedor del año actual.
+      final actual = Map<String, String>.from(salida);
+      final anterior = <String, String>{};
+
+      final result = await db.rpc(
+        'crm_obtener_vendedor_clientes',
+        params: {
+          'p_clientes': objetivo.toList(),
+          'p_desde': DateFormat('yyyy-MM-dd').format(
+            _fechaAnio(desde, anioComparacion),
+          ),
+          'p_hasta': DateFormat('yyyy-MM-dd').format(
+            _fechaAnio(hasta, anioComparacion),
+          ),
+          'p_vendedores_permitidos': vendedoresPermitidos,
+          'p_vendedor': vendedor,
+          'p_canal': canal,
+        },
+      );
+
+      if (result is List) {
+        for (final raw in result) {
+          if (raw is! Map) continue;
+          final cliente = _s(raw['cliente']).trim().toUpperCase();
+          final asesor = _s(raw['vendedor']).trim();
+          if (cliente.isEmpty || asesor.isEmpty) continue;
+          anterior[cliente] = asesor;
+        }
+      }
+
+      for (final cliente in objetivo) {
+        final key = cliente.toUpperCase();
+        if (!actual.containsKey(key) && anterior.containsKey(key)) {
+          salida[key] = anterior[key]!;
+        }
+      }
+    } catch (e) {
+      // No dejamos que un fallo del mapeo del vendedor rompa la vista.
+      debugPrint('crm_obtener_vendedor_clientes: $e');
+    }
+
+    return salida;
+  }
+
+  Future<void> _exportarDetalleCarteraExcel({
+    required String titulo,
+    required List<Map<String, dynamic>> rows,
+  }) async {
+    if (rows.isEmpty) return;
+
+    try {
+      final vendedorPorCliente = await _cargarVendedorPorCliente(
+        rows.map((r) => _s(r['cliente'])),
+      );
+
+      final excel = Excel.createExcel();
+      final sheetName = titulo.length > 25
+          ? titulo.substring(0, 25)
+          : titulo;
+      final sheet = excel[sheetName];
+
+      sheet.appendRow([
+        TextCellValue('Cliente'),
+        TextCellValue('Vendedor'),
+        TextCellValue('$anioActual Fact.'),
+        TextCellValue('$anioComparacion Fact.'),
+        TextCellValue('Var. monto'),
+        TextCellValue('$anioActual Peso'),
+        TextCellValue('$anioComparacion Peso'),
+        TextCellValue('Var. peso'),
+      ]);
+
+      for (final row in rows) {
+        final cliente = _s(row['cliente']);
+        final vm = row['varMonto'] as double?;
+        final vp = row['varPeso'] as double?;
+        sheet.appendRow([
+          TextCellValue(cliente),
+          TextCellValue(vendedorPorCliente[cliente.trim().toUpperCase()] ??
+              (vendedor == 'TODOS' ? 'No identificado' : vendedor)),
+          DoubleCellValue(_n(row['factA'])),
+          DoubleCellValue(_n(row['factB'])),
+          vm == null ? TextCellValue('—') : DoubleCellValue(vm),
+          DoubleCellValue(_n(row['pesoA'])),
+          DoubleCellValue(_n(row['pesoB'])),
+          vp == null ? TextCellValue('—') : DoubleCellValue(vp),
+        ]);
+      }
+
+      final bytes = excel.encode();
+      if (bytes == null) throw Exception('No se pudo generar el archivo Excel.');
+
+      final safeTitle = titulo
+          .replaceAll(RegExp(r'[^a-zA-Z0-9áéíóúÁÉÍÓÚñÑ _-]'), '')
+          .replaceAll(' ', '_');
+      final path = await FilePicker.platform.saveFile(
+        dialogTitle: 'Guardar detalle de cartera en Excel',
+        fileName: 'ELCOPE_${safeTitle}_${anioActual}_vs_$anioComparacion.xlsx',
+        type: FileType.custom,
+        allowedExtensions: ['xlsx'],
+      );
+      if (path == null || path.isEmpty) return;
+
+      await File(path).writeAsBytes(bytes, flush: true);
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Excel generado correctamente: $path')),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('No se pudo exportar a Excel: $e')),
+      );
+    }
+  }
+
   Future<void> _mostrarDetalleCartera({
     required String titulo,
     required _CategoriaCartera categoria,
@@ -4254,6 +4429,12 @@ class _CrmReportesPageState extends State<CrmReportesPage> {
 
     if (!mounted) return;
 
+    final vendedorPorCliente = await _cargarVendedorPorCliente(
+      rows.map((r) => _s(r['cliente'])),
+    );
+
+    if (!mounted) return;
+
     await showDialog<void>(
       context: context,
       builder: (dialogContext) {
@@ -4312,14 +4493,65 @@ class _CrmReportesPageState extends State<CrmReportesPage> {
                     borderRadius: BorderRadius.circular(9),
                     border: Border.all(color: borde),
                   ),
-                  child: Text(
-                    'Comparación $anioActual vs $anioComparacion  •  '
-                    'Facturación y peso de cobre por cliente',
-                    style: const TextStyle(
-                      color: Colors.black54,
-                      fontSize: 11,
-                      fontWeight: FontWeight.w600,
-                    ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Comparación $anioActual vs $anioComparacion  •  '
+                        'Facturación y peso de cobre por cliente',
+                        style: const TextStyle(
+                          color: Colors.black54,
+                          fontSize: 11,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                      const SizedBox(height: 5),
+                      Row(
+                        children: [
+                          const Icon(
+                            Icons.person_outline,
+                            size: 15,
+                            color: azul,
+                          ),
+                          const SizedBox(width: 5),
+                          const Text(
+                            'Vendedor:',
+                            style: TextStyle(
+                              color: azul,
+                              fontSize: 10,
+                              fontWeight: FontWeight.w800,
+                            ),
+                          ),
+                          const SizedBox(width: 5),
+                          Expanded(
+                            child: Text(
+                              _etiquetaVendedorReporte(),
+                              overflow: TextOverflow.ellipsis,
+                              style: const TextStyle(
+                                color: Colors.black87,
+                                fontSize: 10,
+                                fontWeight: FontWeight.w700,
+                              ),
+                            ),
+                          ),
+                          const SizedBox(width: 12),
+                          const Icon(
+                            Icons.storefront_outlined,
+                            size: 14,
+                            color: azul,
+                          ),
+                          const SizedBox(width: 4),
+                          Text(
+                            'Canal: ${canal == 'TODOS' ? 'Todos' : canal}',
+                            style: const TextStyle(
+                              color: Colors.black87,
+                              fontSize: 10,
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
                   ),
                 ),
                 const SizedBox(height: 10),
@@ -4357,6 +4589,15 @@ class _CrmReportesPageState extends State<CrmReportesPage> {
                                     const DataColumn(
                                       label: Text(
                                         'Cliente',
+                                        style: TextStyle(
+                                          color: azul,
+                                          fontWeight: FontWeight.w900,
+                                        ),
+                                      ),
+                                    ),
+                                    const DataColumn(
+                                      label: Text(
+                                        'Vendedor',
                                         style: TextStyle(
                                           color: azul,
                                           fontWeight: FontWeight.w900,
@@ -4444,6 +4685,20 @@ class _CrmReportesPageState extends State<CrmReportesPage> {
                                             ),
                                           ),
                                           DataCell(
+                                            SizedBox(
+                                              width: 150,
+                                              child: Text(
+                                                vendedorPorCliente[_s(row['cliente']).trim().toUpperCase()] ??
+                                                    (vendedor == 'TODOS' ? 'No identificado' : vendedor),
+                                                overflow: TextOverflow.ellipsis,
+                                                style: const TextStyle(
+                                                  fontSize: 11,
+                                                  fontWeight: FontWeight.w700,
+                                                ),
+                                              ),
+                                            ),
+                                          ),
+                                          DataCell(
                                             Text(
                                               'US\$ ${money.format(_n(row['factA']))}',
                                               style: const TextStyle(
@@ -4507,6 +4762,19 @@ class _CrmReportesPageState extends State<CrmReportesPage> {
           ),
           actionsPadding: const EdgeInsets.fromLTRB(16, 0, 16, 14),
           actions: [
+            OutlinedButton.icon(
+              onPressed: rows.isEmpty
+                  ? null
+                  : () => _exportarDetalleCarteraExcel(
+                        titulo: titulo,
+                        rows: rows,
+                      ),
+              icon: const Icon(Icons.table_view_outlined, size: 18),
+              label: const Text(
+                'Exportar Excel',
+                style: TextStyle(fontWeight: FontWeight.w800),
+              ),
+            ),
             FilledButton.icon(
               onPressed: rows.isEmpty
                   ? null
@@ -4544,6 +4812,10 @@ class _CrmReportesPageState extends State<CrmReportesPage> {
     required Color color,
   }) async {
     if (rows.isEmpty) return;
+
+    final vendedorPorCliente = await _cargarVendedorPorCliente(
+      rows.map((r) => _s(r['cliente'])),
+    );
 
     try {
       final logoData = await services.rootBundle.load(
@@ -4626,9 +4898,25 @@ class _CrmReportesPageState extends State<CrmReportesPage> {
                     child: pw.Row(
                       mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
                       children: [
-                        pw.Text(
-                          'Comparación $anioActual vs $anioComparacion · Facturación y peso de cobre por cliente',
-                          style: const pw.TextStyle(fontSize: 7.5, color: PdfColors.grey700),
+                        pw.Expanded(
+                          child: pw.Column(
+                            crossAxisAlignment: pw.CrossAxisAlignment.start,
+                            children: [
+                              pw.Text(
+                                'Comparación $anioActual vs $anioComparacion · Facturación y peso de cobre por cliente',
+                                style: const pw.TextStyle(fontSize: 7.5, color: PdfColors.grey700),
+                              ),
+                              pw.SizedBox(height: 2),
+                              pw.Text(
+                                'Vendedor: ${_etiquetaVendedorReporte()}   ·   Canal: ${canal == 'TODOS' ? 'Todos' : canal}',
+                                style: pw.TextStyle(
+                                  fontSize: 7.2,
+                                  color: PdfColor.fromHex('#0B4A78'),
+                                  fontWeight: pw.FontWeight.bold,
+                                ),
+                              ),
+                            ],
+                          ),
                         ),
                         pw.Text(
                           '${rows.length} clientes',
@@ -4670,16 +4958,18 @@ class _CrmReportesPageState extends State<CrmReportesPage> {
                   cellStyle: const pw.TextStyle(fontSize: 6.5),
                   cellPadding: const pw.EdgeInsets.symmetric(horizontal: 5, vertical: 4),
                   columnWidths: {
-                    0: const pw.FlexColumnWidth(3.2),
-                    1: const pw.FlexColumnWidth(1.35),
-                    2: const pw.FlexColumnWidth(1.35),
-                    3: const pw.FlexColumnWidth(1.15),
-                    4: const pw.FlexColumnWidth(1.25),
-                    5: const pw.FlexColumnWidth(1.25),
-                    6: const pw.FlexColumnWidth(1.15),
+                    0: const pw.FlexColumnWidth(2.7),
+                    1: const pw.FlexColumnWidth(1.8),
+                    2: const pw.FlexColumnWidth(1.25),
+                    3: const pw.FlexColumnWidth(1.25),
+                    4: const pw.FlexColumnWidth(1.1),
+                    5: const pw.FlexColumnWidth(1.2),
+                    6: const pw.FlexColumnWidth(1.2),
+                    7: const pw.FlexColumnWidth(1.1),
                   },
                   headers: [
                     'Cliente',
+                    'Vendedor',
                     '$anioActual Fact.',
                     '$anioComparacion Fact.',
                     'Var. monto',
@@ -4691,6 +4981,8 @@ class _CrmReportesPageState extends State<CrmReportesPage> {
                     for (final row in rows)
                       [
                         _s(row['cliente']),
+                        vendedorPorCliente[_s(row['cliente']).trim().toUpperCase()] ??
+                            (vendedor == 'TODOS' ? 'No identificado' : vendedor),
                         'US\$ ${money.format(_n(row['factA']))}',
                         'US\$ ${money.format(_n(row['factB']))}',
                         _pdfVariationText(row['varMonto'] as double?),

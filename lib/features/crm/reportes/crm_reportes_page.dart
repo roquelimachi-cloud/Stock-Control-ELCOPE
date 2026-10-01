@@ -69,6 +69,18 @@ class _CrmReportesPageState extends State<CrmReportesPage> {
   int anioComparacion = DateTime.now().year - 1;
   String? error;
 
+  // Comparación independiente de asesores (VS).
+  bool loadingComparacion = false;
+  String? vendedorComparacionA;
+  String? vendedorComparacionB;
+  Map<String, dynamic> dataComparacionA = {};
+  Map<String, dynamic> dataComparacionAAnterior = {};
+  Map<String, dynamic> dataComparacionB = {};
+  Map<String, dynamic> dataComparacionBAnterior = {};
+
+  List<Map<String, dynamic>> sectoresComparacionA = [];
+  List<Map<String, dynamic>> sectoresComparacionB = [];
+
   bool get esGerencia => Sesion.rol.trim().toLowerCase() == 'gerencia';
 
   bool get esJefatura {
@@ -109,7 +121,24 @@ class _CrmReportesPageState extends State<CrmReportesPage> {
 
   Future<void> _init() async {
     await _permisos();
+    _inicializarComparacionVendedores();
     await _cargar();
+  }
+
+  void _inicializarComparacionVendedores() {
+    if (vendedores.isEmpty) {
+      vendedorComparacionA = null;
+      vendedorComparacionB = null;
+      return;
+    }
+
+    vendedorComparacionA ??= vendedores.first;
+
+    if (vendedores.length > 1) {
+      vendedorComparacionB ??= vendedores[1];
+    } else {
+      vendedorComparacionB ??= vendedores.first;
+    }
   }
 
   Future<void> _permisos() async {
@@ -186,6 +215,108 @@ class _CrmReportesPageState extends State<CrmReportesPage> {
     return DateTime(anio, fecha.month, dia);
   }
 
+  Future<Map<String, dynamic>> _reporteParaVendedor(
+    String nombreVendedor,
+    DateTime fechaDesde,
+    DateTime fechaHasta,
+  ) async {
+    final result = await db.rpc(
+      'crm_obtener_reportes',
+      params: {
+        'p_vendedores_permitidos': vendedoresPermitidos,
+        'p_vendedor': nombreVendedor,
+        'p_desde': DateFormat('yyyy-MM-dd').format(fechaDesde),
+        'p_hasta': DateFormat('yyyy-MM-dd').format(fechaHasta),
+        'p_canal': canal,
+      },
+    );
+
+    return result is Map
+        ? Map<String, dynamic>.from(result)
+        : <String, dynamic>{};
+  }
+
+  Future<List<Map<String, dynamic>>> _sectoresParaVendedor(
+    String nombreVendedor,
+    DateTime fechaDesde,
+    DateTime fechaHasta,
+  ) async {
+    try {
+      final result = await db.rpc(
+        'crm_obtener_sectores_comparacion',
+        params: {
+          'p_vendedores_permitidos': vendedoresPermitidos,
+          'p_vendedor': nombreVendedor,
+          'p_desde': DateFormat('yyyy-MM-dd').format(fechaDesde),
+          'p_hasta': DateFormat('yyyy-MM-dd').format(fechaHasta),
+          'p_canal': canal,
+        },
+      );
+
+      return _mapList(result);
+    } catch (e) {
+      debugPrint('Error sectores $nombreVendedor: $e');
+      return <Map<String, dynamic>>[];
+    }
+  }
+
+  Future<void> _cargarComparacionVendedores() async {
+    _inicializarComparacionVendedores();
+
+    final a = vendedorComparacionA;
+    final b = vendedorComparacionB;
+
+    if (a == null || b == null || a.isEmpty || b.isEmpty) {
+      return;
+    }
+
+    if (mounted) {
+      setState(() => loadingComparacion = true);
+    }
+
+    try {
+      final desdeAnterior = _fechaAnio(desde, anioComparacion);
+      final hastaAnterior = _fechaAnio(hasta, anioComparacion);
+
+      final resultados = await Future.wait([
+        _reporteParaVendedor(a, desde, hasta),
+        _reporteParaVendedor(a, desdeAnterior, hastaAnterior),
+        _reporteParaVendedor(b, desde, hasta),
+        _reporteParaVendedor(b, desdeAnterior, hastaAnterior),
+        _sectoresParaVendedor(a, desde, hasta),
+        _sectoresParaVendedor(b, desde, hasta),
+      ]);
+
+      if (!mounted) return;
+
+      setState(() {
+        dataComparacionA = resultados[0] as Map<String, dynamic>;
+        dataComparacionAAnterior = resultados[1] as Map<String, dynamic>;
+        dataComparacionB = resultados[2] as Map<String, dynamic>;
+        dataComparacionBAnterior = resultados[3] as Map<String, dynamic>;
+        sectoresComparacionA =
+            resultados[4] as List<Map<String, dynamic>>;
+        sectoresComparacionB =
+            resultados[5] as List<Map<String, dynamic>>;
+        loadingComparacion = false;
+      });
+    } catch (e) {
+      debugPrint('Error en comparación de asesores: $e');
+
+      if (!mounted) return;
+
+      setState(() {
+        loadingComparacion = false;
+      });
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('No se pudo cargar la comparación de asesores: $e'),
+        ),
+      );
+    }
+  }
+
   Future<Map<String, dynamic>> _reporte(
     DateTime fechaDesde,
     DateTime fechaHasta,
@@ -227,6 +358,9 @@ class _CrmReportesPageState extends State<CrmReportesPage> {
         loading = false;
         error = null;
       });
+
+      _inicializarComparacionVendedores();
+      await _cargarComparacionVendedores();
     } catch (e) {
       if (!mounted) return;
       setState(() {
@@ -2782,9 +2916,992 @@ class _CrmReportesPageState extends State<CrmReportesPage> {
             );
           },
         ),
+
+        // ================================================================
+        // VS DE ASESORES — SECCIÓN INDEPENDIENTE
+        // No modifica ni reemplaza el dashboard ejecutivo anterior.
+        // ================================================================
+        const SizedBox(height: 18),
+        _comparacionAsesoresIndependiente(),
       ],
     );
   }
+
+  Widget _comparacionAsesoresIndependiente() {
+    final kA = Map<String, dynamic>.from(
+      dataComparacionA['kpis'] is Map
+          ? dataComparacionA['kpis'] as Map
+          : <String, dynamic>{},
+    );
+    final kB = Map<String, dynamic>.from(
+      dataComparacionB['kpis'] is Map
+          ? dataComparacionB['kpis'] as Map
+          : <String, dynamic>{},
+    );
+    final kaA = Map<String, dynamic>.from(
+      dataComparacionAAnterior['kpis'] is Map
+          ? dataComparacionAAnterior['kpis'] as Map
+          : <String, dynamic>{},
+    );
+    final kaB = Map<String, dynamic>.from(
+      dataComparacionBAnterior['kpis'] is Map
+          ? dataComparacionBAnterior['kpis'] as Map
+          : <String, dynamic>{},
+    );
+
+    final factA = _n(kA['facturacion']);
+    final factB = _n(kB['facturacion']);
+    final factAA = _n(kaA['facturacion']);
+    final factBB = _n(kaB['facturacion']);
+
+    final mensualA = _mapList(dataComparacionA['mensual']);
+    final mensualB = _mapList(dataComparacionB['mensual']);
+
+    final promedioA =
+        mensualA.isEmpty ? 0.0 : factA / mensualA.length.toDouble();
+    final promedioB =
+        mensualB.isEmpty ? 0.0 : factB / mensualB.length.toDouble();
+
+    final crecimientoA =
+        factAA == 0.0 ? 0.0 : ((factA - factAA) / factAA) * 100;
+    final crecimientoB =
+        factBB == 0.0 ? 0.0 : ((factB - factBB) / factBB) * 100;
+
+    final facturasA = _n(kA['facturas']);
+    final facturasB = _n(kB['facturas']);
+
+    final ticketA = facturasA == 0.0 ? 0.0 : factA / facturasA;
+    final ticketB = facturasB == 0.0 ? 0.0 : factB / facturasB;
+
+    final pesoA = _n(kA['peso']);
+    final pesoB = _n(kB['peso']);
+
+    final kgMilA = factA == 0.0 ? 0.0 : pesoA / (factA / 1000.0);
+    final kgMilB = factB == 0.0 ? 0.0 : pesoB / (factB / 1000.0);
+
+    return _panel(
+      title: 'Comparación dinámica de asesores',
+      subtitle:
+          'VS independiente del reporte ejecutivo · compara facturación, crecimiento, ticket y peso.',
+      icon: Icons.compare_arrows_outlined,
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(12, 4, 12, 12),
+        child: Column(
+          children: [
+            LayoutBuilder(
+              builder: (context, constraints) {
+                final stacked = constraints.maxWidth < 850;
+
+                final selectorA = DropdownButtonFormField<String>(
+                  initialValue: vendedores.contains(vendedorComparacionA)
+                      ? vendedorComparacionA
+                      : null,
+                  isExpanded: true,
+                  decoration: _filtroDecoration(
+                    'Asesor A',
+                    Icons.person_outline,
+                  ),
+                  items: vendedores
+                      .map(
+                        (v) => DropdownMenuItem<String>(
+                          value: v,
+                          child: Text(
+                            v,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                      )
+                      .toList(),
+                  onChanged: loadingComparacion
+                      ? null
+                      : (value) async {
+                          if (value == null) return;
+                          setState(() => vendedorComparacionA = value);
+                          await _cargarComparacionVendedores();
+                        },
+                );
+
+                final selectorB = DropdownButtonFormField<String>(
+                  initialValue: vendedores.contains(vendedorComparacionB)
+                      ? vendedorComparacionB
+                      : null,
+                  isExpanded: true,
+                  decoration: _filtroDecoration(
+                    'Asesor B',
+                    Icons.person_outline,
+                  ),
+                  items: vendedores
+                      .map(
+                        (v) => DropdownMenuItem<String>(
+                          value: v,
+                          child: Text(
+                            v,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                      )
+                      .toList(),
+                  onChanged: loadingComparacion
+                      ? null
+                      : (value) async {
+                          if (value == null) return;
+                          setState(() => vendedorComparacionB = value);
+                          await _cargarComparacionVendedores();
+                        },
+                );
+
+                if (stacked) {
+                  return Column(
+                    children: [
+                      selectorA,
+                      const SizedBox(height: 10),
+                      const Text(
+                        'VS',
+                        style: TextStyle(
+                          fontWeight: FontWeight.w900,
+                          color: azul,
+                        ),
+                      ),
+                      const SizedBox(height: 10),
+                      selectorB,
+                    ],
+                  );
+                }
+
+                return Row(
+                  children: [
+                    Expanded(child: selectorA),
+                    const Padding(
+                      padding: EdgeInsets.symmetric(horizontal: 10),
+                      child: Text(
+                        'VS',
+                        style: TextStyle(
+                          fontWeight: FontWeight.w900,
+                          color: azul,
+                        ),
+                      ),
+                    ),
+                    Expanded(child: selectorB),
+                  ],
+                );
+              },
+            ),
+            const SizedBox(height: 12),
+            if (loadingComparacion)
+              const Padding(
+                padding: EdgeInsets.symmetric(vertical: 28),
+                child: LinearProgressIndicator(minHeight: 3),
+              )
+            else if (vendedorComparacionA == null ||
+                vendedorComparacionB == null)
+              const Padding(
+                padding: EdgeInsets.all(20),
+                child: Text(
+                  'No hay asesores disponibles para realizar la comparación.',
+                ),
+              )
+            else ...[
+              LayoutBuilder(
+                builder: (context, constraints) {
+                  final columns = constraints.maxWidth < 900 ? 2 : 5;
+                  const gap = 10.0;
+                  final width = (constraints.maxWidth -
+                          gap * (columns - 1)) /
+                      columns;
+
+                  final cards = [
+                    _comparacionMiniCard(
+                      'Promedio mensual',
+                      promedioA,
+                      promedioB,
+                      (v) => 'US\$ ${money.format(v)}',
+                      Icons.show_chart,
+                      azulClaro,
+                    ),
+                    _comparacionMiniCard(
+                      'Facturación acumulada',
+                      factA,
+                      factB,
+                      (v) => 'US\$ ${money.format(v)}',
+                      Icons.bar_chart_outlined,
+                      verde,
+                    ),
+                    _comparacionMiniCard(
+                      'Crecimiento',
+                      crecimientoA,
+                      crecimientoB,
+                      (v) => '${v >= 0 ? '+' : ''}${v.toStringAsFixed(1)}%',
+                      Icons.percent_outlined,
+                      morado,
+                    ),
+                    _comparacionMiniCard(
+                      'Ticket promedio',
+                      ticketA,
+                      ticketB,
+                      (v) => 'US\$ ${money.format(v)}',
+                      Icons.shopping_cart_outlined,
+                      naranja,
+                    ),
+                    _comparacionMiniCard(
+                      'Kg / US\$ 1,000',
+                      kgMilA,
+                      kgMilB,
+                      (v) => '${money.format(v)} kg',
+                      Icons.scale_outlined,
+                      rojo,
+                    ),
+                  ];
+
+                  return Wrap(
+                    spacing: gap,
+                    runSpacing: gap,
+                    children: cards
+                        .map(
+                          (card) => SizedBox(
+                            width: width,
+                            child: card,
+                          ),
+                        )
+                        .toList(),
+                  );
+                },
+              ),
+              const SizedBox(height: 12),
+              _graficoMensualAsesoresComparados(
+                mensualA,
+                mensualB,
+              ),
+              const SizedBox(height: 14),
+              _desgloseCarteraVS(),
+              const SizedBox(height: 14),
+              _desgloseSectoresVS(),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+
+
+  Widget _desgloseCarteraVS() {
+    final actualA = _mapList(dataComparacionA['clientes']);
+    final anteriorA = _mapList(dataComparacionAAnterior['clientes']);
+    final actualB = _mapList(dataComparacionB['clientes']);
+    final anteriorB = _mapList(dataComparacionBAnterior['clientes']);
+
+    final categorias = [
+      (
+        titulo: 'Clientes nuevos',
+        color: verde,
+        icon: Icons.group_add_outlined,
+        categoria: _CategoriaCartera.nuevos,
+      ),
+      (
+        titulo: 'Clientes que crecieron',
+        color: azulClaro,
+        icon: Icons.trending_up_outlined,
+        categoria: _CategoriaCartera.crecieron,
+      ),
+      (
+        titulo: 'Clientes que disminuyeron',
+        color: naranja,
+        icon: Icons.trending_down_outlined,
+        categoria: _CategoriaCartera.disminuyeron,
+      ),
+      (
+        titulo: 'Clientes sin compra',
+        color: rojo,
+        icon: Icons.person_off_outlined,
+        categoria: _CategoriaCartera.sinCompra,
+      ),
+    ];
+
+    int contar(
+      List<Map<String, dynamic>> actual,
+      List<Map<String, dynamic>> anterior,
+      _CategoriaCartera categoria,
+    ) {
+      final mapA = {
+        for (final r in actual) _s(r['cliente']): r,
+      };
+      final mapB = {
+        for (final r in anterior) _s(r['cliente']): r,
+      };
+      final nombres = <String>{...mapA.keys, ...mapB.keys}
+          .where((x) => x.isNotEmpty);
+
+      var total = 0;
+      for (final nombre in nombres) {
+        final factA = _n(mapA[nombre]?['facturacion']);
+        final factB = _n(mapB[nombre]?['facturacion']);
+
+        switch (categoria) {
+          case _CategoriaCartera.nuevos:
+            if (factB == 0 && factA > 0) total++;
+            break;
+          case _CategoriaCartera.crecieron:
+            if (factB > 0 && factA > factB) total++;
+            break;
+          case _CategoriaCartera.disminuyeron:
+            if (factA > 0 && factA < factB) total++;
+            break;
+          case _CategoriaCartera.sinCompra:
+            if (factA == 0 && factB > 0) total++;
+            break;
+        }
+      }
+      return total;
+    }
+
+    return _panel(
+      title: 'Comportamiento de cartera — VS',
+      subtitle:
+          'Clientes comparados entre $anioActual y $anioComparacion por cada asesor',
+      icon: Icons.groups_outlined,
+      child: Padding(
+        padding: const EdgeInsets.all(12),
+        child: LayoutBuilder(
+          builder: (context, constraints) {
+            final columns = constraints.maxWidth < 850 ? 2 : 4;
+            const gap = 10.0;
+            final width =
+                (constraints.maxWidth - gap * (columns - 1)) / columns;
+
+            return Wrap(
+              spacing: gap,
+              runSpacing: gap,
+              children: [
+                for (final item in categorias)
+                  SizedBox(
+                    width: width,
+                    child: _carteraVSCard(
+                      titulo: item.titulo,
+                      color: item.color,
+                      icon: item.icon,
+                      valorA: contar(actualA, anteriorA, item.categoria),
+                      valorB: contar(actualB, anteriorB, item.categoria),
+                    ),
+                  ),
+              ],
+            );
+          },
+        ),
+      ),
+    );
+  }
+
+  Widget _carteraVSCard({
+    required String titulo,
+    required Color color,
+    required IconData icon,
+    required int valorA,
+    required int valorB,
+  }) {
+    return Container(
+      padding: const EdgeInsets.fromLTRB(11, 10, 11, 9),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: .045),
+        borderRadius: BorderRadius.circular(11),
+        border: Border.all(color: color.withValues(alpha: .16)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(icon, color: color, size: 20),
+              const SizedBox(width: 7),
+              Expanded(
+                child: Text(
+                  titulo,
+                  style: TextStyle(
+                    color: color,
+                    fontSize: 10.5,
+                    fontWeight: FontWeight.w900,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          Row(
+            children: [
+              Expanded(
+                child: _carteraVSDato(
+                  vendedorComparacionA ?? 'Asesor A',
+                  valorA,
+                  azulClaro,
+                ),
+              ),
+              Container(
+                width: 1,
+                height: 28,
+                color: borde,
+              ),
+              Expanded(
+                child: _carteraVSDato(
+                  vendedorComparacionB ?? 'Asesor B',
+                  valorB,
+                  naranja,
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _carteraVSDato(String nombre, int valor, Color color) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.center,
+      children: [
+        Text(
+          nombre,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          textAlign: TextAlign.center,
+          style: const TextStyle(
+            fontSize: 8.5,
+            color: Colors.black54,
+            fontWeight: FontWeight.w700,
+          ),
+        ),
+        const SizedBox(height: 2),
+        Text(
+          integer.format(valor),
+          style: TextStyle(
+            color: color,
+            fontSize: 17,
+            fontWeight: FontWeight.w900,
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _desgloseSectoresVS() {
+    final mapA = <String, Map<String, dynamic>>{
+      for (final row in sectoresComparacionA)
+        _s(row['sector']).isEmpty ? 'SIN SECTOR' : _s(row['sector']): row,
+    };
+    final mapB = <String, Map<String, dynamic>>{
+      for (final row in sectoresComparacionB)
+        _s(row['sector']).isEmpty ? 'SIN SECTOR' : _s(row['sector']): row,
+    };
+
+    final sectores = <String>{...mapA.keys, ...mapB.keys}.toList()
+      ..sort((a, b) {
+        final totalB = _n(mapA[b]?['facturacion']) +
+            _n(mapB[b]?['facturacion']);
+        final totalA = _n(mapA[a]?['facturacion']) +
+            _n(mapB[a]?['facturacion']);
+        final cmp = totalA.compareTo(totalB);
+        return cmp != 0 ? -cmp : a.compareTo(b);
+      });
+
+    if (sectores.isEmpty) {
+      return _panel(
+        title: 'Sectores — VS',
+        subtitle: 'Facturación por sector de cada asesor',
+        icon: Icons.business_center_outlined,
+        child: const Padding(
+          padding: EdgeInsets.all(18),
+          child: Text(
+            'No se encontraron sectores para el periodo seleccionado.',
+            style: TextStyle(color: Colors.black54, fontSize: 11),
+          ),
+        ),
+      );
+    }
+
+    final totalA = sectores.fold<double>(
+      0,
+      (sum, sector) => sum + _n(mapA[sector]?['facturacion']),
+    );
+    final totalB = sectores.fold<double>(
+      0,
+      (sum, sector) => sum + _n(mapB[sector]?['facturacion']),
+    );
+
+    return _panel(
+      title: 'Sectores — VS',
+      subtitle:
+          'Facturación, clientes y peso cobre por sector · periodo $anioActual',
+      icon: Icons.business_center_outlined,
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(10, 6, 10, 10),
+        child: Column(
+          children: [
+            Container(
+              padding: const EdgeInsets.symmetric(
+                horizontal: 10,
+                vertical: 7,
+              ),
+              decoration: BoxDecoration(
+                color: const Color(0xFFF8FAFC),
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: Row(
+                children: [
+                  const Expanded(
+                    child: Text(
+                      'Sector',
+                      style: TextStyle(
+                        color: azul,
+                        fontSize: 10,
+                        fontWeight: FontWeight.w900,
+                      ),
+                    ),
+                  ),
+                  SizedBox(
+                    width: 125,
+                    child: Text(
+                      vendedorComparacionA ?? 'Asesor A',
+                      textAlign: TextAlign.right,
+                      style: const TextStyle(
+                        color: azulClaro,
+                        fontSize: 10,
+                        fontWeight: FontWeight.w900,
+                      ),
+                    ),
+                  ),
+                  SizedBox(
+                    width: 125,
+                    child: Text(
+                      vendedorComparacionB ?? 'Asesor B',
+                      textAlign: TextAlign.right,
+                      style: const TextStyle(
+                        color: naranja,
+                        fontSize: 10,
+                        fontWeight: FontWeight.w900,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const Divider(height: 1),
+            for (final sector in sectores)
+              _filaSectorVS(
+                sector: sector,
+                a: mapA[sector],
+                b: mapB[sector],
+              ),
+            const Divider(height: 1),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(10, 8, 10, 2),
+              child: Row(
+                children: [
+                  const Expanded(
+                    child: Text(
+                      'TOTAL',
+                      style: TextStyle(
+                        color: azul,
+                        fontSize: 10,
+                        fontWeight: FontWeight.w900,
+                      ),
+                    ),
+                  ),
+                  SizedBox(
+                    width: 125,
+                    child: Text(
+                      'US\$ ${money.format(totalA)}',
+                      textAlign: TextAlign.right,
+                      style: const TextStyle(
+                        color: azulClaro,
+                        fontSize: 10,
+                        fontWeight: FontWeight.w900,
+                      ),
+                    ),
+                  ),
+                  SizedBox(
+                    width: 125,
+                    child: Text(
+                      'US\$ ${money.format(totalB)}',
+                      textAlign: TextAlign.right,
+                      style: const TextStyle(
+                        color: naranja,
+                        fontSize: 10,
+                        fontWeight: FontWeight.w900,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _filaSectorVS({
+    required String sector,
+    required Map<String, dynamic>? a,
+    required Map<String, dynamic>? b,
+  }) {
+    final factA = _n(a?['facturacion']);
+    final factB = _n(b?['facturacion']);
+    final clientesA = _n(a?['clientes']).round();
+    final clientesB = _n(b?['clientes']).round();
+
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+      decoration: const BoxDecoration(
+        border: Border(
+          bottom: BorderSide(color: borde),
+        ),
+      ),
+      child: Row(
+        children: [
+          Expanded(
+            child: Text(
+              sector,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(
+                fontSize: 10,
+                fontWeight: FontWeight.w800,
+              ),
+            ),
+          ),
+          SizedBox(
+            width: 125,
+            child: _sectorDatoVS(
+              facturacion: factA,
+              clientes: clientesA,
+              color: azulClaro,
+            ),
+          ),
+          SizedBox(
+            width: 125,
+            child: _sectorDatoVS(
+              facturacion: factB,
+              clientes: clientesB,
+              color: naranja,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _sectorDatoVS({
+    required double facturacion,
+    required int clientes,
+    required Color color,
+  }) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.end,
+      children: [
+        Text(
+          'US\$ ${_formatoCompacto(facturacion)}',
+          style: TextStyle(
+            color: color,
+            fontSize: 10,
+            fontWeight: FontWeight.w900,
+          ),
+        ),
+        Text(
+          '$clientes clientes',
+          style: const TextStyle(
+            color: Colors.black54,
+            fontSize: 8.5,
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _comparacionMiniCard(
+    String title,
+    double valueA,
+    double valueB,
+    String Function(double) formatter,
+    IconData icon,
+    Color color,
+  ) {
+    final nombreA = vendedorComparacionA ?? 'Asesor A';
+    final nombreB = vendedorComparacionB ?? 'Asesor B';
+
+    return Container(
+      padding: const EdgeInsets.all(10),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: .05),
+        borderRadius: BorderRadius.circular(11),
+        border: Border.all(color: color.withValues(alpha: .16)),
+      ),
+      child: Row(
+        children: [
+          Icon(icon, color: color, size: 21),
+          const SizedBox(width: 7),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  title,
+                  style: const TextStyle(
+                    color: Colors.black54,
+                    fontSize: 9,
+                  ),
+                ),
+                const SizedBox(height: 3),
+                Text(
+                  '$nombreA: ${formatter(valueA)}',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    color: azul,
+                    fontSize: 11,
+                    fontWeight: FontWeight.w900,
+                  ),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  '$nombreB: ${formatter(valueB)}',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    color: naranja,
+                    fontSize: 11,
+                    fontWeight: FontWeight.w900,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  List<Map<String, dynamic>> _mensualAsesoresComparados(
+    List<Map<String, dynamic>> actualA,
+    List<Map<String, dynamic>> actualB,
+  ) {
+    final ma = <int, Map<String, dynamic>>{};
+    final mb = <int, Map<String, dynamic>>{};
+
+    for (final row in actualA) {
+      final match =
+          RegExp(r'\d{4}[-/](\d{1,2})').firstMatch(_s(row['periodo']));
+      if (match != null) {
+        ma[int.parse(match.group(1)!)] = row;
+      }
+    }
+
+    for (final row in actualB) {
+      final match =
+          RegExp(r'\d{4}[-/](\d{1,2})').firstMatch(_s(row['periodo']));
+      if (match != null) {
+        mb[int.parse(match.group(1)!)] = row;
+      }
+    }
+
+    final result = <Map<String, dynamic>>[];
+
+    for (var month = desde.month; month <= hasta.month; month++) {
+      result.add({
+        'label': _nombreMes(month),
+        'a': _n(ma[month]?['facturacion']),
+        'b': _n(mb[month]?['facturacion']),
+      });
+    }
+
+    return result;
+  }
+
+  Widget _graficoMensualAsesoresComparados(
+    List<Map<String, dynamic>> mensualA,
+    List<Map<String, dynamic>> mensualB,
+  ) {
+    final rows = _mensualAsesoresComparados(mensualA, mensualB);
+
+    if (rows.isEmpty) {
+      return const SizedBox.shrink();
+    }
+
+    double maxValue = 0.0;
+    for (final row in rows) {
+      maxValue = [
+        maxValue,
+        _n(row['a']),
+        _n(row['b']),
+      ].reduce((x, y) => x > y ? x : y);
+    }
+    if (maxValue <= 0.0) maxValue = 1.0;
+
+    return Container(
+      padding: const EdgeInsets.fromLTRB(12, 10, 12, 12),
+      decoration: BoxDecoration(
+        color: const Color(0xFFF8FAFC),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: borde),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              const Icon(
+                Icons.show_chart,
+                color: azul,
+                size: 19,
+              ),
+              const SizedBox(width: 7),
+              const Expanded(
+                child: Text(
+                  'Facturación mensual de los asesores',
+                  style: TextStyle(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w900,
+                    color: Color(0xFF111827),
+                  ),
+                ),
+              ),
+              _LegendDot(
+                color: azulClaro,
+                label: vendedorComparacionA ?? 'Asesor A',
+              ),
+              const SizedBox(width: 12),
+              _LegendDot(
+                color: naranja,
+                label: vendedorComparacionB ?? 'Asesor B',
+              ),
+            ],
+          ),
+          const SizedBox(height: 10),
+          SizedBox(
+            height: 250,
+            child: LayoutBuilder(
+              builder: (context, constraints) {
+                final groupWidth =
+                    constraints.maxWidth / rows.length;
+                final barWidth = (groupWidth * .27).clamp(9.0, 24.0);
+
+                return Row(
+                  crossAxisAlignment: CrossAxisAlignment.end,
+                  children: rows.map((row) {
+                    final a = _n(row['a']);
+                    final b = _n(row['b']);
+
+                    final hA = a <= 0.0
+                        ? 2.0
+                        : 145.0 * (a / maxValue).clamp(0.05, 1.0);
+                    final hB = b <= 0.0
+                        ? 2.0
+                        : 145.0 * (b / maxValue).clamp(0.05, 1.0);
+
+                    return SizedBox(
+                      width: groupWidth,
+                      child: Column(
+                        mainAxisAlignment: MainAxisAlignment.end,
+                        children: [
+                          SizedBox(
+                            height: 185,
+                            child: Row(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              crossAxisAlignment: CrossAxisAlignment.end,
+                              children: [
+                                _barraAsesorVS(
+                                  value: a,
+                                  height: hA.toDouble(),
+                                  width: barWidth.toDouble(),
+                                  color: azulClaro,
+                                ),
+                                const SizedBox(width: 3),
+                                _barraAsesorVS(
+                                  value: b,
+                                  height: hB.toDouble(),
+                                  width: barWidth.toDouble(),
+                                  color: naranja,
+                                ),
+                              ],
+                            ),
+                          ),
+                          const SizedBox(height: 5),
+                          Container(
+                            width: groupWidth - 4,
+                            padding: const EdgeInsets.symmetric(vertical: 3),
+                            decoration: BoxDecoration(
+                              color: const Color(0xFFF1F5F9),
+                              borderRadius: BorderRadius.circular(4),
+                            ),
+                            child: Text(
+                              _s(row['label']),
+                              textAlign: TextAlign.center,
+                              style: const TextStyle(
+                                fontSize: 9,
+                                fontWeight: FontWeight.w800,
+                                color: Color(0xFF0F172A),
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    );
+                  }).toList(),
+                );
+              },
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _barraAsesorVS({
+    required double value,
+    required double height,
+    required double width,
+    required Color color,
+  }) {
+    return Column(
+      mainAxisAlignment: MainAxisAlignment.end,
+      children: [
+        SizedBox(
+          height: 27,
+          width: 54,
+          child: Text(
+            value <= 0.0
+                ? 'US\$ 0'
+                : 'US\$ ${_formatoCompacto(value)}',
+            maxLines: 1,
+            overflow: TextOverflow.visible,
+            textAlign: TextAlign.center,
+            style: TextStyle(
+              color: color,
+              fontSize: 8.5,
+              fontWeight: FontWeight.w900,
+            ),
+          ),
+        ),
+        Container(
+          width: width,
+          height: height,
+          decoration: BoxDecoration(
+            color: color,
+            borderRadius: const BorderRadius.vertical(
+              top: Radius.circular(3),
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  String _formatoCompacto(double value) {
+    if (value >= 1000000) {
+      return '${(value / 1000000).toStringAsFixed(2)} M';
+    }
+    if (value >= 1000) {
+      return '${(value / 1000).toStringAsFixed(0)} K';
+    }
+    return money.format(value);
+  }
+
 
   Widget _heroComparativo() {
     final a = Map<String, dynamic>.from(

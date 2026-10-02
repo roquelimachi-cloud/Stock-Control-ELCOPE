@@ -56,6 +56,30 @@ class _CrmActividadesPageState extends State<CrmActividadesPage> {
 
   String _s(dynamic value) => value?.toString().trim() ?? '';
 
+  String _nombreClientePorCodigo(dynamic codigo) {
+    final buscado = _s(codigo);
+    if (buscado.isEmpty) return '';
+
+    for (final c in _clientes) {
+      final codigoCliente = _s(c['codigo']).isNotEmpty
+          ? _s(c['codigo'])
+          : (_s(c['codigo_cliente']).isNotEmpty
+              ? _s(c['codigo_cliente'])
+              : _s(c['ruc']));
+
+      if (codigoCliente.trim().toUpperCase() == buscado.trim().toUpperCase()) {
+        final nombre = _s(c['razon_social']).isNotEmpty
+            ? _s(c['razon_social'])
+            : (_s(c['nombre']).isNotEmpty
+                ? _s(c['nombre'])
+                : _s(c['cliente']));
+        if (nombre.isNotEmpty) return nombre;
+      }
+    }
+
+    return '';
+  }
+
   Future<void> _cargarPermisos() async {
     if (_esGerencia) {
       _vendedoresPermitidos = [];
@@ -113,6 +137,7 @@ class _CrmActividadesPageState extends State<CrmActividadesPage> {
       if (mounted) setState(() => _cargando = false);
       try {
         await _cargarClientes();
+        if (mounted) setState(() {});
       } catch (e) {
         debugPrint('CRM Actividades - error cargando clientes: $e');
       }
@@ -499,7 +524,9 @@ class _CrmActividadesPageState extends State<CrmActividadesPage> {
     final resultado = _s(a['resultado']);
     final proxima = _s(a['fecha_proxima_accion']);
     final vendedor = _s(a['vendedor']);
-    final cliente = _s(a['codigo_cliente']);
+    final codigoCliente = _s(a['codigo_cliente']);
+    final nombreCliente = _nombreClientePorCodigo(codigoCliente);
+    final cliente = nombreCliente.isNotEmpty ? nombreCliente : codigoCliente;
     final asunto = _s(a['asunto']).isEmpty ? '(Sin asunto)' : _s(a['asunto']);
 
     return Container(

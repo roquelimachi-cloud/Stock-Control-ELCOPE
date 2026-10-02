@@ -1,3 +1,4 @@
+import 'dart:ui' as ui;
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import '../../../services/supabase/supabase_service.dart';
@@ -45,6 +46,24 @@ class _CrmDashboardPageState extends State<CrmDashboardPage> {
       '${DateTime.now().year}-${DateTime.now().month.toString().padLeft(2, '0')}';
   String _vendedor = 'TODOS';
   String _busqueda = '';
+  int _versionBusqueda = 0;
+
+  String get _rolSesion => Sesion.rol.trim().toLowerCase();
+
+  bool get _esGerencia =>
+      _rolSesion == 'gerencia' || _rolSesion == 'gerencia comercial';
+
+  bool get _esJefatura =>
+      _rolSesion == 'jefe lima' || _rolSesion == 'jefe provincia';
+
+  String get _alcanceTexto {
+    if (_esGerencia) return 'Vista global · Todos los canales';
+    if (_rolSesion == 'jefe lima') return 'Equipo de Lima · Canal LIMA';
+    if (_rolSesion == 'jefe provincia') {
+      return 'Equipo de Provincias · Canal PROVINCIAS';
+    }
+    return 'Cartera propia · Canal LIMA';
+  }
 
   // Identidad del usuario conectado: no depende del vendedor del filtro.
   String get _nombreUsuario {
@@ -110,8 +129,9 @@ class _CrmDashboardPageState extends State<CrmDashboardPage> {
         'crm_obtener_dashboard_resumen',
         params: {
           'p_periodo': _periodo,
-          'p_vendedor': _vendedor,
+          'p_vendedor': 'TODOS',
           'p_busqueda': _busqueda,
+          'p_usuario_id': Sesion.idUsuario,
         },
       );
 
@@ -121,7 +141,7 @@ class _CrmDashboardPageState extends State<CrmDashboardPage> {
         _dashboard = result is Map
             ? Map<String, dynamic>.from(result)
             : <String, dynamic>{};
-        _facturas = [];
+        _facturas = const <Map<String, dynamic>>[];
         _cargando = false;
       });
     } catch (e) {
@@ -536,7 +556,11 @@ class _CrmDashboardPageState extends State<CrmDashboardPage> {
               child: TextField(
                 onChanged: (v) {
                   _busqueda = v;
-                  _cargarDatos();
+                  final token = ++_versionBusqueda;
+                  Future.delayed(const Duration(milliseconds: 450), () {
+                    if (!mounted || token != _versionBusqueda) return;
+                    _cargarDatos();
+                  });
                 },
                 decoration: InputDecoration(
                   hintText: 'Buscar cliente, RUC, factura...',
@@ -561,14 +585,33 @@ class _CrmDashboardPageState extends State<CrmDashboardPage> {
               ),
             ),
             const SizedBox(width: 7),
-            ConstrainedBox(
-              constraints: const BoxConstraints(maxWidth: 170),
-              child: Text(
-                _nombreUsuario,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: const TextStyle(color: _azul, fontWeight: FontWeight.w800),
-              ),
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                ConstrainedBox(
+                  constraints: const BoxConstraints(maxWidth: 170),
+                  child: Text(
+                    _nombreUsuario,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                      color: _azul,
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
+                ),
+                Text(
+                  _alcanceTexto,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    color: Colors.black45,
+                    fontSize: 8.5,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ],
             ),
             const Icon(Icons.keyboard_arrow_down, color: _azul),
           ],
@@ -613,7 +656,18 @@ class _CrmDashboardPageState extends State<CrmDashboardPage> {
                 ),
                 const SizedBox(height: 8),
                 Text('Gestiona tus clientes, actividades y oportunidades\nen un solo lugar.', style: TextStyle(color: Colors.white, fontSize: mobile ? 14 : 18, height: 1.25, fontWeight: FontWeight.w500)),
-                const SizedBox(height: 22),
+                const SizedBox(height: 10),
+                Text(
+                  _alcanceTexto,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    color: Color(0xFFBFF3D8),
+                    fontSize: 11,
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+                const SizedBox(height: 17),
                 Wrap(spacing: 12, runSpacing: 8, children: const [
                   _BannerPill(icon: Icons.bar_chart_rounded, text: 'Más ventas'),
                   _BannerPill(icon: Icons.groups_rounded, text: 'Mejores clientes'),
@@ -715,13 +769,130 @@ class _CrmDashboardPageState extends State<CrmDashboardPage> {
   }
 
   Widget _panelFacturacion() {
-    return _panelBase('Evolución de facturación', Icons.bar_chart_rounded, SizedBox(height: 245, child: _graficoFacturacion()));
+    return Container(
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: const Color(0xFFE0E7EF)),
+      ),
+      padding: const EdgeInsets.fromLTRB(18, 16, 18, 16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              const Icon(
+                Icons.bar_chart_rounded,
+                color: _azulClaro,
+                size: 22,
+              ),
+              const SizedBox(width: 9),
+              const Expanded(
+                child: Text(
+                  'Evolución de facturación',
+                  style: TextStyle(
+                    color: _azul,
+                    fontSize: 16,
+                    fontWeight: FontWeight.w900,
+                  ),
+                ),
+              ),
+              Container(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 11,
+                  vertical: 7,
+                ),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFEAF4FD),
+                  borderRadius: BorderRadius.circular(10),
+                  border: Border.all(
+                    color: const Color(0xFFCCE3F7),
+                  ),
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    _resumenHeaderDato(
+                      titulo: 'Monto',
+                      valor: 'US\u0024 ${_money.format(_facturacion)}',
+                    ),
+                    const SizedBox(width: 14),
+                    _resumenHeaderDato(
+                      titulo: 'Facturas',
+                      valor: NumberFormat('#,##0', 'en_US')
+                          .format(_facturasCount),
+                    ),
+                    const SizedBox(width: 14),
+                    _resumenHeaderDato(
+                      titulo: 'Clientes',
+                      valor: NumberFormat('#,##0', 'en_US')
+                          .format(_clientesCount),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 6),
+          Text(
+            _periodo == 'TODOS'
+                ? 'Facturación acumulada del período seleccionado'
+                : 'Facturación de ${_periodoLabel(_periodo)}',
+            style: const TextStyle(
+              color: Colors.black45,
+              fontSize: 10,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+          const SizedBox(height: 10),
+          SizedBox(
+            height: 245,
+            child: _graficoFacturacion(),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _resumenHeaderDato({
+    required String titulo,
+    required String valor,
+  }) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.end,
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Text(
+          titulo,
+          style: const TextStyle(
+            color: Colors.black54,
+            fontSize: 8.5,
+            fontWeight: FontWeight.w700,
+          ),
+        ),
+        const SizedBox(height: 2),
+        Text(
+          valor,
+          style: const TextStyle(
+            color: _azul,
+            fontSize: 11.5,
+            fontWeight: FontWeight.w900,
+          ),
+        ),
+      ],
+    );
   }
 
   Widget _graficoFacturacion() {
     final meses = _meses;
     if (meses.isEmpty) return const Center(child: Text('Sin información de facturación.', style: TextStyle(color: Colors.grey)));
-    return CustomPaint(painter: _SalesChartPainter(meses.map((e) => _num(e['monto'])).toList(), _azulClaro), child: const SizedBox.expand());
+    return CustomPaint(
+      painter: _SalesChartPainter(
+        meses.map((e) => _num(e['monto'])).toList(),
+        _azulClaro,
+      ),
+      child: const SizedBox.expand(),
+    );
   }
 
   List<MapEntry<String, double>> _top(
@@ -886,6 +1057,16 @@ class _SalesChartPainter extends CustomPainter {
 
   _SalesChartPainter(this.values, this.color);
 
+  String _formatoMonto(double value) {
+    if (value.abs() >= 1000000) {
+      return 'US\u0024 ${(value / 1000000).toStringAsFixed(2)} M';
+    }
+    if (value.abs() >= 1000) {
+      return 'US\u0024 ${(value / 1000).toStringAsFixed(0)} K';
+    }
+    return 'US\u0024 ${value.toStringAsFixed(0)}';
+  }
+
   @override
   void paint(Canvas canvas, Size size) {
     if (values.isEmpty || size.width <= 0 || size.height <= 0) return;
@@ -902,37 +1083,94 @@ class _SalesChartPainter extends CustomPainter {
 
     for (int i = 0; i < 4; i++) {
       final double y = size.height * 0.12 + i * size.height * 0.25;
-      canvas.drawLine(Offset(0, y), Offset(size.width, y), gridPaint);
+      canvas.drawLine(
+        Offset(0, y),
+        Offset(size.width, y),
+        gridPaint,
+      );
     }
 
-    final barPaint = Paint()..color = color.withValues(alpha: 0.72);
+    final barPaint = Paint()
+      ..color = color.withValues(alpha: 0.72);
+
     final linePaint = Paint()
       ..color = color
       ..strokeWidth = 2.8
       ..style = PaintingStyle.stroke;
+
     final fillPaint = Paint()
       ..color = color.withValues(alpha: 0.10)
       ..style = PaintingStyle.fill;
+
     final pointPaint = Paint()..color = color;
 
     final path = Path();
     final linePath = Path();
+
     final int count = values.length;
     final double baseY = size.height * 0.80;
+
+    // Space on top of each bar for the amount label.
+    final labelStyle = TextStyle(
+      color: color,
+      fontSize: count > 9 ? 8.5 : 9.5,
+      fontWeight: FontWeight.w900,
+    );
 
     for (int i = 0; i < count; i++) {
       final double x = count == 1
           ? size.width / 2
           : ((size.width - 25) * i / (count - 1)) + 12;
-      final double y = baseY - (values[i] / maxValue) * size.height * 0.62;
+
+      final double y = baseY -
+          (values[i] / maxValue) * size.height * 0.62;
+
       final double barWidth = count == 1
           ? 30.0
           : ((size.width - 35) / count) * 0.48;
-      final double barHeight = (baseY - y).clamp(0.0, size.height).toDouble();
+
+      final double barHeight =
+          (baseY - y).clamp(0.0, size.height).toDouble();
 
       canvas.drawRect(
-        Rect.fromLTWH(x - barWidth / 2, y, barWidth, barHeight),
+        Rect.fromLTWH(
+          x - barWidth / 2,
+          y,
+          barWidth,
+          barHeight,
+        ),
         barPaint,
+      );
+
+      // Amount label above the bar.
+      final label = _formatoMonto(values[i]);
+      final textPainter = TextPainter(
+        text: TextSpan(
+          text: label,
+          style: labelStyle,
+        ),
+        textDirection: ui.TextDirection.ltr,
+        textAlign: TextAlign.center,
+        maxLines: 1,
+        ellipsis: '…',
+      )..layout(
+          minWidth: 0,
+          maxWidth: count > 9 ? 70 : 82,
+        );
+
+      // Never let the label leave the chart's top boundary.
+      final labelY = (y - textPainter.height - 5)
+          .clamp(0.0, size.height - textPainter.height)
+          .toDouble();
+
+      final labelX =
+          (x - textPainter.width / 2)
+              .clamp(0.0, size.width - textPainter.width)
+              .toDouble();
+
+      textPainter.paint(
+        canvas,
+        Offset(labelX, labelY),
       );
 
       if (i == 0) {
@@ -943,7 +1181,11 @@ class _SalesChartPainter extends CustomPainter {
         path.lineTo(x, y);
       }
 
-      canvas.drawCircle(Offset(x, y), 4.0, pointPaint);
+      canvas.drawCircle(
+        Offset(x, y),
+        4.0,
+        pointPaint,
+      );
     }
 
     final double lastX = count == 1
@@ -961,7 +1203,8 @@ class _SalesChartPainter extends CustomPainter {
 
   @override
   bool shouldRepaint(covariant _SalesChartPainter oldDelegate) {
-    return oldDelegate.values != values || oldDelegate.color != color;
+    return oldDelegate.values != values ||
+        oldDelegate.color != color;
   }
 }
 

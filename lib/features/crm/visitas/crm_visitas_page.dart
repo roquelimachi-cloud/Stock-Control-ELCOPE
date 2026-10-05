@@ -7,6 +7,7 @@ import 'package:geolocator/geolocator.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:timezone/data/latest_all.dart' as tz;
 import 'package:timezone/timezone.dart' as tz;
+import 'package:url_launcher/url_launcher.dart';
 
 import '../../../services/sesion.dart';
 import '../../../services/supabase/supabase_service.dart';
@@ -169,6 +170,30 @@ class _CrmVisitasPageState extends State<CrmVisitasPage> {
       Sesion.vendedor.trim().isNotEmpty
           ? Sesion.vendedor.trim()
           : Sesion.nombre.trim();
+
+  String _normalizarNombre(String value) {
+    return value
+        .trim()
+        .toUpperCase()
+        .replaceAll(RegExp(r'\s+'), ' ');
+  }
+
+  /// Solo el asesor propietario de la visita puede ejecutarla.
+  /// Jefatura y gerencia tienen permisos de supervisión, no de ejecución.
+  bool _puedeGestionarVisita(Map<String, dynamic> visita) {
+    if (_esGerencia || _esJefatura) return false;
+
+    final usuarioVisita = (visita['usuario_id'] as num?)?.toInt();
+    if (usuarioVisita != null && usuarioVisita > 0 && Sesion.idUsuario > 0) {
+      return usuarioVisita == Sesion.idUsuario;
+    }
+
+    final vendedorVisita = _normalizarNombre(_s(visita['vendedor']));
+    final vendedorActual = _normalizarNombre(_vendedorActual);
+    return vendedorVisita.isNotEmpty &&
+        vendedorActual.isNotEmpty &&
+        vendedorVisita == vendedorActual;
+  }
 
   @override
   void initState() {
@@ -373,14 +398,14 @@ class _CrmVisitasPageState extends State<CrmVisitasPage> {
     }
   }
 
-  Future<Position?> _obtenerUbicacion() async {
+  Future<Position?> _obtenerUbicacion({int reintentos = 2}) async {
     try {
       final habilitado = await Geolocator.isLocationServiceEnabled();
       if (!habilitado) {
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(
-              content: Text('Activa la ubicación del celular para registrar el GPS.'),
+              content: Text('Activa la ubicación del dispositivo para registrar el GPS.'),
             ),
           );
         }
@@ -397,19 +422,49 @@ class _CrmVisitasPageState extends State<CrmVisitasPage> {
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(
-              content: Text('No se otorgó permiso de ubicación. La visita continuará sin GPS.'),
+              content: Text(
+                'No se otorgó permiso de ubicación. La visita continuará sin GPS.',
+              ),
             ),
           );
         }
         return null;
       }
 
-      return await Geolocator.getCurrentPosition(
-        locationSettings: LocationSettings(
-          accuracy: LocationAccuracy.high,
-          timeLimit: Duration(seconds: 15),
-        ),
-      );
+      // Primero intentamos una ubicación reciente. Esto ayuda cuando el GPS
+      // todavía está tomando señal al momento exacto de iniciar la visita.
+      try {
+        final ultima = await Geolocator.getLastKnownPosition();
+        if (ultima != null && ultima.accuracy <= 100) {
+          return ultima;
+        }
+      } catch (_) {}
+
+      Object? ultimoError;
+      for (var intento = 1; intento <= reintentos; intento++) {
+        try {
+          final position = await Geolocator.getCurrentPosition(
+            locationSettings: LocationSettings(
+              accuracy: LocationAccuracy.high,
+              timeLimit: const Duration(seconds: 15),
+            ),
+          );
+
+          if (position.accuracy <= 100 || intento == reintentos) {
+            return position;
+          }
+        } catch (e) {
+          ultimoError = e;
+          await Future<void>.delayed(const Duration(milliseconds: 500));
+        }
+      }
+
+      if (mounted && ultimoError != null) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('No se pudo obtener GPS: $ultimoError')),
+        );
+      }
+      return null;
     } catch (e) {
       debugPrint('GPS no disponible: $e');
       if (mounted) {
@@ -419,6 +474,185 @@ class _CrmVisitasPageState extends State<CrmVisitasPage> {
       }
       return null;
     }
+  }
+
+  Future<void> _abrirGoogleMaps(double latitud, double longitud) async {
+    final uri = Uri.parse(
+      'https://www.google.com/maps/search/?api=1&query=$latitud,$longitud',
+    );
+
+    try {
+      final abierto = await launchUrl(
+        uri,
+        mode: LaunchMode.externalApplication,
+      );
+      if (!abierto && mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('No se pudo abrir Google Maps.')),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('No se pudo abrir el mapa: $e')),
+        );
+      }
+    }
+  }
+
+  Future<void> _verUbicacion(Map<String, dynamic> visita) async {
+    final latInicio = _numeroDouble(visita['latitud_inicio']);
+    final lonInicio = _numeroDouble(visita['longitud_inicio']);
+    final precisionInicio = _numeroDouble(visita['precision_inicio']);
+    final latFin = _numeroDouble(visita['latitud_fin']);
+    final lonFin = _numeroDouble(visita['longitud_fin']);
+    final precisionFin = _numeroDouble(visita['precision_fin']);
+
+    final tieneInicio = latInicio != null && lonInicio != null;
+    final tieneFin = latFin != null && lonFin != null;
+
+    if (!tieneInicio && !tieneFin) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Esta visita todavía no tiene coordenadas GPS.')),
+        );
+      }
+      return;
+    }
+
+    await showDialog<void>(
+      context: context,
+      builder: (dialogContext) {
+        return AlertDialog(
+          title: Row(
+            children: const [
+              Icon(Icons.location_on_outlined, color: _azul),
+              SizedBox(width: 8),
+              Text('Ubicación de la visita'),
+            ],
+          ),
+          content: SizedBox(
+            width: 560,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  _nombreClientePorCodigo(_s(visita['codigo_cliente'])),
+                  style: const TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.w900,
+                    color: _azul,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Text('Asesor: ${_s(visita['vendedor'])}'),
+                const SizedBox(height: 18),
+                if (tieneInicio)
+                  _filaUbicacion(
+                    titulo: '📍 Inicio de visita',
+                    latitud: latInicio!,
+                    longitud: lonInicio!,
+                    precision: precisionInicio,
+                    onMap: () => _abrirGoogleMaps(latInicio, lonInicio),
+                  ),
+                if (tieneInicio && tieneFin) const Divider(height: 24),
+                if (tieneFin)
+                  _filaUbicacion(
+                    titulo: '🏁 Fin de visita',
+                    latitud: latFin!,
+                    longitud: lonFin!,
+                    precision: precisionFin,
+                    onMap: () => _abrirGoogleMaps(latFin, lonFin),
+                  ),
+                if (!tieneInicio) ...[
+                  const SizedBox(height: 8),
+                  const Text(
+                    'Inicio: GPS no registrado.',
+                    style: TextStyle(color: Colors.orange, fontWeight: FontWeight.w700),
+                  ),
+                ],
+                const SizedBox(height: 18),
+                if (tieneFin)
+                  SizedBox(
+                    width: double.infinity,
+                    child: FilledButton.icon(
+                      onPressed: () => _abrirGoogleMaps(latFin!, lonFin!),
+                      icon: const Icon(Icons.map_outlined),
+                      label: const Text('Abrir ubicación final en Google Maps'),
+                      style: FilledButton.styleFrom(backgroundColor: _azul),
+                    ),
+                  )
+                else if (tieneInicio)
+                  SizedBox(
+                    width: double.infinity,
+                    child: FilledButton.icon(
+                      onPressed: () => _abrirGoogleMaps(latInicio!, lonInicio!),
+                      icon: const Icon(Icons.map_outlined),
+                      label: const Text('Abrir ubicación inicial en Google Maps'),
+                      style: FilledButton.styleFrom(backgroundColor: _azul),
+                    ),
+                  ),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(dialogContext),
+              child: const Text('Cerrar'),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  Widget _filaUbicacion({
+    required String titulo,
+    required double latitud,
+    required double longitud,
+    required double? precision,
+    required VoidCallback onMap,
+  }) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: const Color(0xFFF5F8FB),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: const Color(0xFFDCE5ED)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            titulo,
+            style: const TextStyle(fontWeight: FontWeight.w900, color: _azul),
+          ),
+          const SizedBox(height: 6),
+          Text('Latitud: ${latitud.toStringAsFixed(7)}'),
+          Text('Longitud: ${longitud.toStringAsFixed(7)}'),
+          Text(
+            precision == null
+                ? 'Precisión: no disponible'
+                : 'Precisión: ${precision.toStringAsFixed(1)} m',
+            style: const TextStyle(fontWeight: FontWeight.w700),
+          ),
+          const SizedBox(height: 8),
+          OutlinedButton.icon(
+            onPressed: onMap,
+            icon: const Icon(Icons.open_in_new, size: 17),
+            label: const Text('Ver en mapa'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  double? _numeroDouble(dynamic value) {
+    if (value == null) return null;
+    if (value is num) return value.toDouble();
+    return double.tryParse(value.toString());
   }
 
   Future<void> _guardarGpsInicio(int id, Position position) async {
@@ -542,13 +776,17 @@ class _CrmVisitasPageState extends State<CrmVisitasPage> {
   }
 
   Future<void> _iniciarVisita(Map<String, dynamic> visita) async {
+    if (!_puedeGestionarVisita(visita)) return;
     final id = (visita['id'] as num?)?.toInt();
     if (id == null) return;
 
     try {
+      // Capturamos el GPS antes de cambiar el estado para aprovechar la primera
+      // lectura disponible del dispositivo y evitar que el inicio quede en NULL.
+      final position = await _obtenerUbicacion(reintentos: 2);
+
       await _db.rpc('crm_iniciar_visita', params: {'p_id': id});
 
-      final position = await _obtenerUbicacion();
       if (position != null) {
         try {
           await _guardarGpsInicio(id, position);
@@ -568,6 +806,7 @@ class _CrmVisitasPageState extends State<CrmVisitasPage> {
   }
 
   Future<void> _finalizarVisita(Map<String, dynamic> visita) async {
+    if (!_puedeGestionarVisita(visita)) return;
     final id = (visita['id'] as num?)?.toInt();
     if (id == null) return;
 
@@ -595,6 +834,7 @@ class _CrmVisitasPageState extends State<CrmVisitasPage> {
   }
 
   Future<void> _cancelarVisita(Map<String, dynamic> visita) async {
+    if (!_puedeGestionarVisita(visita)) return;
     final id = (visita['id'] as num?)?.toInt();
     if (id == null) return;
 
@@ -757,25 +997,45 @@ class _CrmVisitasPageState extends State<CrmVisitasPage> {
         ],
       ),
       body: SafeArea(
-        child: _error != null
-            ? _errorView()
-            : ListView(
-                padding: const EdgeInsets.fromLTRB(24, 20, 24, 40),
-                children: [
-                  _topBar(),
-                  const SizedBox(height: 18),
-                  _kpis(),
-                  const SizedBox(height: 18),
-                  _filtros(),
-                  const SizedBox(height: 18),
-                  _cargando
-                      ? const Padding(
-                          padding: EdgeInsets.symmetric(vertical: 70),
-                          child: Center(child: CircularProgressIndicator()),
-                        )
-                      : _lista(),
-                ],
-              ),
+        child: LayoutBuilder(
+          builder: (context, constraints) {
+            final contenido = ListView(
+              padding: const EdgeInsets.fromLTRB(24, 20, 24, 40),
+              children: [
+                _topBar(),
+                const SizedBox(height: 18),
+                _kpis(),
+                const SizedBox(height: 18),
+                _filtros(),
+                const SizedBox(height: 18),
+                _cargando
+                    ? const Padding(
+                        padding: EdgeInsets.symmetric(vertical: 70),
+                        child: Center(child: CircularProgressIndicator()),
+                      )
+                    : _lista(),
+              ],
+            );
+
+            if (_error != null) return _errorView();
+
+            // Evita que el contenido se comprima hasta una columna de una sola
+            // letra cuando la ventana/panel queda demasiado estrecho.
+            // En pantallas normales ocupa todo el ancho disponible.
+            if (constraints.maxWidth < 900) {
+              return SingleChildScrollView(
+                scrollDirection: Axis.horizontal,
+                child: SizedBox(
+                  width: 1000,
+                  height: constraints.maxHeight,
+                  child: contenido,
+                ),
+              );
+            }
+
+            return contenido;
+          },
+        ),
       ),
     );
   }
@@ -1413,10 +1673,18 @@ class _CrmVisitasPageState extends State<CrmVisitasPage> {
                       if (motivo.isNotEmpty) _dato(Icons.flag_outlined, motivo),
                       if (lugar.isNotEmpty)
                         _dato(Icons.place_outlined, lugar),
-                      if (v['latitud_inicio'] != null)
-                        _dato(Icons.gps_fixed, 'GPS inicio'),
-                      if (v['latitud_fin'] != null)
-                        _dato(Icons.gps_fixed, 'GPS fin'),
+                      if (v['latitud_inicio'] != null || v['latitud_fin'] != null)
+                        TextButton.icon(
+                          onPressed: () => _verUbicacion(v),
+                          icon: const Icon(Icons.location_on_outlined, size: 17),
+                          label: const Text('Ver ubicación'),
+                          style: TextButton.styleFrom(
+                            foregroundColor: _azulClaro,
+                            padding: EdgeInsets.zero,
+                            minimumSize: const Size(0, 32),
+                            tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                          ),
+                        ),
                     ],
                   ),
                   if (objetivo.isNotEmpty) ...[
@@ -1462,18 +1730,20 @@ class _CrmVisitasPageState extends State<CrmVisitasPage> {
             ),
           );
 
+          final puedeGestionar = _puedeGestionarVisita(v);
+
           final acciones = Wrap(
             spacing: 7,
             runSpacing: 7,
             alignment: WrapAlignment.end,
             children: [
-              if (estado == 'PROGRAMADA')
+              if (puedeGestionar && estado == 'PROGRAMADA')
                 OutlinedButton.icon(
                   onPressed: () => _iniciarVisita(v),
                   icon: const Icon(Icons.play_arrow_rounded, size: 18),
                   label: const Text('Iniciar'),
                 ),
-              if (estado == 'EN CURSO')
+              if (puedeGestionar && estado == 'EN CURSO')
                 FilledButton.icon(
                   onPressed: () => _finalizarVisita(v),
                   icon: const Icon(Icons.stop_circle_outlined, size: 18),
@@ -1482,7 +1752,7 @@ class _CrmVisitasPageState extends State<CrmVisitasPage> {
                     backgroundColor: _verde,
                   ),
                 ),
-              if (estado == 'PROGRAMADA')
+              if (puedeGestionar && estado == 'PROGRAMADA')
                 IconButton(
                   tooltip: 'Cancelar',
                   onPressed: () => _cancelarVisita(v),

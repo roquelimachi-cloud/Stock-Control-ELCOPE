@@ -3,7 +3,6 @@ import 'package:intl/intl.dart';
 
 import '../../../services/sesion.dart';
 import '../../../services/supabase/supabase_service.dart';
-import '../catalogos/crm_catalogos_service.dart';
 
 class CrmSeguimientosPage extends StatefulWidget {
   const CrmSeguimientosPage({super.key});
@@ -513,87 +512,108 @@ class _CrmSeguimientosPageState extends State<CrmSeguimientosPage> {
   }
 
   Widget _header() {
-    return Container(
-      padding: const EdgeInsets.fromLTRB(4, 4, 4, 8),
-      child: Row(
-        children: [
-          IconButton(
-            onPressed: () => Navigator.maybePop(context),
-            icon: const Icon(Icons.arrow_back_rounded, color: azul),
-          ),
-          const Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  'Seguimientos',
-                  style: TextStyle(
-                    color: azul,
-                    fontSize: 24,
-                    fontWeight: FontWeight.w900,
-                  ),
-                ),
-                Text(
-                  'Registra y da seguimiento a tus gestiones comerciales con los clientes.',
-                  style: TextStyle(
-                    color: Color(0xFF6B7E93),
-                    fontSize: 13,
-                  ),
-                ),
-              ],
+    return LayoutBuilder(
+      builder: (context, c) {
+        final mobile = c.maxWidth < 700;
+        final title = Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: const [
+            Text(
+              'Seguimientos',
+              style: TextStyle(color: azul, fontSize: 24, fontWeight: FontWeight.w900),
             ),
-          ),
-          SizedBox(
-            width: 290,
-            height: 40,
-            child: TextField(
-              controller: _buscar,
-              onSubmitted: (_) => _cargar(),
-              decoration: InputDecoration(
-                hintText: 'Buscar cliente, proyecto, seguimiento...',
-                prefixIcon: const Icon(Icons.search, size: 18),
-                filled: true,
-                fillColor: Colors.white,
-                contentPadding: const EdgeInsets.symmetric(horizontal: 10),
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(10),
-                  borderSide: const BorderSide(color: borde),
+            Text(
+              'Registra y da seguimiento a tus gestiones comerciales con los clientes.',
+              style: TextStyle(color: Color(0xFF6B7E93), fontSize: 13),
+            ),
+          ],
+        );
+
+        if (mobile) {
+          return Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  IconButton(
+                    onPressed: () => Navigator.maybePop(context),
+                    icon: const Icon(Icons.arrow_back_rounded, color: azul),
+                    tooltip: 'Regresar',
+                  ),
+                  Expanded(child: title),
+                  IconButton(
+                    tooltip: 'Actualizar',
+                    onPressed: _cargar,
+                    icon: const Icon(Icons.refresh_rounded, color: azul2),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 8),
+              SizedBox(
+                width: double.infinity,
+                height: 42,
+                child: TextField(
+                  controller: _buscar,
+                  onSubmitted: (_) => _cargar(),
+                  decoration: InputDecoration(
+                    hintText: 'Buscar cliente, proyecto, seguimiento...',
+                    prefixIcon: const Icon(Icons.search, size: 18),
+                    filled: true,
+                    fillColor: Colors.white,
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(10),
+                      borderSide: const BorderSide(color: borde),
+                    ),
+                    enabledBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(10),
+                      borderSide: const BorderSide(color: borde),
+                    ),
+                  ),
                 ),
-                enabledBorder: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(10),
-                  borderSide: const BorderSide(color: borde),
+              ),
+            ],
+          );
+        }
+
+        return Row(
+          children: [
+            IconButton(
+              onPressed: () => Navigator.maybePop(context),
+              icon: const Icon(Icons.arrow_back_rounded, color: azul),
+              tooltip: 'Regresar',
+            ),
+            Expanded(child: title),
+            SizedBox(
+              width: 290,
+              height: 40,
+              child: TextField(
+                controller: _buscar,
+                onSubmitted: (_) => _cargar(),
+                decoration: InputDecoration(
+                  hintText: 'Buscar cliente, proyecto, seguimiento...',
+                  prefixIcon: const Icon(Icons.search, size: 18),
+                  filled: true,
+                  fillColor: Colors.white,
+                  contentPadding: const EdgeInsets.symmetric(horizontal: 10),
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(10),
+                    borderSide: const BorderSide(color: borde),
+                  ),
+                  enabledBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(10),
+                    borderSide: const BorderSide(color: borde),
+                  ),
                 ),
               ),
             ),
-          ),
-          IconButton(
-            tooltip: 'Actualizar',
-            onPressed: _cargar,
-            icon: const Icon(Icons.refresh_rounded, color: azul2),
-          ),
-          const CircleAvatar(
-            radius: 18,
-            backgroundColor: azul,
-            child: Text(
-              'MR',
-              style: TextStyle(
-                color: Colors.white,
-                fontWeight: FontWeight.w900,
-              ),
+            IconButton(
+              tooltip: 'Actualizar',
+              onPressed: _cargar,
+              icon: const Icon(Icons.refresh_rounded, color: azul2),
             ),
-          ),
-          const SizedBox(width: 8),
-          Text(
-            Sesion.nombre.trim().isEmpty ? 'Michael Roque' : Sesion.nombre,
-            style: const TextStyle(
-              color: azul,
-              fontWeight: FontWeight.w800,
-              fontSize: 13,
-            ),
-          ),
-          const Icon(Icons.keyboard_arrow_down, color: azul),
-        ],
-      ),
+          ],
+        );
+      },
     );
   }
 
@@ -606,7 +626,7 @@ class _CrmSeguimientosPageState extends State<CrmSeguimientosPage> {
   }) {
     return Expanded(
       child: Container(
-        height: 104,
+        height: 86,
         padding: const EdgeInsets.all(14),
         decoration: BoxDecoration(
           color: Colors.white,
@@ -638,7 +658,7 @@ class _CrmSeguimientosPageState extends State<CrmSeguimientosPage> {
                       fontWeight: FontWeight.w700,
                     ),
                   ),
-                  const SizedBox(height: 2),
+                  const SizedBox(height: 3),
                   Text(
                     '$value',
                     style: const TextStyle(
@@ -1181,40 +1201,22 @@ class _CrmSeguimientosPageState extends State<CrmSeguimientosPage> {
             children: [
               _header(),
               const SizedBox(height: 10),
-              Row(
-                children: [
-                  _kpi(
-                    icon: Icons.description_outlined,
-                    title: 'Total seguimientos',
-                    value: _rows.length,
-                    color: azul2,
-                    footer: 'Este mes',
+              SizedBox(
+                height: 104,
+                child: SingleChildScrollView(
+                  scrollDirection: Axis.horizontal,
+                  child: Row(
+                    children: [
+                      SizedBox(width: 250, child: _kpi(icon: Icons.description_outlined, title: 'Total seguimientos', value: _rows.length, color: azul2, footer: 'Este mes')),
+                      const SizedBox(width: 10),
+                      SizedBox(width: 250, child: _kpi(icon: Icons.access_time_rounded, title: 'Pendientes', value: _count('PENDIENTE'), color: naranja, footer: 'Por ejecutar')),
+                      const SizedBox(width: 10),
+                      SizedBox(width: 250, child: _kpi(icon: Icons.sync_alt_rounded, title: 'En proceso', value: _count('EN PROCESO'), color: azul2, footer: 'En seguimiento')),
+                      const SizedBox(width: 10),
+                      SizedBox(width: 250, child: _kpi(icon: Icons.check_circle_outline, title: 'Cerrados', value: _count('CERRADO'), color: verde, footer: 'Completados')),
+                    ],
                   ),
-                  const SizedBox(width: 10),
-                  _kpi(
-                    icon: Icons.access_time_rounded,
-                    title: 'Pendientes',
-                    value: _count('PENDIENTE'),
-                    color: naranja,
-                    footer: 'Por ejecutar',
-                  ),
-                  const SizedBox(width: 10),
-                  _kpi(
-                    icon: Icons.sync_alt_rounded,
-                    title: 'En proceso',
-                    value: _count('EN PROCESO'),
-                    color: azul2,
-                    footer: 'En seguimiento',
-                  ),
-                  const SizedBox(width: 10),
-                  _kpi(
-                    icon: Icons.check_circle_outline,
-                    title: 'Cerrados',
-                    value: _count('CERRADO'),
-                    color: verde,
-                    footer: 'Completados',
-                  ),
-                ],
+                ),
               ),
               const SizedBox(height: 12),
               _filters(),
@@ -1247,9 +1249,7 @@ class _CrmSeguimientosPageState extends State<CrmSeguimientosPage> {
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: fondo,
-      body: SafeArea(
-        child: _body(),
-      ),
+      body: SafeArea(child: _body()),
     );
   }
 
@@ -1385,9 +1385,6 @@ class _NuevaSeguimientoDialog extends StatefulWidget {
 
 class _NuevaSeguimientoDialogState extends State<_NuevaSeguimientoDialog> {
   static const Color azul = Color(0xFF063B63);
-  static const Color azulClaro = Color(0xFFEEF6FC);
-  static const Color borde = Color(0xFFDCE5EE);
-  static const Color textoSecundario = Color(0xFF6B7E93);
 
   final _asunto = TextEditingController();
   final _descripcion = TextEditingController();
@@ -1395,12 +1392,10 @@ class _NuevaSeguimientoDialogState extends State<_NuevaSeguimientoDialog> {
   final _proxima = TextEditingController();
 
   String _tipo = 'LLAMADA';
-  List<String> _tiposGestion = const ['LLAMADA'];
   String _cliente = '';
   String _vendedor = '';
   DateTime? _fechaProxima;
   bool _guardando = false;
-  Map<String, dynamic>? _clienteSeleccionado;
 
   @override
   void initState() {
@@ -1408,20 +1403,6 @@ class _NuevaSeguimientoDialogState extends State<_NuevaSeguimientoDialog> {
     _vendedor = widget.vendedorActual.isNotEmpty
         ? widget.vendedorActual
         : (widget.vendedores.isNotEmpty ? widget.vendedores.first : '');
-    _cargarTiposGestion();
-  }
-
-  Future<void> _cargarTiposGestion() async {
-    try {
-      final tipos = await CrmCatalogosService.obtenerNombres('tipos_gestion');
-      if (!mounted || tipos.isEmpty) return;
-      setState(() {
-        _tiposGestion = tipos;
-        if (!_tiposGestion.contains(_tipo)) _tipo = _tiposGestion.first;
-      });
-    } catch (_) {
-      // Conserva el tipo inicial si el catálogo no está disponible.
-    }
   }
 
   @override
@@ -1449,29 +1430,6 @@ class _NuevaSeguimientoDialogState extends State<_NuevaSeguimientoDialog> {
       if (value.isNotEmpty) return value;
     }
     return 'Cliente sin nombre';
-  }
-
-  String _normalizar(String value) =>
-      value.toLowerCase().trim().replaceAll(RegExp(r'\s+'), ' ');
-
-  List<Map<String, dynamic>> _buscarClientes(String query) {
-    final q = _normalizar(query);
-    if (q.isEmpty) return const [];
-
-    final encontrados = widget.clientes.where((row) {
-      final nombre = _normalizar(_nombre(row));
-      final codigo = _normalizar(_codigo(row));
-      return nombre.contains(q) || codigo.contains(q);
-    }).take(20).toList();
-
-    return encontrados;
-  }
-
-  void _seleccionarCliente(Map<String, dynamic> row) {
-    setState(() {
-      _clienteSeleccionado = row;
-      _cliente = _codigo(row);
-    });
   }
 
   Future<void> _guardar() async {
@@ -1519,565 +1477,163 @@ class _NuevaSeguimientoDialogState extends State<_NuevaSeguimientoDialog> {
     }
   }
 
-  InputDecoration _decoracion({
-    required String label,
-    String? hint,
-    IconData? icon,
-  }) {
-    return InputDecoration(
-      labelText: label,
-      hintText: hint,
-      prefixIcon: icon == null
-          ? null
-          : Icon(icon, color: azul, size: 20),
-      filled: true,
-      fillColor: Colors.white,
-      contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
-      border: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(12),
-        borderSide: const BorderSide(color: borde),
-      ),
-      enabledBorder: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(12),
-        borderSide: const BorderSide(color: borde),
-      ),
-      focusedBorder: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(12),
-        borderSide: const BorderSide(color: azul, width: 1.5),
-      ),
-      labelStyle: const TextStyle(color: textoSecundario),
-    );
-  }
-
-  IconData _iconoTipo(String tipo) {
-    final t = tipo.toLowerCase();
-    if (t.contains('video') || t.contains('videollamada')) return Icons.videocam_outlined;
-    if (t.contains('whatsapp')) return Icons.chat_outlined;
-    if (t.contains('correo') || t.contains('email')) return Icons.mail_outline;
-    if (t.contains('visita')) return Icons.location_on_outlined;
-    if (t.contains('reuni')) return Icons.groups_outlined;
-    if (t.contains('llamad')) return Icons.phone_outlined;
-    if (t.contains('segu')) return Icons.sync_alt;
-    if (t.contains('cobran')) return Icons.payments_outlined;
-    return Icons.task_alt_outlined;
-  }
-
-  Widget _tipoChip(String value, IconData icon) {
-    final selected = _tipo == value;
-    return InkWell(
-      borderRadius: BorderRadius.circular(10),
-      onTap: _guardando ? null : () => setState(() => _tipo = value),
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 160),
-        padding: const EdgeInsets.symmetric(horizontal: 13, vertical: 10),
-        decoration: BoxDecoration(
-          color: selected ? azul : Colors.white,
-          borderRadius: BorderRadius.circular(10),
-          border: Border.all(color: selected ? azul : borde),
-        ),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(icon, size: 17, color: selected ? Colors.white : azul),
-            const SizedBox(width: 7),
-            Text(
-              value,
-              style: TextStyle(
-                color: selected ? Colors.white : azul,
-                fontSize: 12,
-                fontWeight: FontWeight.w800,
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _menuSelector({
-    required String label,
-    required String value,
-    required IconData icon,
-    required List<String> options,
-    required ValueChanged<String> onChanged,
-  }) {
-    return PopupMenuButton<String>(
-      enabled: !_guardando && options.isNotEmpty,
-      onSelected: onChanged,
-      itemBuilder: (context) => options
-          .where((e) => e.trim().isNotEmpty)
-          .toSet()
-          .map(
-            (e) => PopupMenuItem<String>(
-              value: e,
-              child: Row(
-                children: [
-                  Icon(
-                    e == value ? Icons.radio_button_checked : Icons.radio_button_off,
-                    size: 18,
-                    color: e == value ? azul : textoSecundario,
-                  ),
-                  const SizedBox(width: 9),
-                  Expanded(
-                    child: Text(
-                      e,
-                      overflow: TextOverflow.ellipsis,
-                      style: TextStyle(
-                        color: azul,
-                        fontWeight: e == value ? FontWeight.w800 : FontWeight.w500,
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          )
-          .toList(),
-      position: PopupMenuPosition.under,
-      offset: const Offset(0, 6),
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-      child: Container(
-        height: 60,
-        padding: const EdgeInsets.symmetric(horizontal: 14),
-        decoration: BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.circular(12),
-          border: Border.all(color: borde),
-        ),
-        child: Row(
-          children: [
-            Icon(icon, color: azul, size: 21),
-            const SizedBox(width: 11),
-            Expanded(
-              child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    label,
-                    style: const TextStyle(
-                      color: textoSecundario,
-                      fontSize: 11,
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
-                  const SizedBox(height: 2),
-                  Text(
-                    value.isEmpty ? 'Seleccionar' : value,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(
-                      color: azul,
-                      fontSize: 14,
-                      fontWeight: FontWeight.w800,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-            const Icon(Icons.keyboard_arrow_down_rounded, color: textoSecundario),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _clienteField() {
-    return Autocomplete<Map<String, dynamic>>(
-      displayStringForOption: (row) => _nombre(row),
-      optionsBuilder: (textEditingValue) {
-        return _buscarClientes(textEditingValue.text);
-      },
-      onSelected: _seleccionarCliente,
-      fieldViewBuilder: (context, controller, focusNode, onFieldSubmitted) {
-        return TextField(
-          controller: controller,
-          focusNode: focusNode,
-          enabled: !_guardando,
-          decoration: _decoracion(
-            label: 'Cliente',
-            hint: 'Escribe nombre o RUC para buscar...',
-            icon: Icons.business_outlined,
-          ).copyWith(
-            suffixIcon: _clienteSeleccionado != null
-                ? const Icon(Icons.check_circle, color: Color(0xFF13B77A))
-                : const Icon(Icons.search, color: textoSecundario),
-          ),
-          onChanged: (value) {
-            if (_clienteSeleccionado != null &&
-                value.trim() != _nombre(_clienteSeleccionado!)) {
-              setState(() {
-                _clienteSeleccionado = null;
-                _cliente = '';
-              });
-            }
-          },
-          onSubmitted: (_) => onFieldSubmitted(),
-        );
-      },
-      optionsViewBuilder: (context, onSelected, options) {
-        final lista = options.toList();
-        if (lista.isEmpty) return const SizedBox.shrink();
-
-        return Align(
-          alignment: Alignment.topLeft,
-          child: Material(
-            elevation: 8,
-            borderRadius: BorderRadius.circular(12),
-            child: ConstrainedBox(
-              constraints: const BoxConstraints(maxHeight: 280, maxWidth: 720),
-              child: ListView.separated(
-                padding: const EdgeInsets.symmetric(vertical: 6),
-                shrinkWrap: true,
-                itemCount: lista.length,
-                separatorBuilder: (_, __) => const Divider(height: 1),
-                itemBuilder: (context, index) {
-                  final row = lista[index];
-                  return ListTile(
-                    dense: true,
-                    leading: CircleAvatar(
-                      radius: 18,
-                      backgroundColor: azulClaro,
-                      child: const Icon(Icons.business, color: azul, size: 18),
-                    ),
-                    title: Text(
-                      _nombre(row),
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(
-                        color: azul,
-                        fontWeight: FontWeight.w800,
-                        fontSize: 13,
-                      ),
-                    ),
-                    subtitle: Text(
-                      'RUC / Código: ${_codigo(row)}',
-                      style: const TextStyle(
-                        color: textoSecundario,
-                        fontSize: 11,
-                      ),
-                    ),
-                    onTap: () => onSelected(row),
-                  );
-                },
-              ),
-            ),
-          ),
-        );
-      },
-    );
-  }
-
-  Widget _campoFecha() {
-    return InkWell(
-      borderRadius: BorderRadius.circular(12),
-      onTap: _guardando
-          ? null
-          : () async {
-              final date = await showDatePicker(
-                context: context,
-                firstDate: DateTime.now(),
-                lastDate: DateTime(2035),
-                initialDate: _fechaProxima ?? DateTime.now(),
-              );
-              if (date != null && mounted) {
-                setState(() => _fechaProxima = date);
-              }
-            },
-      child: Container(
-        height: 60,
-        padding: const EdgeInsets.symmetric(horizontal: 14),
-        decoration: BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.circular(12),
-          border: Border.all(color: borde),
-        ),
-        child: Row(
-          children: [
-            const Icon(Icons.calendar_today_outlined, color: azul, size: 21),
-            const SizedBox(width: 11),
-            Expanded(
-              child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  const Text(
-                    'Fecha próxima acción',
-                    style: TextStyle(
-                      color: textoSecundario,
-                      fontSize: 11,
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
-                  const SizedBox(height: 2),
-                  Text(
-                    _fechaProxima == null
-                        ? 'Seleccionar fecha'
-                        : DateFormat('dd/MM/yyyy').format(_fechaProxima!),
-                    style: TextStyle(
-                      color: _fechaProxima == null ? textoSecundario : azul,
-                      fontSize: 14,
-                      fontWeight: _fechaProxima == null
-                          ? FontWeight.w500
-                          : FontWeight.w800,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-            const Icon(Icons.keyboard_arrow_down_rounded, color: textoSecundario),
-          ],
-        ),
-      ),
-    );
-  }
-
   @override
   Widget build(BuildContext context) {
     final vendedores = widget.vendedores.isEmpty
         ? <String>[_vendedor]
-        : widget.vendedores.toSet().toList();
+        : widget.vendedores;
 
-    return Dialog(
-      backgroundColor: const Color(0xFFF7F9FC),
-      insetPadding: const EdgeInsets.symmetric(horizontal: 24, vertical: 24),
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(22)),
-      child: ConstrainedBox(
-        constraints: const BoxConstraints(maxWidth: 780, maxHeight: 850),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Container(
-              width: double.infinity,
-              padding: const EdgeInsets.fromLTRB(26, 22, 22, 20),
-              decoration: const BoxDecoration(
-                color: azul,
-                borderRadius: BorderRadius.only(
-                  topLeft: Radius.circular(22),
-                  topRight: Radius.circular(22),
+    return AlertDialog(
+      title: const Text(
+        'Nuevo seguimiento',
+        style: TextStyle(color: azul, fontWeight: FontWeight.w900),
+      ),
+      content: SizedBox(
+        width: 650,
+        child: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              DropdownButtonFormField<String>(
+                value: _tipo,
+                decoration: const InputDecoration(labelText: 'Tipo'),
+                items: const [
+                  'LLAMADA',
+                  'WHATSAPP',
+                  'CORREO',
+                  'VISITA',
+                  'REUNION',
+                  'SEGUIMIENTO',
+                ]
+                    .map(
+                      (e) => DropdownMenuItem(
+                        value: e,
+                        child: Text(e),
+                      ),
+                    )
+                    .toList(),
+                onChanged: _guardando
+                    ? null
+                    : (value) => setState(() => _tipo = value ?? 'LLAMADA'),
+              ),
+              const SizedBox(height: 12),
+              DropdownButtonFormField<String>(
+                value: _cliente.isEmpty ? null : _cliente,
+                isExpanded: true,
+                decoration: const InputDecoration(labelText: 'Cliente'),
+                items: widget.clientes
+                    .map(
+                      (row) => DropdownMenuItem(
+                        value: _codigo(row),
+                        child: Text(
+                          '${_nombre(row)} · ${_codigo(row)}',
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                    )
+                    .where((item) => item.value!.isNotEmpty)
+                    .toList(),
+                onChanged: _guardando
+                    ? null
+                    : (value) => setState(() => _cliente = value ?? ''),
+              ),
+              const SizedBox(height: 12),
+              DropdownButtonFormField<String>(
+                value: vendedores.contains(_vendedor) ? _vendedor : null,
+                isExpanded: true,
+                decoration: const InputDecoration(labelText: 'Asesor'),
+                items: vendedores
+                    .where((item) => item.isNotEmpty)
+                    .toSet()
+                    .map(
+                      (item) => DropdownMenuItem(
+                        value: item,
+                        child: Text(item),
+                      ),
+                    )
+                    .toList(),
+                onChanged: _guardando
+                    ? null
+                    : (value) => setState(() => _vendedor = value ?? ''),
+              ),
+              const SizedBox(height: 12),
+              TextField(
+                controller: _asunto,
+                decoration: const InputDecoration(
+                  labelText: 'Asunto',
+                  hintText: 'Ej. Revisión de cotización',
                 ),
               ),
-              child: Row(
-                children: [
-                  Container(
-                    width: 44,
-                    height: 44,
-                    decoration: BoxDecoration(
-                      color: Colors.white.withValues(alpha: .14),
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                    child: const Icon(
-                      Icons.track_changes_outlined,
-                      color: Colors.white,
-                      size: 25,
-                    ),
-                  ),
-                  const SizedBox(width: 13),
-                  const Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          'Nuevo seguimiento',
-                          style: TextStyle(
-                            color: Colors.white,
-                            fontSize: 21,
-                            fontWeight: FontWeight.w900,
-                          ),
-                        ),
-                        SizedBox(height: 3),
-                        Text(
-                          'Registra la gestión comercial y define la próxima acción.',
-                          style: TextStyle(
-                            color: Colors.white70,
-                            fontSize: 12,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                  IconButton(
-                    tooltip: 'Cerrar',
-                    onPressed: _guardando ? null : () => Navigator.pop(context),
-                    icon: const Icon(Icons.close, color: Colors.white),
-                  ),
-                ],
+              const SizedBox(height: 12),
+              TextField(
+                controller: _resultado,
+                decoration: const InputDecoration(
+                  labelText: 'Resultado',
+                  hintText: 'Ej. Interesado / En evaluación',
+                ),
               ),
-            ),
-            Flexible(
-              child: SingleChildScrollView(
-                padding: const EdgeInsets.fromLTRB(26, 22, 26, 12),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    const Text(
-                      'Tipo de gestión',
-                      style: TextStyle(
-                        color: azul,
-                        fontSize: 13,
-                        fontWeight: FontWeight.w900,
-                      ),
-                    ),
-                    const SizedBox(height: 9),
-                    Wrap(
-                      spacing: 8,
-                      runSpacing: 8,
-                      children: _tiposGestion
-                          .map((tipo) => _tipoChip(tipo, _iconoTipo(tipo)))
-                          .toList(),
-                    ),
-                    const SizedBox(height: 20),
-                    _clienteField(),
-                    if (_clienteSeleccionado != null) ...[
-                      const SizedBox(height: 7),
-                      Row(
-                        children: [
-                          const Icon(Icons.verified_outlined,
-                              color: Color(0xFF13B77A), size: 16),
-                          const SizedBox(width: 6),
-                          Expanded(
-                            child: Text(
-                              '${_nombre(_clienteSeleccionado!)} · ${_codigo(_clienteSeleccionado!)}',
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: const TextStyle(
-                                color: Color(0xFF13B77A),
-                                fontSize: 11,
-                                fontWeight: FontWeight.w700,
-                              ),
-                            ),
-                          ),
-                        ],
-                      ),
-                    ],
-                    const SizedBox(height: 16),
-                    LayoutBuilder(
-                      builder: (context, constraints) {
-                        final twoColumns = constraints.maxWidth >= 620;
-                        final width = twoColumns
-                            ? (constraints.maxWidth - 12) / 2
-                            : constraints.maxWidth;
-                        return Wrap(
-                          spacing: 12,
-                          runSpacing: 14,
-                          children: [
-                            SizedBox(
-                              width: width,
-                              child: _menuSelector(
-                                label: 'Asesor',
-                                value: _vendedor,
-                                icon: Icons.person_outline,
-                                options: vendedores,
-                                onChanged: (value) => setState(
-                                  () => _vendedor = value,
-                                ),
-                              ),
-                            ),
-                            SizedBox(
-                              width: width,
-                              child: TextField(
-                                controller: _asunto,
-                                enabled: !_guardando,
-                                decoration: _decoracion(
-                                  label: 'Asunto',
-                                  hint: 'Ej. Revisión de cotización',
-                                  icon: Icons.subject_outlined,
-                                ),
-                              ),
-                            ),
-                            SizedBox(
-                              width: width,
-                              child: TextField(
-                                controller: _resultado,
-                                enabled: !_guardando,
-                                decoration: _decoracion(
-                                  label: 'Resultado',
-                                  hint: 'Ej. Interesado / En evaluación',
-                                  icon: Icons.fact_check_outlined,
-                                ),
-                              ),
-                            ),
-                            SizedBox(
-                              width: width,
-                              child: TextField(
-                                controller: _proxima,
-                                enabled: !_guardando,
-                                decoration: _decoracion(
-                                  label: 'Próxima acción',
-                                  hint: 'Ej. Enviar cotización',
-                                  icon: Icons.next_plan_outlined,
-                                ),
-                              ),
-                            ),
-                            SizedBox(width: width, child: _campoFecha()),
-                            SizedBox(
-                              width: width,
-                              child: TextField(
-                                controller: _descripcion,
-                                enabled: !_guardando,
-                                maxLines: 2,
-                                decoration: _decoracion(
-                                  label: 'Descripción',
-                                  hint: 'Detalle de la gestión...',
-                                  icon: Icons.notes_outlined,
-                                ),
-                              ),
-                            ),
-                          ],
+              const SizedBox(height: 12),
+              TextField(
+                controller: _proxima,
+                decoration: const InputDecoration(
+                  labelText: 'Próxima acción',
+                ),
+              ),
+              const SizedBox(height: 12),
+              TextField(
+                controller: _descripcion,
+                maxLines: 3,
+                decoration: const InputDecoration(
+                  labelText: 'Descripción',
+                ),
+              ),
+              const SizedBox(height: 12),
+              ListTile(
+                contentPadding: EdgeInsets.zero,
+                title: Text(
+                  _fechaProxima == null
+                      ? 'Seleccionar fecha próxima'
+                      : DateFormat('dd/MM/yyyy').format(_fechaProxima!),
+                ),
+                leading: const Icon(
+                  Icons.calendar_today_outlined,
+                  color: azul,
+                ),
+                trailing: const Icon(Icons.chevron_right),
+                onTap: _guardando
+                    ? null
+                    : () async {
+                        final date = await showDatePicker(
+                          context: context,
+                          firstDate: DateTime.now(),
+                          lastDate: DateTime(2035),
+                          initialDate: _fechaProxima ?? DateTime.now(),
                         );
+                        if (date != null && mounted) {
+                          setState(() => _fechaProxima = date);
+                        }
                       },
-                    ),
-                  ],
-                ),
               ),
-            ),
-            Container(
-              padding: const EdgeInsets.fromLTRB(26, 12, 26, 20),
-              decoration: const BoxDecoration(
-                color: Colors.white,
-                borderRadius: BorderRadius.only(
-                  bottomLeft: Radius.circular(22),
-                  bottomRight: Radius.circular(22),
-                ),
-              ),
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.end,
-                children: [
-                  TextButton(
-                    onPressed: _guardando ? null : () => Navigator.pop(context),
-                    child: const Text('Cancelar'),
-                  ),
-                  const SizedBox(width: 10),
-                  FilledButton.icon(
-                    onPressed: _guardando ? null : _guardar,
-                    style: FilledButton.styleFrom(
-                      backgroundColor: azul,
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 20,
-                        vertical: 13,
-                      ),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(10),
-                      ),
-                    ),
-                    icon: _guardando
-                        ? const SizedBox(
-                            width: 17,
-                            height: 17,
-                            child: CircularProgressIndicator(
-                              strokeWidth: 2,
-                              color: Colors.white,
-                            ),
-                          )
-                        : const Icon(Icons.save_outlined, size: 18),
-                    label: Text(_guardando ? 'Guardando...' : 'Guardar seguimiento'),
-                  ),
-                ],
-              ),
-            ),
-          ],
+            ],
+          ),
         ),
       ),
+      actions: [
+        TextButton(
+          onPressed: _guardando ? null : () => Navigator.pop(context),
+          child: const Text('Cancelar'),
+        ),
+        FilledButton(
+          onPressed: _guardando ? null : _guardar,
+          child: _guardando
+              ? const SizedBox(
+                  width: 18,
+                  height: 18,
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                )
+              : const Text('Guardar'),
+        ),
+      ],
     );
   }
 }
@@ -2108,7 +1664,6 @@ class _EditarSeguimientoDialogState extends State<_EditarSeguimientoDialog> {
 
   late String _tipo;
   late String _vendedor;
-  List<String> _tiposGestion = const ['LLAMADA'];
   DateTime? _fechaProxima;
   bool _guardando = false;
 
@@ -2118,7 +1673,6 @@ class _EditarSeguimientoDialogState extends State<_EditarSeguimientoDialog> {
     _tipo = _s(widget.row['tipo']).isEmpty
         ? 'LLAMADA'
         : _s(widget.row['tipo']);
-    _cargarTiposGestion();
     _vendedor = _s(widget.row['vendedor']);
     _asunto.text = _s(widget.row['asunto']);
     _descripcion.text = _s(widget.row['descripcion']);
@@ -2130,32 +1684,6 @@ class _EditarSeguimientoDialogState extends State<_EditarSeguimientoDialog> {
   }
 
   String _s(dynamic value) => value?.toString().trim() ?? '';
-
-  Future<void> _cargarTiposGestion() async {
-    try {
-      final tipos = await CrmCatalogosService.obtenerNombres('tipos_gestion');
-      final unicos = <String>[];
-      final vistos = <String>{};
-      for (final tipo in tipos) {
-        final nombre = tipo.trim();
-        final clave = nombre.toUpperCase();
-        if (nombre.isNotEmpty && vistos.add(clave)) {
-          unicos.add(nombre);
-        }
-      }
-      if (!mounted) return;
-      setState(() {
-        _tiposGestion = unicos.isEmpty ? ['LLAMADA'] : unicos;
-        if (!_tiposGestion.any((e) => e.toUpperCase() == _tipo.toUpperCase())) {
-          _tiposGestion.insert(0, _tipo);
-        }
-      });
-    } catch (_) {
-      if (mounted && !_tiposGestion.contains(_tipo)) {
-        setState(() => _tiposGestion = ['LLAMADA', _tipo].toSet().toList());
-      }
-    }
-  }
 
   @override
   void dispose() {
@@ -2246,11 +1774,16 @@ class _EditarSeguimientoDialogState extends State<_EditarSeguimientoDialog> {
               ),
               const SizedBox(height: 12),
               DropdownButtonFormField<String>(
-                value: _tiposGestion.contains(_tipo) ? _tipo : null,
-                isExpanded: true,
+                value: _tipo,
                 decoration: const InputDecoration(labelText: 'Tipo'),
-                items: _tiposGestion
-                    .toSet()
+                items: const [
+                  'LLAMADA',
+                  'WHATSAPP',
+                  'CORREO',
+                  'VISITA',
+                  'REUNION',
+                  'SEGUIMIENTO',
+                ]
                     .map(
                       (e) => DropdownMenuItem(
                         value: e,

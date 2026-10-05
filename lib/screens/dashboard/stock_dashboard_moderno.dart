@@ -110,6 +110,15 @@ class _DashboardPageState extends State<DashboardPage> {
   // RUC asociado a cada cliente, cargado desde la tabla clientes.
   Map<String, Set<String>> _rucsPorCliente = {};
 
+  // Conversión entre código y nombre de vendedor.
+  // En public.stock se guarda el código (ej. 026), mientras que
+  // usuarios.vendedor guarda el nombre (ej. Johanna Portillo).
+  Map<String, String> _nombreVendedorPorCodigo = {};
+  Map<String, String> _codigoVendedorPorNombre = {};
+
+  // Nombre comercial del cliente para mostrar en rankings.
+  Map<String, String> _nombreClientePorRuc = {};
+
   String _clase = 'TODAS';
   String _almacen = 'TODOS';
   String _vendedor = 'TODOS';
@@ -258,6 +267,104 @@ class _DashboardPageState extends State<DashboardPage> {
         .toSet();
   }
 
+  Future<void> _cargarMapaVendedores() async {
+    final porCodigo = <String, String>{};
+    final porNombre = <String, String>{};
+
+    for (int from = 0;; from += 1000) {
+      final data = await _db
+          .from('clientes')
+          .select('codigo_vendedor, vendedor')
+          .range(from, from + 999);
+
+      final pagina = List<Map<String, dynamic>>.from(data);
+      for (final row in pagina) {
+        final codigo = _s(row['codigo_vendedor']);
+        final nombre = _s(row['vendedor']);
+        if (codigo.isEmpty || nombre.isEmpty) continue;
+
+        porCodigo[codigo] = nombre;
+        porNombre[_normalizarNombre(nombre)] = codigo;
+      }
+
+      if (pagina.length < 1000) break;
+    }
+
+    _nombreVendedorPorCodigo = porCodigo;
+    _codigoVendedorPorNombre = porNombre;
+  }
+
+  Future<void> _cargarPreciosFallback(List<Map<String, dynamic>> rows) async {
+    final codigos = <String>{};
+
+    for (final row in rows) {
+      final valorActual = _d(
+        row['valor_lista_precio_dolar'] ??
+            row['valorStock'] ??
+            row['valor'],
+      );
+      if (valorActual > 0) continue;
+
+      final codigo = _campo(
+        row,
+        ['codigo_articulo', 'codigoArticulo', 'codigo'],
+      ).trim();
+      if (codigo.isNotEmpty) codigos.add(codigo);
+    }
+
+    if (codigos.isEmpty) return;
+
+    final precios = <String, double>{};
+    final lista = codigos.toList();
+
+    for (int i = 0; i < lista.length; i += 100) {
+      final lote = lista.skip(i).take(100).toList();
+
+      final data = await _db
+          .from('productos')
+          .select('codigo, precio_vigente_dolar')
+          .inFilter('codigo', lote);
+
+      for (final row in List<Map<String, dynamic>>.from(data)) {
+        final codigo = _s(row['codigo']);
+        final precio = _d(row['precio_vigente_dolar']);
+        if (codigo.isNotEmpty && precio > 0) {
+          precios[codigo] = precio;
+        }
+      }
+    }
+
+    for (final row in rows) {
+      final valorActual = _d(
+        row['valor_lista_precio_dolar'] ??
+            row['valorStock'] ??
+            row['valor'],
+      );
+
+      if (valorActual > 0) {
+        row['_valor_dashboard'] = valorActual;
+        continue;
+      }
+
+      final codigo = _campo(
+        row,
+        ['codigo_articulo', 'codigoArticulo', 'codigo'],
+      ).trim();
+
+      final precio = precios[codigo] ?? 0;
+      final cantidad = _d(row['stock']);
+      final factor = _d(row['lista_precio_dolar']);
+      final factorSeguro = factor > 0 ? factor : 1;
+
+      final calculado = cantidad * precio * factorSeguro;
+      if (calculado > 0) {
+        row['_valor_dashboard'] = calculado;
+      } else {
+        row['_valor_dashboard'] = 0.0;
+      }
+    }
+  }
+
   Future<void> _cargar() async {
     if (!mounted) return;
 
@@ -268,6 +375,9 @@ class _DashboardPageState extends State<DashboardPage> {
 
     try {
       final List<Map<String, dynamic>> rows = [];
+
+      // Primero resolvemos el vendedor real. public.stock usa código.
+      await _cargarMapaVendedores();
 
       // ============================================================
       // CONSULTA OPTIMIZADA A SUPABASE
@@ -288,6 +398,11 @@ class _DashboardPageState extends State<DashboardPage> {
       // ============================================================
 
       final vendedorFiltro = _vendedorActual.trim();
+      final vendedorCodigo = _codigoVendedorPorNombre[
+            _normalizarNombre(vendedorFiltro)
+          ] ??
+          vendedorFiltro;
+
       final prefijoJefatura = _prefijoOpJefatura.trim().toUpperCase();
 
       final filtrarPorVendedor =
@@ -305,7 +420,7 @@ class _DashboardPageState extends State<DashboardPage> {
           data = await _db
               .from('stock')
               .select()
-              .ilike('vendedor', vendedorFiltro)
+              .ilike('vendedor', vendedorCodigo)
               .range(from, from + 999);
         } else if (filtrarPorOp) {
           data = await _db
@@ -349,21 +464,26 @@ class _DashboardPageState extends State<DashboardPage> {
               }).toList();
       } else {
         final vendedorSesion = _normalizarNombre(_vendedorActual);
+        final vendedorCodigo =
+            _codigoVendedorPorNombre[vendedorSesion] ?? '';
 
-        visibles = vendedorSesion.isEmpty
+        visibles = vendedorCodigo.isEmpty
             ? <Map<String, dynamic>>[]
             : rows.where((r) {
-                final vendedor = _normalizarNombre(
+                final vendedor = _s(
                   _campo(r, [
                     'vendedor',
                     'asesor',
                     'representante',
                   ]),
                 );
-
-                return vendedor == vendedorSesion;
+                return vendedor == vendedorCodigo;
               }).toList();
       }
+
+      // Si el Excel anterior dejó vacío el valor monetario, recuperamos
+      // el valor usando el precio vigente del producto y la presentación.
+      await _cargarPreciosFallback(visibles);
 
       if (!mounted) return;
 
@@ -417,6 +537,8 @@ class _DashboardPageState extends State<DashboardPage> {
           rucsPorCliente
               .putIfAbsent(razon, () => <String>{})
               .add(ruc);
+
+          _nombreClientePorRuc[ruc] = c['razon_social']?.toString().trim() ?? razon;
         }
 
         if (paginaClientes.length < 1000) break;
@@ -482,11 +604,7 @@ final ruc = _rucDe(r);
         'ubicacion',
       ], defecto: 'SIN ALMACÉN');
 
-      final vendedor = _campo(r, [
-        'vendedor',
-        'asesor',
-        'representante',
-      ], defecto: 'SIN VENDEDOR');
+      final vendedor = _vendedorDe(r);
 
       final condicion = _campo(r, [
         'condicion',
@@ -592,11 +710,26 @@ final ruc = _rucDe(r);
         'ubicacion',
       ], defecto: 'SIN ALMACÉN');
 
-  String _vendedorDe(Map<String, dynamic> r) => _campo(r, [
-        'vendedor',
-        'asesor',
-        'representante',
-      ], defecto: 'SIN VENDEDOR');
+  String _vendedorDe(Map<String, dynamic> r) {
+    final codigo = _campo(r, [
+      'vendedor',
+      'asesor',
+      'representante',
+    ], defecto: 'SIN VENDEDOR');
+
+    return _nombreVendedorPorCodigo[codigo] ?? codigo;
+  }
+
+  String _clienteNombreDe(Map<String, dynamic> r) {
+    final raw = _campo(r, ['cliente']);
+    if (raw.isEmpty) return 'SIN CLIENTE';
+
+    final ruc = _rucDe(r).trim();
+    final nombre = _nombreClientePorRuc[ruc];
+    if (nombre != null && nombre.isNotEmpty) return nombre;
+
+    return raw;
+  }
 
   String _condicionDe(Map<String, dynamic> r) => _campo(r, [
         'condicion',
@@ -608,7 +741,10 @@ final ruc = _rucDe(r);
       ], defecto: 'DISPONIBLE');
 
   double _valor(Map<String, dynamic> r) =>
-      _d(r['valor_lista_precio_dolar'] ?? r['valorStock'] ?? r['valor']);
+      _d(r['_valor_dashboard'] ??
+          r['valor_lista_precio_dolar'] ??
+          r['valorStock'] ??
+          r['valor']);
 
   double _peso(Map<String, dynamic> r) =>
       _d(r['peso'] ?? r['peso_cobre'] ?? r['pesoCobre']);
@@ -679,8 +815,8 @@ final ruc = _rucDe(r);
   int get _productosUnicos => _productosAgrupados().length;
 
   int get _clientes => _filtrados
-      .map((r) => _campo(r, ['cliente']))
-      .where((e) => e.isNotEmpty)
+      .map(_clienteNombreDe)
+      .where((e) => e.isNotEmpty && e != 'SIN CLIENTE')
       .toSet()
       .length;
 
@@ -705,7 +841,7 @@ final ruc = _rucDe(r);
         clienteNormalizado == _normalizarNombre('SIN CLIENTE');
 
     final filasCliente = _filtrados.where((r) {
-      final valorCliente = _normalizarNombre(_campo(r, ['cliente']));
+      final valorCliente = _normalizarNombre(_clienteNombreDe(r));
 
       // "SIN CLIENTE" es un agrupador visual. En la base de datos
       // normalmente el campo cliente viene vacío/null, por eso debemos
@@ -1565,8 +1701,7 @@ if (_puedeVer('crm'))
     final clases = _ordenar(_claseDe);
     final condiciones = _ordenar(_condicionDe);
     final almacenes = _ordenar(_almacenDe);
-    final clientes = _ordenar((r) => _campo(r, ['cliente'],
-        defecto: 'SIN CLIENTE'));
+    final clientes = _ordenar(_clienteNombreDe);
     final vendedores = _ordenar(_vendedorDe);
     final productos = _productosAgrupados().values.toList()
       ..sort((a, b) => b.valor.compareTo(a.valor));

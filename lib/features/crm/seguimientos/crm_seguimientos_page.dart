@@ -626,8 +626,8 @@ class _CrmSeguimientosPageState extends State<CrmSeguimientosPage> {
   }) {
     return Expanded(
       child: Container(
-        height: 86,
-        padding: const EdgeInsets.all(14),
+        height: 118,
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
         decoration: BoxDecoration(
           color: Colors.white,
           borderRadius: BorderRadius.circular(12),
@@ -670,6 +670,8 @@ class _CrmSeguimientosPageState extends State<CrmSeguimientosPage> {
                   if (footer != null)
                     Text(
                       footer,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
                       style: TextStyle(
                         color: color,
                         fontSize: 9,
@@ -1202,7 +1204,7 @@ class _CrmSeguimientosPageState extends State<CrmSeguimientosPage> {
               _header(),
               const SizedBox(height: 10),
               SizedBox(
-                height: 104,
+                height: 118,
                 child: SingleChildScrollView(
                   scrollDirection: Axis.horizontal,
                   child: Row(

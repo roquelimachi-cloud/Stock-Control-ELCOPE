@@ -229,100 +229,79 @@ class _CrmOportunidadesPageState extends State<CrmOportunidadesPage> {
   }
 
   Widget _header() {
-    return LayoutBuilder(
-      builder: (context, c) {
-        final mobile = c.maxWidth < 700;
-        final title = Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: const [
-            Text(
-              'Oportunidades',
-              style: TextStyle(color: azul, fontSize: 24, fontWeight: FontWeight.w900),
-            ),
-            Text(
-              'Gestiona tus oportunidades de venta y convierte más proyectos.',
-              style: TextStyle(color: Color(0xFF6B7E93), fontSize: 13),
-            ),
-          ],
-        );
-        if (mobile) {
-          return Column(
+    return Row(
+      children: [
+        IconButton(
+          onPressed: () => Navigator.maybePop(context),
+          icon: const Icon(Icons.arrow_back_rounded, color: azul),
+        ),
+        const Expanded(
+          child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Row(
-                children: [
-                  IconButton(
-                    onPressed: () => Navigator.maybePop(context),
-                    icon: const Icon(Icons.arrow_back_rounded, color: azul),
-                    tooltip: 'Regresar',
-                  ),
-                  Expanded(child: title),
-                  IconButton(
-                    tooltip: 'Actualizar',
-                    onPressed: () => setState(() {}),
-                    icon: const Icon(Icons.refresh_rounded, color: azul2),
-                  ),
-                ],
+              Text(
+                'Oportunidades',
+                style: TextStyle(
+                  color: azul,
+                  fontSize: 24,
+                  fontWeight: FontWeight.w900,
+                ),
               ),
-              const SizedBox(height: 8),
-              SizedBox(
-                width: double.infinity,
-                height: 42,
-                child: TextField(
-                  controller: _buscar,
-                  onChanged: (_) => setState(() {}),
-                  decoration: InputDecoration(
-                    hintText: 'Buscar cliente, proyecto, oportunidad...',
-                    prefixIcon: const Icon(Icons.search, size: 18),
-                    filled: true,
-                    fillColor: Colors.white,
-                    border: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(10),
-                      borderSide: const BorderSide(color: borde),
-                    ),
-                    enabledBorder: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(10),
-                      borderSide: const BorderSide(color: borde),
-                    ),
-                  ),
+              Text(
+                'Gestiona tus oportunidades de venta y convierte más proyectos.',
+                style: TextStyle(
+                  color: Color(0xFF6B7E93),
+                  fontSize: 13,
                 ),
               ),
             ],
-          );
-        }
-        return Row(
-          children: [
-            IconButton(
-              onPressed: () => Navigator.maybePop(context),
-              icon: const Icon(Icons.arrow_back_rounded, color: azul),
-              tooltip: 'Regresar',
-            ),
-            Expanded(child: title),
-            SizedBox(
-              width: 290,
-              height: 40,
-              child: TextField(
-                controller: _buscar,
-                onChanged: (_) => setState(() {}),
-                decoration: InputDecoration(
-                  hintText: 'Buscar cliente, proyecto, oportunidad...',
-                  prefixIcon: const Icon(Icons.search, size: 18),
-                  filled: true,
-                  fillColor: Colors.white,
-                  border: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(10),
-                    borderSide: const BorderSide(color: borde),
-                  ),
-                  enabledBorder: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(10),
-                    borderSide: const BorderSide(color: borde),
-                  ),
-                ),
+          ),
+        ),
+        SizedBox(
+          width: 290,
+          height: 40,
+          child: TextField(
+            controller: _buscar,
+            onChanged: (_) => setState(() {}),
+            decoration: InputDecoration(
+              hintText: 'Buscar cliente, proyecto, oportunidad...',
+              prefixIcon: const Icon(Icons.search, size: 18),
+              filled: true,
+              fillColor: Colors.white,
+              border: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(10),
+                borderSide: const BorderSide(color: borde),
+              ),
+              enabledBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(10),
+                borderSide: const BorderSide(color: borde),
               ),
             ),
-          ],
-        );
-      },
+          ),
+        ),
+        const SizedBox(width: 10),
+        const CircleAvatar(
+          radius: 18,
+          backgroundColor: azul,
+          child: Text(
+            'MR',
+            style: TextStyle(
+              color: Colors.white,
+              fontWeight: FontWeight.w900,
+            ),
+          ),
+        ),
+        const SizedBox(width: 8),
+        const Text(
+          'Michael Roque',
+          style: TextStyle(
+            color: azul,
+            fontWeight: FontWeight.w800,
+            fontSize: 13,
+          ),
+        ),
+        const Icon(Icons.keyboard_arrow_down, color: azul),
+      ],
     );
   }
 
@@ -335,8 +314,8 @@ class _CrmOportunidadesPageState extends State<CrmOportunidadesPage> {
   }) {
     return Expanded(
       child: Container(
-        height: 86,
-        padding: const EdgeInsets.all(14),
+        height: 118,
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
         decoration: BoxDecoration(
           color: Colors.white,
           borderRadius: BorderRadius.circular(12),
@@ -379,6 +358,8 @@ class _CrmOportunidadesPageState extends State<CrmOportunidadesPage> {
                   if (footer != null)
                     Text(
                       footer,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
                       style: TextStyle(
                         color: color,
                         fontSize: 9,
@@ -880,24 +861,48 @@ class _CrmOportunidadesPageState extends State<CrmOportunidadesPage> {
             children: [
               _header(),
               const SizedBox(height: 10),
-              SizedBox(
-                height: 104,
-                child: SingleChildScrollView(
-                  scrollDirection: Axis.horizontal,
-                  child: Row(
-                    children: [
-                      SizedBox(width: 240, child: _kpi(icon: Icons.gps_fixed_outlined, title: 'Total oportunidades', value: '${_oportunidades.length}', color: azul2, footer: 'Este mes')),
-                      const SizedBox(width: 10),
-                      SizedBox(width: 240, child: _kpi(icon: Icons.access_time_rounded, title: 'En evaluación', value: '${_countByStage('En evaluación')}', color: naranja, footer: 'En análisis')),
-                      const SizedBox(width: 10),
-                      SizedBox(width: 240, child: _kpi(icon: Icons.description_outlined, title: 'Propuesta enviada', value: '${_countByStage('Propuesta enviada')}', color: morado, footer: 'Cotizaciones')),
-                      const SizedBox(width: 10),
-                      SizedBox(width: 240, child: _kpi(icon: Icons.handshake_outlined, title: 'Negociación', value: '${_countByStage('Negociación')}', color: naranja, footer: 'En negociación')),
-                      const SizedBox(width: 10),
-                      SizedBox(width: 240, child: _kpi(icon: Icons.emoji_events_outlined, title: 'Ganadas', value: '${_countByStage('Ganada')}', color: verde, footer: 'Este mes')),
-                    ],
+              Row(
+                children: [
+                  _kpi(
+                    icon: Icons.gps_fixed_outlined,
+                    title: 'Total oportunidades',
+                    value: '${_oportunidades.length}',
+                    color: azul2,
+                    footer: 'Este mes',
                   ),
-                ),
+                  const SizedBox(width: 10),
+                  _kpi(
+                    icon: Icons.access_time_rounded,
+                    title: 'En evaluación',
+                    value: '${_countByStage('En evaluación')}',
+                    color: naranja,
+                    footer: 'En análisis',
+                  ),
+                  const SizedBox(width: 10),
+                  _kpi(
+                    icon: Icons.description_outlined,
+                    title: 'Propuesta enviada',
+                    value: '${_countByStage('Propuesta enviada')}',
+                    color: morado,
+                    footer: 'Cotizaciones',
+                  ),
+                  const SizedBox(width: 10),
+                  _kpi(
+                    icon: Icons.handshake_outlined,
+                    title: 'Negociación',
+                    value: '${_countByStage('Negociación')}',
+                    color: naranja,
+                    footer: 'En negociación',
+                  ),
+                  const SizedBox(width: 10),
+                  _kpi(
+                    icon: Icons.emoji_events_outlined,
+                    title: 'Ganadas',
+                    value: '${_countByStage('Ganada')}',
+                    color: verde,
+                    footer: 'Este mes',
+                  ),
+                ],
               ),
               const SizedBox(height: 12),
               _filters(),
@@ -922,9 +927,14 @@ class _CrmOportunidadesPageState extends State<CrmOportunidadesPage> {
 
   @override
   Widget build(BuildContext context) {
+    // Esta pantalla se abre directamente desde el menú CRM.
+    // No muestra otro menú lateral: solo conserva la flecha de regreso
+    // del encabezado (_header).
     return Scaffold(
       backgroundColor: fondo,
-      body: SafeArea(child: _body()),
+      body: SafeArea(
+        child: _body(),
+      ),
     );
   }
 

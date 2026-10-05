@@ -7,7 +7,6 @@ import 'package:geolocator/geolocator.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:timezone/data/latest_all.dart' as tz;
 import 'package:timezone/timezone.dart' as tz;
-import 'package:url_launcher/url_launcher.dart';
 
 import '../../../services/sesion.dart';
 import '../../../services/supabase/supabase_service.dart';
@@ -171,30 +170,6 @@ class _CrmVisitasPageState extends State<CrmVisitasPage> {
           ? Sesion.vendedor.trim()
           : Sesion.nombre.trim();
 
-  String _normalizarNombre(String value) {
-    return value
-        .trim()
-        .toUpperCase()
-        .replaceAll(RegExp(r'\s+'), ' ');
-  }
-
-  /// Solo el asesor propietario de la visita puede ejecutarla.
-  /// Jefatura y gerencia tienen permisos de supervisión, no de ejecución.
-  bool _puedeGestionarVisita(Map<String, dynamic> visita) {
-    if (_esGerencia || _esJefatura) return false;
-
-    final usuarioVisita = (visita['usuario_id'] as num?)?.toInt();
-    if (usuarioVisita != null && usuarioVisita > 0 && Sesion.idUsuario > 0) {
-      return usuarioVisita == Sesion.idUsuario;
-    }
-
-    final vendedorVisita = _normalizarNombre(_s(visita['vendedor']));
-    final vendedorActual = _normalizarNombre(_vendedorActual);
-    return vendedorVisita.isNotEmpty &&
-        vendedorActual.isNotEmpty &&
-        vendedorVisita == vendedorActual;
-  }
-
   @override
   void initState() {
     super.initState();
@@ -274,7 +249,7 @@ class _CrmVisitasPageState extends State<CrmVisitasPage> {
           _esJefatura && Sesion.rol.trim().toLowerCase() == 'jefe lima'
               ? 'LIMA'
               : 'TODOS',
-      'p_solo_activos': true,
+      'p_solo_activos': false,
       'p_limit': 5000,
       'p_offset': 0,
       'p_orden': 'CLIENTE_ASC',
@@ -398,14 +373,14 @@ class _CrmVisitasPageState extends State<CrmVisitasPage> {
     }
   }
 
-  Future<Position?> _obtenerUbicacion({int reintentos = 2}) async {
+  Future<Position?> _obtenerUbicacion() async {
     try {
       final habilitado = await Geolocator.isLocationServiceEnabled();
       if (!habilitado) {
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(
-              content: Text('Activa la ubicación del dispositivo para registrar el GPS.'),
+              content: Text('Activa la ubicación del celular para registrar el GPS.'),
             ),
           );
         }
@@ -422,49 +397,19 @@ class _CrmVisitasPageState extends State<CrmVisitasPage> {
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(
-              content: Text(
-                'No se otorgó permiso de ubicación. La visita continuará sin GPS.',
-              ),
+              content: Text('No se otorgó permiso de ubicación. La visita continuará sin GPS.'),
             ),
           );
         }
         return null;
       }
 
-      // Primero intentamos una ubicación reciente. Esto ayuda cuando el GPS
-      // todavía está tomando señal al momento exacto de iniciar la visita.
-      try {
-        final ultima = await Geolocator.getLastKnownPosition();
-        if (ultima != null && ultima.accuracy <= 100) {
-          return ultima;
-        }
-      } catch (_) {}
-
-      Object? ultimoError;
-      for (var intento = 1; intento <= reintentos; intento++) {
-        try {
-          final position = await Geolocator.getCurrentPosition(
-            locationSettings: LocationSettings(
-              accuracy: LocationAccuracy.high,
-              timeLimit: const Duration(seconds: 15),
-            ),
-          );
-
-          if (position.accuracy <= 100 || intento == reintentos) {
-            return position;
-          }
-        } catch (e) {
-          ultimoError = e;
-          await Future<void>.delayed(const Duration(milliseconds: 500));
-        }
-      }
-
-      if (mounted && ultimoError != null) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('No se pudo obtener GPS: $ultimoError')),
-        );
-      }
-      return null;
+      return await Geolocator.getCurrentPosition(
+        locationSettings: LocationSettings(
+          accuracy: LocationAccuracy.high,
+          timeLimit: Duration(seconds: 15),
+        ),
+      );
     } catch (e) {
       debugPrint('GPS no disponible: $e');
       if (mounted) {
@@ -474,185 +419,6 @@ class _CrmVisitasPageState extends State<CrmVisitasPage> {
       }
       return null;
     }
-  }
-
-  Future<void> _abrirGoogleMaps(double latitud, double longitud) async {
-    final uri = Uri.parse(
-      'https://www.google.com/maps/search/?api=1&query=$latitud,$longitud',
-    );
-
-    try {
-      final abierto = await launchUrl(
-        uri,
-        mode: LaunchMode.externalApplication,
-      );
-      if (!abierto && mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('No se pudo abrir Google Maps.')),
-        );
-      }
-    } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('No se pudo abrir el mapa: $e')),
-        );
-      }
-    }
-  }
-
-  Future<void> _verUbicacion(Map<String, dynamic> visita) async {
-    final latInicio = _numeroDouble(visita['latitud_inicio']);
-    final lonInicio = _numeroDouble(visita['longitud_inicio']);
-    final precisionInicio = _numeroDouble(visita['precision_inicio']);
-    final latFin = _numeroDouble(visita['latitud_fin']);
-    final lonFin = _numeroDouble(visita['longitud_fin']);
-    final precisionFin = _numeroDouble(visita['precision_fin']);
-
-    final tieneInicio = latInicio != null && lonInicio != null;
-    final tieneFin = latFin != null && lonFin != null;
-
-    if (!tieneInicio && !tieneFin) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Esta visita todavía no tiene coordenadas GPS.')),
-        );
-      }
-      return;
-    }
-
-    await showDialog<void>(
-      context: context,
-      builder: (dialogContext) {
-        return AlertDialog(
-          title: Row(
-            children: const [
-              Icon(Icons.location_on_outlined, color: _azul),
-              SizedBox(width: 8),
-              Text('Ubicación de la visita'),
-            ],
-          ),
-          content: SizedBox(
-            width: 560,
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  _nombreClientePorCodigo(_s(visita['codigo_cliente'])),
-                  style: const TextStyle(
-                    fontSize: 16,
-                    fontWeight: FontWeight.w900,
-                    color: _azul,
-                  ),
-                ),
-                const SizedBox(height: 4),
-                Text('Asesor: ${_s(visita['vendedor'])}'),
-                const SizedBox(height: 18),
-                if (tieneInicio)
-                  _filaUbicacion(
-                    titulo: '📍 Inicio de visita',
-                    latitud: latInicio!,
-                    longitud: lonInicio!,
-                    precision: precisionInicio,
-                    onMap: () => _abrirGoogleMaps(latInicio, lonInicio),
-                  ),
-                if (tieneInicio && tieneFin) const Divider(height: 24),
-                if (tieneFin)
-                  _filaUbicacion(
-                    titulo: '🏁 Fin de visita',
-                    latitud: latFin!,
-                    longitud: lonFin!,
-                    precision: precisionFin,
-                    onMap: () => _abrirGoogleMaps(latFin, lonFin),
-                  ),
-                if (!tieneInicio) ...[
-                  const SizedBox(height: 8),
-                  const Text(
-                    'Inicio: GPS no registrado.',
-                    style: TextStyle(color: Colors.orange, fontWeight: FontWeight.w700),
-                  ),
-                ],
-                const SizedBox(height: 18),
-                if (tieneFin)
-                  SizedBox(
-                    width: double.infinity,
-                    child: FilledButton.icon(
-                      onPressed: () => _abrirGoogleMaps(latFin!, lonFin!),
-                      icon: const Icon(Icons.map_outlined),
-                      label: const Text('Abrir ubicación final en Google Maps'),
-                      style: FilledButton.styleFrom(backgroundColor: _azul),
-                    ),
-                  )
-                else if (tieneInicio)
-                  SizedBox(
-                    width: double.infinity,
-                    child: FilledButton.icon(
-                      onPressed: () => _abrirGoogleMaps(latInicio!, lonInicio!),
-                      icon: const Icon(Icons.map_outlined),
-                      label: const Text('Abrir ubicación inicial en Google Maps'),
-                      style: FilledButton.styleFrom(backgroundColor: _azul),
-                    ),
-                  ),
-              ],
-            ),
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(dialogContext),
-              child: const Text('Cerrar'),
-            ),
-          ],
-        );
-      },
-    );
-  }
-
-  Widget _filaUbicacion({
-    required String titulo,
-    required double latitud,
-    required double longitud,
-    required double? precision,
-    required VoidCallback onMap,
-  }) {
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(
-        color: const Color(0xFFF5F8FB),
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: const Color(0xFFDCE5ED)),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            titulo,
-            style: const TextStyle(fontWeight: FontWeight.w900, color: _azul),
-          ),
-          const SizedBox(height: 6),
-          Text('Latitud: ${latitud.toStringAsFixed(7)}'),
-          Text('Longitud: ${longitud.toStringAsFixed(7)}'),
-          Text(
-            precision == null
-                ? 'Precisión: no disponible'
-                : 'Precisión: ${precision.toStringAsFixed(1)} m',
-            style: const TextStyle(fontWeight: FontWeight.w700),
-          ),
-          const SizedBox(height: 8),
-          OutlinedButton.icon(
-            onPressed: onMap,
-            icon: const Icon(Icons.open_in_new, size: 17),
-            label: const Text('Ver en mapa'),
-          ),
-        ],
-      ),
-    );
-  }
-
-  double? _numeroDouble(dynamic value) {
-    if (value == null) return null;
-    if (value is num) return value.toDouble();
-    return double.tryParse(value.toString());
   }
 
   Future<void> _guardarGpsInicio(int id, Position position) async {
@@ -776,17 +542,13 @@ class _CrmVisitasPageState extends State<CrmVisitasPage> {
   }
 
   Future<void> _iniciarVisita(Map<String, dynamic> visita) async {
-    if (!_puedeGestionarVisita(visita)) return;
     final id = (visita['id'] as num?)?.toInt();
     if (id == null) return;
 
     try {
-      // Capturamos el GPS antes de cambiar el estado para aprovechar la primera
-      // lectura disponible del dispositivo y evitar que el inicio quede en NULL.
-      final position = await _obtenerUbicacion(reintentos: 2);
-
       await _db.rpc('crm_iniciar_visita', params: {'p_id': id});
 
+      final position = await _obtenerUbicacion();
       if (position != null) {
         try {
           await _guardarGpsInicio(id, position);
@@ -806,7 +568,6 @@ class _CrmVisitasPageState extends State<CrmVisitasPage> {
   }
 
   Future<void> _finalizarVisita(Map<String, dynamic> visita) async {
-    if (!_puedeGestionarVisita(visita)) return;
     final id = (visita['id'] as num?)?.toInt();
     if (id == null) return;
 
@@ -834,7 +595,6 @@ class _CrmVisitasPageState extends State<CrmVisitasPage> {
   }
 
   Future<void> _cancelarVisita(Map<String, dynamic> visita) async {
-    if (!_puedeGestionarVisita(visita)) return;
     final id = (visita['id'] as num?)?.toInt();
     if (id == null) return;
 
@@ -997,45 +757,25 @@ class _CrmVisitasPageState extends State<CrmVisitasPage> {
         ],
       ),
       body: SafeArea(
-        child: LayoutBuilder(
-          builder: (context, constraints) {
-            final contenido = ListView(
-              padding: const EdgeInsets.fromLTRB(24, 20, 24, 40),
-              children: [
-                _topBar(),
-                const SizedBox(height: 18),
-                _kpis(),
-                const SizedBox(height: 18),
-                _filtros(),
-                const SizedBox(height: 18),
-                _cargando
-                    ? const Padding(
-                        padding: EdgeInsets.symmetric(vertical: 70),
-                        child: Center(child: CircularProgressIndicator()),
-                      )
-                    : _lista(),
-              ],
-            );
-
-            if (_error != null) return _errorView();
-
-            // Evita que el contenido se comprima hasta una columna de una sola
-            // letra cuando la ventana/panel queda demasiado estrecho.
-            // En pantallas normales ocupa todo el ancho disponible.
-            if (constraints.maxWidth < 900) {
-              return SingleChildScrollView(
-                scrollDirection: Axis.horizontal,
-                child: SizedBox(
-                  width: 1000,
-                  height: constraints.maxHeight,
-                  child: contenido,
-                ),
-              );
-            }
-
-            return contenido;
-          },
-        ),
+        child: _error != null
+            ? _errorView()
+            : ListView(
+                padding: const EdgeInsets.fromLTRB(24, 20, 24, 40),
+                children: [
+                  _topBar(),
+                  const SizedBox(height: 18),
+                  _kpis(),
+                  const SizedBox(height: 18),
+                  _filtros(),
+                  const SizedBox(height: 18),
+                  _cargando
+                      ? const Padding(
+                          padding: EdgeInsets.symmetric(vertical: 70),
+                          child: Center(child: CircularProgressIndicator()),
+                        )
+                      : _lista(),
+                ],
+              ),
       ),
     );
   }
@@ -1673,18 +1413,10 @@ class _CrmVisitasPageState extends State<CrmVisitasPage> {
                       if (motivo.isNotEmpty) _dato(Icons.flag_outlined, motivo),
                       if (lugar.isNotEmpty)
                         _dato(Icons.place_outlined, lugar),
-                      if (v['latitud_inicio'] != null || v['latitud_fin'] != null)
-                        TextButton.icon(
-                          onPressed: () => _verUbicacion(v),
-                          icon: const Icon(Icons.location_on_outlined, size: 17),
-                          label: const Text('Ver ubicación'),
-                          style: TextButton.styleFrom(
-                            foregroundColor: _azulClaro,
-                            padding: EdgeInsets.zero,
-                            minimumSize: const Size(0, 32),
-                            tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                          ),
-                        ),
+                      if (v['latitud_inicio'] != null)
+                        _dato(Icons.gps_fixed, 'GPS inicio'),
+                      if (v['latitud_fin'] != null)
+                        _dato(Icons.gps_fixed, 'GPS fin'),
                     ],
                   ),
                   if (objetivo.isNotEmpty) ...[
@@ -1730,20 +1462,18 @@ class _CrmVisitasPageState extends State<CrmVisitasPage> {
             ),
           );
 
-          final puedeGestionar = _puedeGestionarVisita(v);
-
           final acciones = Wrap(
             spacing: 7,
             runSpacing: 7,
             alignment: WrapAlignment.end,
             children: [
-              if (puedeGestionar && estado == 'PROGRAMADA')
+              if (estado == 'PROGRAMADA')
                 OutlinedButton.icon(
                   onPressed: () => _iniciarVisita(v),
                   icon: const Icon(Icons.play_arrow_rounded, size: 18),
                   label: const Text('Iniciar'),
                 ),
-              if (puedeGestionar && estado == 'EN CURSO')
+              if (estado == 'EN CURSO')
                 FilledButton.icon(
                   onPressed: () => _finalizarVisita(v),
                   icon: const Icon(Icons.stop_circle_outlined, size: 18),
@@ -1752,7 +1482,7 @@ class _CrmVisitasPageState extends State<CrmVisitasPage> {
                     backgroundColor: _verde,
                   ),
                 ),
-              if (puedeGestionar && estado == 'PROGRAMADA')
+              if (estado == 'PROGRAMADA')
                 IconButton(
                   tooltip: 'Cancelar',
                   onPressed: () => _cancelarVisita(v),
@@ -1899,18 +1629,34 @@ class _NuevaVisitaDialog extends StatefulWidget {
 
 class _NuevaVisitaDialogState extends State<_NuevaVisitaDialog> {
   static const _azul = Color(0xFF0B3B63);
+  static const _azulClaro = Color(0xFF1677B8);
   static const _verde = Color(0xFF0A9B61);
+  static const _borde = Color(0xFFDCE5ED);
+  static const _fondo = Color(0xFFF6F8FB);
 
   final _buscarCliente = TextEditingController();
   final _motivo = TextEditingController();
   final _objetivo = TextEditingController();
   final _lugar = TextEditingController();
+  final _contactoNombre = TextEditingController();
+  final _contactoCargo = TextEditingController();
+  final _contactoTelefono = TextEditingController();
+  final _contactoEmail = TextEditingController();
 
   String _cliente = '';
   String _vendedor = '';
+  String _estadoComercial = 'ACTIVO';
+  Map<String, dynamic>? _clienteSeleccionado;
   DateTime _fecha = DateTime.now();
   TimeOfDay? _hora;
   bool _guardando = false;
+  bool _buscandoClientes = false;
+  int _busquedaVersion = 0;
+  List<Map<String, dynamic>> _clientesBusqueda = [];
+
+  final List<String> _estadosComerciales = const [
+    'ACTIVO', 'PROSPECTO', 'POTENCIAL', 'INACTIVO', 'SUSPENDIDO',
+  ];
 
   @override
   void initState() {
@@ -1918,14 +1664,263 @@ class _NuevaVisitaDialogState extends State<_NuevaVisitaDialog> {
     _vendedor = widget.vendedorActual.isNotEmpty
         ? widget.vendedorActual
         : (widget.vendedores.isNotEmpty ? widget.vendedores.first : '');
+
+    // La búsqueda de clientes de visitas consulta TODO el maestro de clientes,
+    // no la cartera restringida por vendedor.
+    _buscarClientesServidor('');
+  }
+
+  Future<void> _buscarClientesServidor(String texto) async {
+    final version = ++_busquedaVersion;
+    if (mounted) setState(() => _buscandoClientes = true);
+
+    try {
+      final data = await widget.db.rpc(
+        'crm_buscar_clientes_visita',
+        params: {
+          'p_busqueda': texto.trim(),
+          'p_limit': 30,
+        },
+      );
+
+      if (!mounted || version != _busquedaVersion) return;
+
+      setState(() {
+        _clientesBusqueda = List<Map<String, dynamic>>.from(
+          (data as List).map((e) => Map<String, dynamic>.from(e as Map)),
+        );
+        _buscandoClientes = false;
+      });
+    } catch (e) {
+      if (!mounted || version != _busquedaVersion) return;
+
+      // Fallback visual con los clientes que ya cargó el padre.
+      final q = texto.trim().toLowerCase();
+      final fallback = widget.clientes.where((c) {
+        if (q.isEmpty) return true;
+        return _nombre(c).toLowerCase().contains(q) ||
+            _codigo(c).toLowerCase().contains(q);
+      }).take(30).toList();
+
+      setState(() {
+        _clientesBusqueda = fallback;
+        _buscandoClientes = false;
+      });
+    }
+  }
+
+  Future<void> _registrarNuevoCliente() async {
+    final nombre = TextEditingController(text: _buscarCliente.text.trim());
+    final ruc = TextEditingController();
+    final direccion = TextEditingController();
+    final giro = TextEditingController();
+    final sector = TextEditingController();
+    String estado = 'PROSPECTO';
+
+    try {
+      final resultado = await showDialog<Map<String, dynamic>>(
+        context: context,
+        builder: (ctx) {
+          return StatefulBuilder(
+            builder: (ctx, setDialogState) {
+              InputDecoration dec(String label, String hint, IconData icon) {
+                return InputDecoration(
+                  labelText: label,
+                  hintText: hint,
+                  prefixIcon: Icon(icon),
+                  filled: true,
+                  fillColor: Colors.white,
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(11),
+                    borderSide: const BorderSide(color: _borde),
+                  ),
+                  enabledBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(11),
+                    borderSide: const BorderSide(color: _borde),
+                  ),
+                );
+              }
+
+              return AlertDialog(
+                title: const Text(
+                  'Registrar nuevo cliente',
+                  style: TextStyle(
+                    color: _azul,
+                    fontWeight: FontWeight.w900,
+                  ),
+                ),
+                content: SizedBox(
+                  width: 560,
+                  child: SingleChildScrollView(
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        TextField(
+                          controller: nombre,
+                          decoration: dec(
+                            'Razón social / nombre *',
+                            'Ej.: SOLDEX S.A.',
+                            Icons.business_outlined,
+                          ),
+                        ),
+                        const SizedBox(height: 10),
+                        TextField(
+                          controller: ruc,
+                          keyboardType: TextInputType.number,
+                          decoration: dec(
+                            'RUC',
+                            'Opcional',
+                            Icons.badge_outlined,
+                          ),
+                        ),
+                        const SizedBox(height: 10),
+                        TextField(
+                          controller: direccion,
+                          decoration: dec(
+                            'Dirección',
+                            'Dirección del cliente',
+                            Icons.location_on_outlined,
+                          ),
+                        ),
+                        const SizedBox(height: 10),
+                        Row(
+                          children: [
+                            Expanded(
+                              child: TextField(
+                                controller: giro,
+                                decoration: dec(
+                                  'Giro',
+                                  'Ej.: Industria',
+                                  Icons.category_outlined,
+                                ),
+                              ),
+                            ),
+                            const SizedBox(width: 10),
+                            Expanded(
+                              child: TextField(
+                                controller: sector,
+                                decoration: dec(
+                                  'Sector',
+                                  'Ej.: Construcción',
+                                  Icons.work_outline,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 10),
+                        DropdownButtonFormField<String>(
+                          value: estado,
+                          isExpanded: true,
+                          decoration: dec(
+                            'Estado comercial',
+                            '',
+                            Icons.track_changes_outlined,
+                          ),
+                          items: _estadosComerciales
+                              .map(
+                                (e) => DropdownMenuItem(
+                                  value: e,
+                                  child: Text(e),
+                                ),
+                              )
+                              .toList(),
+                          onChanged: (v) {
+                            if (v != null) {
+                              setDialogState(() => estado = v);
+                            }
+                          },
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+                actions: [
+                  TextButton(
+                    onPressed: () => Navigator.pop(ctx),
+                    child: const Text('Cancelar'),
+                  ),
+                  FilledButton.icon(
+                    style: FilledButton.styleFrom(backgroundColor: _verde),
+                    onPressed: () async {
+                      if (nombre.text.trim().isEmpty) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(
+                            content: Text(
+                              'Ingresa la razón social o nombre del cliente.',
+                            ),
+                          ),
+                        );
+                        return;
+                      }
+
+                      try {
+                        final data = await widget.db.rpc(
+                          'crm_registrar_cliente_visita',
+                          params: {
+                            'p_nombre': nombre.text.trim(),
+                            'p_ruc': ruc.text.trim().isEmpty
+                                ? null
+                                : ruc.text.trim(),
+                            'p_direccion': direccion.text.trim().isEmpty
+                                ? null
+                                : direccion.text.trim(),
+                            'p_departamento': 'LIMA',
+                            'p_giro': giro.text.trim().isEmpty
+                                ? null
+                                : giro.text.trim(),
+                            'p_sector': sector.text.trim().isEmpty
+                                ? null
+                                : sector.text.trim(),
+                            'p_estado_comercial': estado,
+                            'p_vendedor': _vendedor,
+                          },
+                        );
+
+                        if (data is List && data.isNotEmpty) {
+                          Navigator.pop(
+                            ctx,
+                            Map<String, dynamic>.from(data.first as Map),
+                          );
+                        }
+                      } catch (e) {
+                        if (!ctx.mounted) return;
+                        ScaffoldMessenger.of(ctx).showSnackBar(
+                          SnackBar(
+                            content: Text(
+                              'No se pudo registrar el cliente: $e',
+                            ),
+                          ),
+                        );
+                      }
+                    },
+                    icon: const Icon(Icons.person_add_alt_1),
+                    label: const Text('Registrar cliente'),
+                  ),
+                ],
+              );
+            },
+          );
+        },
+      );
+
+      if (resultado != null && mounted) {
+        _seleccionarCliente(resultado);
+        await _buscarClientesServidor('');
+      }
+    } finally {
+      nombre.dispose();
+      ruc.dispose();
+      direccion.dispose();
+      giro.dispose();
+      sector.dispose();
+    }
   }
 
   @override
   void dispose() {
-    _buscarCliente.dispose();
-    _motivo.dispose();
-    _objetivo.dispose();
-    _lugar.dispose();
+    _buscarCliente.dispose(); _motivo.dispose(); _objetivo.dispose(); _lugar.dispose();
+    _contactoNombre.dispose(); _contactoCargo.dispose(); _contactoTelefono.dispose(); _contactoEmail.dispose();
     super.dispose();
   }
 
@@ -1933,312 +1928,230 @@ class _NuevaVisitaDialogState extends State<_NuevaVisitaDialog> {
 
   String _codigo(Map<String, dynamic> c) {
     for (final key in ['codigo', 'codigo_cliente', 'ruc']) {
-      final value = _s(c[key]);
-      if (value.isNotEmpty) return value;
+      final v = _s(c[key]); if (v.isNotEmpty) return v;
     }
     return '';
   }
 
   String _nombre(Map<String, dynamic> c) {
     for (final key in ['razon_social', 'nombre', 'cliente']) {
-      final value = _s(c[key]);
-      if (value.isNotEmpty) return value;
+      final v = _s(c[key]); if (v.isNotEmpty) return v;
     }
     return 'Cliente sin nombre';
   }
 
-  String _direccion(Map<String, dynamic> c) {
-    for (final key in [
-      'direccion',
-      'dirección',
-      'domicilio',
-      'direccion_fiscal',
-      'direccion_cliente',
-    ]) {
-      final value = _s(c[key]);
-      if (value.isNotEmpty) return value;
-    }
-    return '';
+  String _estadoCliente(Map<String, dynamic> c) {
+    final e = _s(c['estado_comercial']).toUpperCase();
+    if (_estadosComerciales.contains(e)) return e;
+    final a = c['activo'];
+    if (a is bool) return a ? 'ACTIVO' : 'INACTIVO';
+    return _s(a).toLowerCase() == 'false' ? 'INACTIVO' : 'ACTIVO';
   }
+
+  Color _colorEstado(String estado) {
+    switch (estado) {
+      case 'PROSPECTO': return const Color(0xFF8B5CF6);
+      case 'POTENCIAL': return const Color(0xFFF59E0B);
+      case 'INACTIVO': return const Color(0xFF64748B);
+      case 'SUSPENDIDO': return const Color(0xFFEF4444);
+      default: return _verde;
+    }
+  }
+
+  void _seleccionarCliente(Map<String, dynamic> c) {
+    setState(() {
+      _clienteSeleccionado = c;
+      _cliente = _codigo(c);
+      _buscarCliente.text = _nombre(c);
+      _estadoComercial = _estadoCliente(c);
+      final direccion = _s(c['direccion']);
+      if (direccion.isNotEmpty) _lugar.text = direccion;
+    });
+  }
+
+  InputDecoration _dec(String label, String hint, IconData icon) => InputDecoration(
+    labelText: label, hintText: hint, prefixIcon: Icon(icon, size: 20),
+    filled: true, fillColor: Colors.white,
+    border: OutlineInputBorder(borderRadius: BorderRadius.circular(11), borderSide: const BorderSide(color: _borde)),
+    enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(11), borderSide: const BorderSide(color: _borde)),
+    focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(11), borderSide: const BorderSide(color: _azulClaro, width: 1.4)),
+  );
+
+  Widget _campo({required String label, required TextEditingController controller, required String hint, required IconData icon, int maxLines=1, TextInputType? keyboardType}) =>
+    TextField(controller: controller, maxLines: maxLines, keyboardType: keyboardType, decoration: _dec(label, hint, icon));
+
+  Widget _seccion(String titulo, IconData icon, Widget child) => Container(
+    width: double.infinity, padding: const EdgeInsets.all(14), margin: const EdgeInsets.only(bottom: 12),
+    decoration: BoxDecoration(color: _fondo, borderRadius: BorderRadius.circular(14), border: Border.all(color: _borde)),
+    child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+      Row(children: [Icon(icon, size: 19, color: _azulClaro), const SizedBox(width: 8), Text(titulo, style: const TextStyle(color: _azul, fontSize: 14, fontWeight: FontWeight.w900))]),
+      const SizedBox(height: 12), child,
+    ]),
+  );
 
   @override
   Widget build(BuildContext context) {
     final q = _buscarCliente.text.trim().toLowerCase();
 
-    final clientes = widget.clientes.where((c) {
-      if (q.isEmpty) return true;
-      return _nombre(c).toLowerCase().contains(q) ||
-          _codigo(c).toLowerCase().contains(q);
-    }).take(20).toList();
+    final clientes = _clientesBusqueda.isNotEmpty || q.isNotEmpty
+        ? _clientesBusqueda.take(30).toList()
+        : widget.clientes.take(30).toList();
 
-    return AlertDialog(
-      title: const Text(
-        'Nueva visita comercial',
-        style: TextStyle(
-          color: _azul,
-          fontWeight: FontWeight.w900,
-        ),
-      ),
-      content: SizedBox(
-        width: 720,
-        child: SingleChildScrollView(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
+    final coincidenciaExacta = q.isNotEmpty &&
+        clientes.any(
+          (x) =>
+              _nombre(x).toLowerCase() == q ||
+              _codigo(x).toLowerCase() == q,
+        );
+
+    final c = _clienteSeleccionado;
+    final direccion = c == null ? '' : _s(c['direccion']);
+    final giro = c == null ? '' : _s(c['giro']);
+    final sector = c == null ? '' : _s(c['sector']);
+    final ruc = c == null ? '' : _s(c['ruc']);
+
+    return Dialog(
+      insetPadding: const EdgeInsets.symmetric(horizontal: 24, vertical: 20),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(22)),
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 920, maxHeight: 760),
+        child: Column(children: [
+          Container(width: double.infinity, padding: const EdgeInsets.fromLTRB(24,20,20,18),
+            decoration: const BoxDecoration(color: _azul, borderRadius: BorderRadius.only(topLeft: Radius.circular(22), topRight: Radius.circular(22))),
+            child: Row(children: [
+              Container(width:44,height:44, decoration: BoxDecoration(color: Colors.white12,borderRadius: BorderRadius.circular(12)), child: const Icon(Icons.location_on_outlined,color:Colors.white,size:25)),
+              const SizedBox(width:12),
+              const Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [Text('Nueva visita comercial',style:TextStyle(color:Colors.white,fontSize:20,fontWeight:FontWeight.w900)),SizedBox(height:3),Text('Programa la visita y registra el contacto que atenderá al asesor.',style:TextStyle(color:Color(0xFFD7E6F2),fontSize:12))])),
+              IconButton(onPressed:_guardando?null:()=>Navigator.pop(context,false),icon:const Icon(Icons.close,color:Colors.white)),
+            ]),
+          ),
+          Expanded(child: SingleChildScrollView(padding:const EdgeInsets.all(20), child:Column(children:[
+            _seccion('1. Cliente',Icons.business_outlined,Column(children:[
               TextField(
                 controller: _buscarCliente,
-                onChanged: (_) => setState(() {}),
-                decoration: InputDecoration(
-                  labelText: 'Buscar cliente *',
-                  hintText: 'Razón social, nombre o RUC',
-                  prefixIcon: const Icon(Icons.business_outlined),
-                  suffixIcon: _cliente.isNotEmpty
-                      ? IconButton(
-                          onPressed: () {
-                            setState(() {
-                              _cliente = '';
-                              _buscarCliente.clear();
-                            });
-                          },
-                          icon: const Icon(Icons.close),
+                onChanged: (value) {
+                  setState(() {
+                    _cliente = '';
+                    _clienteSeleccionado = null;
+                  });
+                  _buscarClientesServidor(value);
+                },
+                decoration: _dec(
+                  'Buscar cliente *',
+                  'Razón social, nombre, código o RUC',
+                  Icons.search,
+                ).copyWith(
+                  suffixIcon: _buscandoClientes
+                      ? const Padding(
+                          padding: EdgeInsets.all(12),
+                          child: SizedBox(
+                            width: 18,
+                            height: 18,
+                            child: CircularProgressIndicator(strokeWidth: 2),
+                          ),
                         )
                       : null,
                 ),
               ),
-              if (_cliente.isEmpty && clientes.isNotEmpty)
+              if (_cliente.isEmpty && q.isNotEmpty && clientes.isEmpty)
                 Container(
-                  constraints: const BoxConstraints(maxHeight: 210),
-                  margin: const EdgeInsets.only(top: 5),
+                  width: double.infinity,
+                  margin: const EdgeInsets.only(top: 8),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 12,
+                    vertical: 10,
+                  ),
                   decoration: BoxDecoration(
-                    color: Colors.white,
-                    border: Border.all(color: const Color(0xFFE0E6EC)),
+                    color: const Color(0xFFFFF7E8),
                     borderRadius: BorderRadius.circular(10),
+                    border: Border.all(color: const Color(0xFFF4D58D)),
                   ),
-                  child: ListView.builder(
-                    shrinkWrap: true,
-                    itemCount: clientes.length,
-                    itemBuilder: (_, i) {
-                      final c = clientes[i];
-                      return ListTile(
-                        dense: true,
-                        leading: const Icon(
-                          Icons.business_outlined,
-                          color: _azul,
-                        ),
-                        title: Text(
-                          _nombre(c),
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                        subtitle: Text(_codigo(c)),
-                        onTap: () {
-                          final direccion = _direccion(c);
-                          setState(() {
-                            _cliente = _codigo(c);
-                            _buscarCliente.text = _nombre(c);
-                            // Al seleccionar el cliente, cargamos automáticamente
-                            // su dirección registrada en el campo Lugar.
-                            _lugar.text = direccion;
-                          });
-                        },
-                      );
-                    },
-                  ),
-                ),
-              const SizedBox(height: 12),
-              DropdownButtonFormField<String>(
-                value: _vendedor.isEmpty ? null : _vendedor,
-                isExpanded: true,
-                decoration: const InputDecoration(
-                  labelText: 'Asesor *',
-                ),
-                items: (widget.vendedores.isEmpty
-                        ? [_vendedor]
-                        : widget.vendedores)
-                    .where((e) => e.isNotEmpty)
-                    .toSet()
-                    .map(
-                      (e) => DropdownMenuItem(
-                        value: e,
+                  child: Row(
+                    children: [
+                      const Icon(
+                        Icons.info_outline,
+                        color: Color(0xFFB7791F),
+                      ),
+                      const SizedBox(width: 8),
+                      const Expanded(
                         child: Text(
-                          e,
-                          overflow: TextOverflow.ellipsis,
+                          'No encontramos este cliente en el maestro.',
+                          style: TextStyle(
+                            color: Color(0xFF7A5715),
+                            fontWeight: FontWeight.w600,
+                          ),
                         ),
                       ),
-                    )
-                    .toList(),
-                onChanged: (v) {
-                  if (v != null) setState(() => _vendedor = v);
-                },
-              ),
-              const SizedBox(height: 12),
-              Row(
-                children: [
-                  Expanded(
-                    child: OutlinedButton.icon(
-                      onPressed: _seleccionarFecha,
-                      icon: const Icon(Icons.calendar_month_outlined),
-                      label: Text(
-                        DateFormat('dd/MM/yyyy').format(_fecha),
+                      OutlinedButton.icon(
+                        onPressed: _registrarNuevoCliente,
+                        icon: const Icon(Icons.person_add_alt_1),
+                        label: Text('Registrar "$q"'),
                       ),
+                    ],
+                  ),
+                ),
+              if (_cliente.isEmpty &&
+                  q.isNotEmpty &&
+                  clientes.isNotEmpty &&
+                  !coincidenciaExacta)
+                Align(
+                  alignment: Alignment.center,
+                  child: Padding(
+                    padding: const EdgeInsets.only(top: 8),
+                    child: OutlinedButton.icon(
+                      onPressed: _registrarNuevoCliente,
+                      icon: const Icon(Icons.person_add_alt_1),
+                      label: Text('Registrar "$q" como nuevo cliente'),
                     ),
                   ),
-                  const SizedBox(width: 10),
-                  Expanded(
-                    child: OutlinedButton.icon(
-                      onPressed: _seleccionarHora,
-                      icon: const Icon(Icons.schedule_outlined),
-                      label: Text(
-                        _hora == null
-                            ? 'Hora programada'
-                            : _hora!.format(context),
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 12),
-              TextField(
-                controller: _motivo,
-                decoration: const InputDecoration(
-                  labelText: 'Motivo de la visita',
-                  hintText: 'Ej.: Presentación de cotización',
                 ),
-              ),
-              const SizedBox(height: 12),
-              TextField(
-                controller: _objetivo,
-                maxLines: 2,
-                decoration: const InputDecoration(
-                  labelText: 'Objetivo',
-                  hintText: '¿Qué deseas conseguir en la visita?',
-                ),
-              ),
-              const SizedBox(height: 12),
-              TextField(
-                controller: _lugar,
-                maxLines: 2,
-                decoration: InputDecoration(
-                  labelText: 'Lugar / Dirección',
-                  hintText: 'Se cargará automáticamente la dirección del cliente',
-                  prefixIcon: const Icon(Icons.location_on_outlined),
-                  helperText: _cliente.isEmpty
-                      ? 'Selecciona primero un cliente'
-                      : 'Puedes modificar la dirección si la visita será en otro lugar',
-                ),
-              ),
-            ],
-          ),
-        ),
+              if(_cliente.isEmpty&&clientes.isNotEmpty) Container(constraints:const BoxConstraints(maxHeight:190),margin:const EdgeInsets.only(top:7),decoration:BoxDecoration(color:Colors.white,border:Border.all(color:_borde),borderRadius:BorderRadius.circular(11)),child:ListView.builder(shrinkWrap:true,itemCount:clientes.length,itemBuilder:(_,i){final x=clientes[i];final e=_estadoCliente(x);return ListTile(dense:true,leading:const Icon(Icons.business_outlined,color:_azul),title:Text(_nombre(x),maxLines:1,overflow:TextOverflow.ellipsis,style:const TextStyle(fontWeight:FontWeight.w700)),subtitle:Text('${_codigo(x)}  •  $e',style:TextStyle(color:_colorEstado(e),fontWeight:FontWeight.w700)),onTap:()=>_seleccionarCliente(x));})),
+              if(c!=null) ...[
+                const SizedBox(height:12),
+                Container(width:double.infinity,padding:const EdgeInsets.all(13),decoration:BoxDecoration(color:Colors.white,borderRadius:BorderRadius.circular(12),border:Border.all(color:_borde)),child:Wrap(spacing:18,runSpacing:10,crossAxisAlignment:WrapCrossAlignment.center,children:[Text(_nombre(c),style:const TextStyle(color:_azul,fontSize:15,fontWeight:FontWeight.w900)),Chip(label:Text(_estadoComercial,style:const TextStyle(color:Colors.white,fontSize:11,fontWeight:FontWeight.w800)),backgroundColor:_colorEstado(_estadoComercial),side:BorderSide.none),if(ruc.isNotEmpty)Text('RUC: $ruc'),if(giro.isNotEmpty)Text('Giro: $giro'),if(sector.isNotEmpty)Text('Sector: $sector')]))
+              ],
+            ])),
+            _seccion('2. Programación',Icons.calendar_month_outlined,LayoutBuilder(builder:(context,cs){final compact=cs.maxWidth<600;final f=OutlinedButton.icon(onPressed:_seleccionarFecha,icon:const Icon(Icons.calendar_today_outlined),label:Text(DateFormat('dd/MM/yyyy').format(_fecha)));final h=OutlinedButton.icon(onPressed:_seleccionarHora,icon:const Icon(Icons.schedule_outlined),label:Text(_hora==null?'Hora programada':_hora!.format(context)));return compact?Column(children:[SizedBox(width:double.infinity,child:f),const SizedBox(height:10),SizedBox(width:double.infinity,child:h)]):Row(children:[Expanded(child:f),const SizedBox(width:10),Expanded(child:h)]);})),
+            _seccion('3. Contacto de la visita',Icons.contact_phone_outlined,LayoutBuilder(builder:(context,cs){final compact=cs.maxWidth<650;final n=_campo(label:'Nombre del contacto *',controller:_contactoNombre,hint:'Persona que atenderá la visita',icon:Icons.person_outline);final ca=_campo(label:'Cargo',controller:_contactoCargo,hint:'Compras, Ingeniería, Gerente...',icon:Icons.badge_outlined);final t=_campo(label:'Teléfono',controller:_contactoTelefono,hint:'Celular o teléfono',icon:Icons.phone_outlined,keyboardType:TextInputType.phone);final e=_campo(label:'Correo',controller:_contactoEmail,hint:'correo@cliente.com',icon:Icons.email_outlined,keyboardType:TextInputType.emailAddress);return compact?Column(children:[n,const SizedBox(height:10),ca,const SizedBox(height:10),t,const SizedBox(height:10),e]):Column(children:[Row(children:[Expanded(child:n),const SizedBox(width:10),Expanded(child:ca)]),const SizedBox(height:10),Row(children:[Expanded(child:t),const SizedBox(width:10),Expanded(child:e)])]);})),
+            _seccion('4. Detalle de la visita',Icons.assignment_outlined,Column(children:[LayoutBuilder(builder:(context,cs){final compact=cs.maxWidth<650;final m=_campo(label:'Motivo',controller:_motivo,hint:'Seguimiento de cotización',icon:Icons.flag_outlined);final l=_campo(label:'Lugar / dirección',controller:_lugar,hint:direccion.isEmpty?'Dirección donde se realizará la visita':direccion,icon:Icons.place_outlined);return compact?Column(children:[m,const SizedBox(height:10),l]):Row(children:[Expanded(child:m),const SizedBox(width:10),Expanded(child:l)]);}),const SizedBox(height:10),_campo(label:'Objetivo de la visita',controller:_objetivo,hint:'¿Qué deseas conseguir o revisar?',icon:Icons.flag_circle_outlined,maxLines:2)])),
+            _seccion('5. Clasificación comercial',Icons.track_changes_outlined,LayoutBuilder(builder:(context,cs){final compact=cs.maxWidth<650;final estado=DropdownButtonFormField<String>(value:_estadoComercial,decoration:_dec('Estado comercial','',Icons.sell_outlined),items:_estadosComerciales.map((e)=>DropdownMenuItem(value:e,child:Text(e))).toList(),onChanged:(v){if(v!=null)setState(()=>_estadoComercial=v);});final vend=DropdownButtonFormField<String>(value:_vendedor.isEmpty?null:_vendedor,isExpanded:true,decoration:_dec('Asesor responsable *','',Icons.person_pin_outlined),items:(widget.vendedores.isEmpty?[_vendedor]:widget.vendedores).where((e)=>e.isNotEmpty).toSet().map((e)=>DropdownMenuItem(value:e,child:Text(e,overflow:TextOverflow.ellipsis))).toList(),onChanged:(v){if(v!=null)setState(()=>_vendedor=v);});return compact?Column(children:[estado,const SizedBox(height:10),vend]):Row(children:[Expanded(child:estado),const SizedBox(width:10),Expanded(child:vend)]);})),
+          ]))),
+          Container(padding:const EdgeInsets.fromLTRB(20,12,20,16),decoration:const BoxDecoration(color:Colors.white,border:Border(top:BorderSide(color:_borde)),borderRadius:BorderRadius.only(bottomLeft:Radius.circular(22),bottomRight:Radius.circular(22))),child:Row(mainAxisAlignment:MainAxisAlignment.end,children:[TextButton(onPressed:_guardando?null:()=>Navigator.pop(context,false),child:const Text('Cancelar')),const SizedBox(width:10),FilledButton.icon(onPressed:_guardando?null:_guardar,style:FilledButton.styleFrom(backgroundColor:_verde,padding:const EdgeInsets.symmetric(horizontal:20,vertical:13)),icon:_guardando?const SizedBox(width:16,height:16,child:CircularProgressIndicator(strokeWidth:2,color:Colors.white)):const Icon(Icons.event_available_outlined),label:const Text('Programar visita'))]),),
+        ],
       ),
-      actions: [
-        TextButton(
-          onPressed: _guardando ? null : () => Navigator.pop(context, false),
-          child: const Text('Cancelar'),
-        ),
-        FilledButton.icon(
-          onPressed: _guardando ? null : _guardar,
-          style: FilledButton.styleFrom(backgroundColor: _verde),
-          icon: _guardando
-              ? const SizedBox(
-                  width: 16,
-                  height: 16,
-                  child: CircularProgressIndicator(strokeWidth: 2),
-                )
-              : const Icon(Icons.save_outlined),
-          label: const Text('Programar visita'),
-        ),
-      ],
+      ),
     );
   }
 
   Future<void> _seleccionarFecha() async {
-    final d = await showDatePicker(
-      context: context,
-      firstDate: DateTime.now(),
-      lastDate: DateTime(2035),
-      initialDate: _fecha,
-      locale: const Locale('es'),
-    );
-    if (d != null && mounted) setState(() => _fecha = d);
+    final d=await showDatePicker(context:context,firstDate:DateTime.now(),lastDate:DateTime(2035),initialDate:_fecha,locale:const Locale('es'));
+    if(d!=null&&mounted)setState(()=>_fecha=d);
   }
 
   Future<void> _seleccionarHora() async {
-    final h = await showTimePicker(
-      context: context,
-      initialTime: _hora ?? const TimeOfDay(hour: 9, minute: 0),
-    );
-    if (h != null && mounted) setState(() => _hora = h);
+    final h=await showTimePicker(context:context,initialTime:_hora??const TimeOfDay(hour:9,minute:0));
+    if(h!=null&&mounted)setState(()=>_hora=h);
   }
 
   Future<void> _guardar() async {
-    if (_cliente.isEmpty || _vendedor.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Selecciona cliente y asesor.'),
-        ),
-      );
-      return;
-    }
-
-    setState(() => _guardando = true);
-
+    if(_cliente.isEmpty||_vendedor.isEmpty){ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content:Text('Selecciona cliente y asesor.')));return;}
+    if(_contactoNombre.text.trim().isEmpty){ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content:Text('Registra el nombre del contacto de la visita.')));return;}
+    setState(()=>_guardando=true);
     try {
-      final data = await widget.db.rpc('crm_registrar_visita', params: {
-        'p_codigo_cliente': _cliente,
-        'p_vendedor': _vendedor,
-        'p_usuario_id': widget.usuarioId,
-        'p_fecha_visita': DateFormat('yyyy-MM-dd').format(_fecha),
-        'p_hora_programada': _hora == null
-            ? null
-            : '${_hora!.hour.toString().padLeft(2, '0')}:${_hora!.minute.toString().padLeft(2, '0')}:00',
-        'p_motivo': _motivo.text.trim(),
-        'p_objetivo': _objetivo.text.trim(),
-        'p_lugar': _lugar.text.trim(),
+      await widget.db.rpc('crm_actualizar_estado_comercial_cliente',params:{'p_codigo_cliente':_cliente,'p_estado_comercial':_estadoComercial});
+      final data=await widget.db.rpc('crm_registrar_visita',params:{
+        'p_codigo_cliente':_cliente,'p_vendedor':_vendedor,'p_usuario_id':widget.usuarioId,
+        'p_fecha_visita':DateFormat('yyyy-MM-dd').format(_fecha),
+        'p_hora_programada':_hora==null?null:'${_hora!.hour.toString().padLeft(2,'0')}:${_hora!.minute.toString().padLeft(2,'0')}:00',
+        'p_motivo':_motivo.text.trim(),'p_objetivo':_objetivo.text.trim(),'p_lugar':_lugar.text.trim(),
+        'p_contacto_nombre':_contactoNombre.text.trim(),'p_contacto_cargo':_contactoCargo.text.trim(),
+        'p_contacto_telefono':_contactoTelefono.text.trim(),'p_contacto_email':_contactoEmail.text.trim(),
       });
-
       int? visitaId;
-      if (data is num) {
-        visitaId = data.toInt();
-      } else if (data is List && data.isNotEmpty) {
-        final first = data.first;
-        if (first is num) {
-          visitaId = first.toInt();
-        } else if (first is Map) {
-          visitaId = int.tryParse(first['id']?.toString() ?? '');
-        }
-      } else if (data is Map) {
-        visitaId = int.tryParse(data['id']?.toString() ?? '');
-      }
-
-      if (visitaId != null) {
-        final fechaHora = _hora == null
-            ? null
-            : DateTime(
-                _fecha.year,
-                _fecha.month,
-                _fecha.day,
-                _hora!.hour,
-                _hora!.minute,
-              );
-
-        if (fechaHora != null) {
-          await CrmVisitasNotificaciones.programar(
-            visitaId: visitaId,
-            cliente: _buscarCliente.text.trim(),
-            fechaHora: fechaHora,
-          );
-        }
-      }
-
-      if (mounted) Navigator.pop(context, true);
-    } catch (e) {
-      if (!mounted) return;
-      setState(() => _guardando = false);
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('No se pudo programar la visita: $e')),
-      );
-    }
+      if(data is num) visitaId=data.toInt(); else if(data is List&&data.isNotEmpty){final first=data.first;if(first is num)visitaId=first.toInt();else if(first is Map)visitaId=int.tryParse(first['id']?.toString()??'');} else if(data is Map) visitaId=int.tryParse(data['id']?.toString()??'');
+      if(visitaId!=null&&_hora!=null){final fechaHora=DateTime(_fecha.year,_fecha.month,_fecha.day,_hora!.hour,_hora!.minute);await CrmVisitasNotificaciones.programar(visitaId:visitaId,cliente:_buscarCliente.text.trim(),fechaHora:fechaHora);}
+      if(mounted)Navigator.pop(context,true);
+    } catch(e){if(!mounted)return;setState(()=>_guardando=false);ScaffoldMessenger.of(context).showSnackBar(SnackBar(content:Text('No se pudo programar la visita: $e')));}
   }
 }
 

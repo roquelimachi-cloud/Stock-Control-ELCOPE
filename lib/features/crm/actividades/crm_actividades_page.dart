@@ -56,30 +56,6 @@ class _CrmActividadesPageState extends State<CrmActividadesPage> {
 
   String _s(dynamic value) => value?.toString().trim() ?? '';
 
-  String _nombreClientePorCodigo(dynamic codigo) {
-    final buscado = _s(codigo);
-    if (buscado.isEmpty) return '';
-
-    for (final c in _clientes) {
-      final codigoCliente = _s(c['codigo']).isNotEmpty
-          ? _s(c['codigo'])
-          : (_s(c['codigo_cliente']).isNotEmpty
-              ? _s(c['codigo_cliente'])
-              : _s(c['ruc']));
-
-      if (codigoCliente.trim().toUpperCase() == buscado.trim().toUpperCase()) {
-        final nombre = _s(c['razon_social']).isNotEmpty
-            ? _s(c['razon_social'])
-            : (_s(c['nombre']).isNotEmpty
-                ? _s(c['nombre'])
-                : _s(c['cliente']));
-        if (nombre.isNotEmpty) return nombre;
-      }
-    }
-
-    return '';
-  }
-
   Future<void> _cargarPermisos() async {
     if (_esGerencia) {
       _vendedoresPermitidos = [];
@@ -134,13 +110,12 @@ class _CrmActividadesPageState extends State<CrmActividadesPage> {
     try {
       await _cargarPermisos();
       await _cargarActividades();
-      if (mounted) setState(() => _cargando = false);
       try {
         await _cargarClientes();
-        if (mounted) setState(() {});
       } catch (e) {
         debugPrint('CRM Actividades - error cargando clientes: $e');
       }
+      if (mounted) setState(() => _cargando = false);
     } catch (e) {
       if (!mounted) return;
       setState(() {
@@ -512,6 +487,29 @@ class _CrmActividadesPageState extends State<CrmActividadesPage> {
     );
   }
 
+  String _nombreClientePorCodigo(String codigo) {
+    final codigoNormalizado = codigo.trim();
+    if (codigoNormalizado.isEmpty) return '-';
+
+    for (final c in _clientes) {
+      final codigoCliente = _s(c['codigo']).isNotEmpty
+          ? _s(c['codigo'])
+          : _s(c['codigo_cliente']).isNotEmpty
+              ? _s(c['codigo_cliente'])
+              : _s(c['ruc']);
+      if (codigoCliente == codigoNormalizado) {
+        final nombre = _s(c['razon_social']).isNotEmpty
+            ? _s(c['razon_social'])
+            : _s(c['nombre']).isNotEmpty
+                ? _s(c['nombre'])
+                : _s(c['cliente']);
+        if (nombre.isNotEmpty) return nombre;
+      }
+    }
+
+    return codigoNormalizado;
+  }
+
   Widget _tarjetaActividad(Map<String, dynamic> a) {
     final tipo = _s(a['tipo']).isEmpty ? 'ACTIVIDAD' : _s(a['tipo']);
     final estado = _estadoActividad(a);
@@ -525,8 +523,7 @@ class _CrmActividadesPageState extends State<CrmActividadesPage> {
     final proxima = _s(a['fecha_proxima_accion']);
     final vendedor = _s(a['vendedor']);
     final codigoCliente = _s(a['codigo_cliente']);
-    final nombreCliente = _nombreClientePorCodigo(codigoCliente);
-    final cliente = nombreCliente.isNotEmpty ? nombreCliente : codigoCliente;
+    final cliente = _nombreClientePorCodigo(codigoCliente);
     final asunto = _s(a['asunto']).isEmpty ? '(Sin asunto)' : _s(a['asunto']);
 
     return Container(
@@ -850,6 +847,7 @@ class _EditarActividadDialogState extends State<_EditarActividadDialog> {
   String _vendedor = '';
   DateTime? _fechaProxima;
   bool _guardando = false;
+  List<Map<String, dynamic>> _tiposGestion = [];
 
   String _s(dynamic v) => v?.toString().trim() ?? '';
 
@@ -995,6 +993,7 @@ class _NuevaActividadDialogState extends State<_NuevaActividadDialog> {
   String _vendedor = '';
   DateTime? _fechaProxima;
   bool _guardando = false;
+  List<Map<String, dynamic>> _tiposGestion = [];
 
   @override
   void initState() {
@@ -1002,6 +1001,86 @@ class _NuevaActividadDialogState extends State<_NuevaActividadDialog> {
     _vendedor = widget.vendedorActual.isNotEmpty
         ? widget.vendedorActual
         : (widget.vendedores.isNotEmpty ? widget.vendedores.first : '');
+    _cargarTiposGestion();
+  }
+
+  Future<void> _cargarTiposGestion() async {
+    try {
+      final data = await widget.db
+          .from('crm_catalogos')
+          .select('id,nombre,descripcion,activo,orden')
+          .eq('categoria', 'tipos_gestion')
+          .eq('activo', true)
+          .order('orden')
+          .order('nombre');
+      final tipos = List<Map<String, dynamic>>.from(data);
+      if (!mounted) return;
+      setState(() {
+        _tiposGestion = tipos;
+        if (_tipo.isEmpty || !tipos.any((e) => _s(e['nombre']).toUpperCase() == _tipo.toUpperCase())) {
+          _tipo = tipos.isNotEmpty ? _s(tipos.first['nombre']) : 'LLAMADA';
+        }
+      });
+    } catch (_) {
+      // Mantiene el comportamiento anterior si el catálogo no está disponible.
+    }
+  }
+
+  IconData _iconoTipoGestion(String tipo) {
+    switch (tipo.trim().toUpperCase()) {
+      case 'LLAMADA': return Icons.phone_outlined;
+      case 'WHATSAPP': return Icons.chat_outlined;
+      case 'CORREO': return Icons.email_outlined;
+      case 'VISITA': return Icons.location_on_outlined;
+      case 'REUNION':
+      case 'REUNIÓN': return Icons.groups_outlined;
+      case 'SEGUIMIENTO': return Icons.follow_the_signs_outlined;
+      case 'COBRANZA': return Icons.payments_outlined;
+      case 'VIDEOLLAMADA':
+      case 'VIDEO LLAMADA':
+      case 'VIDEOLLAMADA ': return Icons.video_call_outlined;
+      default: return Icons.task_alt_outlined;
+    }
+  }
+
+  Widget _tiposGestionWidget() {
+    final tipos = _tiposGestion.isEmpty
+        ? const [
+            {'nombre': 'LLAMADA'},
+            {'nombre': 'WHATSAPP'},
+            {'nombre': 'CORREO'},
+            {'nombre': 'VISITA'},
+            {'nombre': 'REUNION'},
+            {'nombre': 'SEGUIMIENTO'},
+          ]
+        : _tiposGestion;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Text('Tipo de gestión', style: TextStyle(fontWeight: FontWeight.w800, color: _azul)),
+        const SizedBox(height: 8),
+        Wrap(
+          spacing: 10,
+          runSpacing: 10,
+          children: tipos.map((tipo) {
+            final nombre = _s(tipo['nombre']);
+            final seleccionado = nombre.toUpperCase() == _tipo.toUpperCase();
+            return ChoiceChip(
+              selected: seleccionado,
+              onSelected: _guardando ? null : (_) => setState(() => _tipo = nombre),
+              avatar: Icon(_iconoTipoGestion(nombre), size: 18, color: seleccionado ? Colors.white : _azul),
+              label: Text(nombre.toUpperCase()),
+              selectedColor: _azul,
+              backgroundColor: Colors.white,
+              labelStyle: TextStyle(color: seleccionado ? Colors.white : _azul, fontWeight: FontWeight.w800),
+              side: BorderSide(color: seleccionado ? _azul : const Color(0xFFD6E1EA)),
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
+            );
+          }).toList(),
+        ),
+      ],
+    );
   }
 
   @override
@@ -1115,29 +1194,8 @@ class _NuevaActividadDialogState extends State<_NuevaActividadDialog> {
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              DropdownButtonFormField<String>(
-                value: _tipo,
-                decoration: const InputDecoration(labelText: 'Tipo'),
-                items: const [
-                  'LLAMADA',
-                  'WHATSAPP',
-                  'CORREO',
-                  'VISITA',
-                  'REUNION',
-                  'SEGUIMIENTO',
-                  'COBRANZA',
-                ]
-                    .map(
-                      (e) => DropdownMenuItem(
-                        value: e,
-                        child: Text(e),
-                      ),
-                    )
-                    .toList(),
-                onChanged:
-                    _guardando ? null : (v) => setState(() => _tipo = v!),
-              ),
-              const SizedBox(height: 12),
+              _tiposGestionWidget(),
+              const SizedBox(height: 16),
 
               // Búsqueda directa por nombre o RUC.
               Autocomplete<Map<String, dynamic>>(

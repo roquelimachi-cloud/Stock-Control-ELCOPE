@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 
+import '../catalogos/crm_catalogos_service.dart';
+
 import '../../../services/sesion.dart';
 import '../../../services/supabase/supabase_service.dart';
 
@@ -1309,12 +1311,12 @@ class _NuevaTareaDialog extends StatefulWidget {
 
 class _NuevaTareaDialogState extends State<_NuevaTareaDialog> {
   static const _azul = Color(0xFF0B3B63);
-
   final _asunto = TextEditingController();
   final _descripcion = TextEditingController();
   final _proxima = TextEditingController();
-
   String _cliente = '';
+  String _tipo = 'SEGUIMIENTO';
+  List<String> _tiposTarea = const ['SEGUIMIENTO'];
   String _vendedor = '';
   DateTime? _fecha;
   bool _guardando = false;
@@ -1325,6 +1327,18 @@ class _NuevaTareaDialogState extends State<_NuevaTareaDialog> {
     _vendedor = widget.vendedorActual.isNotEmpty
         ? widget.vendedorActual
         : (widget.vendedores.isNotEmpty ? widget.vendedores.first : '');
+    _cargarTiposTarea();
+  }
+
+  Future<void> _cargarTiposTarea() async {
+    try {
+      final tipos = await CrmCatalogosService.obtenerNombres('tipos_tarea');
+      if (!mounted || tipos.isEmpty) return;
+      setState(() {
+        _tiposTarea = tipos;
+        if (!_tiposTarea.contains(_tipo)) _tipo = _tiposTarea.first;
+      });
+    } catch (_) {}
   }
 
   @override
@@ -1336,7 +1350,6 @@ class _NuevaTareaDialogState extends State<_NuevaTareaDialog> {
   }
 
   String _s(dynamic v) => v?.toString().trim() ?? '';
-
   String _codigo(Map<String, dynamic> c) {
     for (final key in ['codigo', 'codigo_cliente', 'ruc']) {
       final value = _s(c[key]);
@@ -1344,7 +1357,6 @@ class _NuevaTareaDialogState extends State<_NuevaTareaDialog> {
     }
     return '';
   }
-
   String _nombre(Map<String, dynamic> c) {
     for (final key in ['razon_social', 'nombre', 'cliente']) {
       final value = _s(c[key]);
@@ -1352,184 +1364,32 @@ class _NuevaTareaDialogState extends State<_NuevaTareaDialog> {
     }
     return 'Cliente sin nombre';
   }
-
   String _texto(Map<String, dynamic> c) {
     final n = _nombre(c);
-    final codigo = _codigo(c);
-    return codigo.isEmpty ? n : '$n · $codigo';
+    final code = _codigo(c);
+    return code.isEmpty ? n : '$n · $code';
   }
 
-  @override
-  Widget build(BuildContext context) {
-    final vendedores = widget.vendedores.isEmpty
-        ? <String>[_vendedor]
-        : widget.vendedores.toSet().toList();
-
-    return AlertDialog(
-      title: const Text(
-        'Nueva tarea',
-        style: TextStyle(fontWeight: FontWeight.w900, color: _azul),
+  InputDecoration _campo({required String label, required String hint, IconData? icon}) {
+    return InputDecoration(
+      labelText: label,
+      hintText: hint,
+      prefixIcon: icon == null ? null : Icon(icon, color: _azul),
+      filled: true,
+      fillColor: const Color(0xFFF9FBFD),
+      contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 16),
+      border: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(12),
+        borderSide: const BorderSide(color: Color(0xFFD6E1EC)),
       ),
-      content: SizedBox(
-        width: 700,
-        child: SingleChildScrollView(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Autocomplete<Map<String, dynamic>>(
-                displayStringForOption: _texto,
-                optionsBuilder: (value) {
-                  final q = value.text.trim().toLowerCase();
-                  if (q.isEmpty) {
-                    return const Iterable<Map<String, dynamic>>.empty();
-                  }
-
-                  return widget.clientes.where((c) {
-                    return _nombre(c).toLowerCase().contains(q) ||
-                        _codigo(c).toLowerCase().contains(q);
-                  }).take(80);
-                },
-                onSelected: (cliente) {
-                  setState(() => _cliente = _codigo(cliente));
-                },
-                fieldViewBuilder:
-                    (context, controller, focusNode, onFieldSubmitted) {
-                  return TextField(
-                    controller: controller,
-                    focusNode: focusNode,
-                    enabled: !_guardando,
-                    onChanged: (_) {
-                      if (_cliente.isNotEmpty) {
-                        setState(() => _cliente = '');
-                      }
-                    },
-                    decoration: InputDecoration(
-                      labelText: 'Cliente *',
-                      hintText: 'Escribe razón social o RUC',
-                      prefixIcon: const Icon(Icons.business_outlined),
-                      helperText: _cliente.isEmpty
-                          ? 'Selecciona un cliente de la lista'
-                          : 'Cliente seleccionado: $_cliente',
-                      border: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(10),
-                      ),
-                    ),
-                  );
-                },
-                optionsViewBuilder: (context, onSelected, options) {
-                  final lista = options.toList();
-
-                  return Align(
-                    alignment: Alignment.topLeft,
-                    child: Material(
-                      elevation: 8,
-                      borderRadius: BorderRadius.circular(12),
-                      child: ConstrainedBox(
-                        constraints: const BoxConstraints(
-                          maxWidth: 680,
-                          maxHeight: 330,
-                        ),
-                        child: ListView.separated(
-                          padding: const EdgeInsets.symmetric(vertical: 6),
-                          shrinkWrap: true,
-                          itemCount: lista.length,
-                          separatorBuilder: (_, __) =>
-                              const Divider(height: 1),
-                          itemBuilder: (_, index) {
-                            final c = lista[index];
-
-                            return ListTile(
-                              dense: true,
-                              leading: const CircleAvatar(
-                                child: Icon(Icons.business_outlined),
-                              ),
-                              title: Text(
-                                _nombre(c),
-                                maxLines: 2,
-                                overflow: TextOverflow.ellipsis,
-                              ),
-                              subtitle: Text('RUC / Código: ${_codigo(c)}'),
-                              onTap: () => onSelected(c),
-                            );
-                          },
-                        ),
-                      ),
-                    ),
-                  );
-                },
-              ),
-              const SizedBox(height: 12),
-              DropdownButtonFormField<String>(
-                value: vendedores.contains(_vendedor) ? _vendedor : null,
-                decoration: const InputDecoration(labelText: 'Asesor *'),
-                items: vendedores.where((e) => e.isNotEmpty).map(
-                  (e) => DropdownMenuItem(
-                    value: e,
-                    child: Text(e, overflow: TextOverflow.ellipsis),
-                  ),
-                ).toList(),
-                onChanged:
-                    _guardando ? null : (v) => setState(() => _vendedor = v ?? ''),
-              ),
-              const SizedBox(height: 12),
-              TextField(
-                controller: _asunto,
-                enabled: !_guardando,
-                decoration: const InputDecoration(labelText: 'Tarea *'),
-              ),
-              const SizedBox(height: 12),
-              TextField(
-                controller: _proxima,
-                enabled: !_guardando,
-                decoration: const InputDecoration(
-                  labelText: 'Acción / compromiso',
-                ),
-              ),
-              const SizedBox(height: 12),
-              TextField(
-                controller: _descripcion,
-                enabled: !_guardando,
-                maxLines: 3,
-                decoration: const InputDecoration(labelText: 'Descripción'),
-              ),
-              const SizedBox(height: 12),
-              Row(
-                children: [
-                  Expanded(
-                    child: Text(
-                      _fecha == null
-                          ? 'Sin fecha de cumplimiento'
-                          : 'Fecha: ${DateFormat('dd/MM/yyyy').format(_fecha!)}',
-                    ),
-                  ),
-                  OutlinedButton.icon(
-                    onPressed: _guardando ? null : _seleccionarFecha,
-                    icon: const Icon(Icons.calendar_today_outlined),
-                    label: const Text('Fecha'),
-                  ),
-                ],
-              ),
-            ],
-          ),
-        ),
+      enabledBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(12),
+        borderSide: const BorderSide(color: Color(0xFFD6E1EC)),
       ),
-      actions: [
-        TextButton(
-          onPressed: _guardando ? null : () => Navigator.pop(context, false),
-          child: const Text('Cancelar'),
-        ),
-        FilledButton.icon(
-          onPressed: _guardando ? null : _guardar,
-          icon: _guardando
-              ? const SizedBox(
-                  width: 16,
-                  height: 16,
-                  child: CircularProgressIndicator(strokeWidth: 2),
-                )
-              : const Icon(Icons.save_outlined),
-          label: const Text('Guardar tarea'),
-        ),
-      ],
+      focusedBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(12),
+        borderSide: const BorderSide(color: _azul, width: 1.5),
+      ),
     );
   }
 
@@ -1540,54 +1400,35 @@ class _NuevaTareaDialogState extends State<_NuevaTareaDialog> {
       lastDate: DateTime(2035),
       initialDate: _fecha ?? DateTime.now(),
     );
-
-    if (fecha != null && mounted) {
-      setState(() => _fecha = fecha);
-    }
+    if (fecha != null && mounted) setState(() => _fecha = fecha);
   }
 
   Future<void> _guardar() async {
     if (_cliente.isEmpty || _asunto.text.trim().isEmpty || _vendedor.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Completa cliente, asesor y tarea.'),
-        ),
+        const SnackBar(content: Text('Completa cliente, asesor y tarea.')),
       );
       return;
     }
-
     if (_fecha == null) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Selecciona la fecha de cumplimiento.'),
-        ),
+        const SnackBar(content: Text('Selecciona la fecha de cumplimiento.')),
       );
       return;
     }
-
     setState(() => _guardando = true);
-
     try {
-      await widget.db.rpc(
-        'crm_registrar_actividad',
-        params: {
-          'p_codigo_cliente': _cliente,
-          'p_tipo': 'SEGUIMIENTO',
-          'p_asunto': _asunto.text.trim(),
-          'p_descripcion': _descripcion.text.trim().isEmpty
-              ? null
-              : _descripcion.text.trim(),
-          'p_resultado': null,
-          'p_proxima_accion': _proxima.text.trim().isEmpty
-              ? _asunto.text.trim()
-              : _proxima.text.trim(),
-          'p_fecha_proxima_accion':
-              _fecha!.toIso8601String().substring(0, 10),
-          'p_usuario_id': widget.usuarioId,
-          'p_vendedor': _vendedor,
-        },
-      );
-
+      await widget.db.rpc('crm_registrar_actividad', params: {
+        'p_codigo_cliente': _cliente,
+        'p_tipo': _tipo,
+        'p_asunto': _asunto.text.trim(),
+        'p_descripcion': _descripcion.text.trim().isEmpty ? null : _descripcion.text.trim(),
+        'p_resultado': null,
+        'p_proxima_accion': _proxima.text.trim().isEmpty ? _asunto.text.trim() : _proxima.text.trim(),
+        'p_fecha_proxima_accion': _fecha!.toIso8601String().substring(0, 10),
+        'p_usuario_id': widget.usuarioId,
+        'p_vendedor': _vendedor,
+      });
       if (mounted) Navigator.pop(context, true);
     } catch (e) {
       if (!mounted) return;
@@ -1596,6 +1437,175 @@ class _NuevaTareaDialogState extends State<_NuevaTareaDialog> {
         SnackBar(content: Text('No se pudo registrar la tarea: $e')),
       );
     }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final vendedores = widget.vendedores.isEmpty
+        ? <String>[_vendedor]
+        : widget.vendedores.toSet().toList();
+
+    return Dialog(
+      insetPadding: const EdgeInsets.symmetric(horizontal: 30, vertical: 24),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 930, maxHeight: 700),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              padding: const EdgeInsets.fromLTRB(24, 18, 18, 18),
+              decoration: const BoxDecoration(
+                color: _azul,
+                borderRadius: BorderRadius.only(topLeft: Radius.circular(20), topRight: Radius.circular(20)),
+              ),
+              child: Row(
+                children: [
+                  Container(
+                    width: 46, height: 46,
+                    decoration: BoxDecoration(color: Colors.white.withValues(alpha: .14), borderRadius: BorderRadius.circular(13)),
+                    child: const Icon(Icons.task_alt_outlined, color: Colors.white, size: 25),
+                  ),
+                  const SizedBox(width: 13),
+                  const Expanded(
+                    child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                      Text('Nueva tarea', style: TextStyle(color: Colors.white, fontSize: 21, fontWeight: FontWeight.w900)),
+                      SizedBox(height: 3),
+                      Text('Define un compromiso comercial y su fecha de cumplimiento.', style: TextStyle(color: Colors.white70, fontSize: 12)),
+                    ]),
+                  ),
+                  IconButton(onPressed: _guardando ? null : () => Navigator.pop(context), icon: const Icon(Icons.close, color: Colors.white)),
+                ],
+              ),
+            ),
+            Expanded(
+              child: SingleChildScrollView(
+                padding: const EdgeInsets.fromLTRB(24, 20, 24, 16),
+                child: Column(
+                  children: [
+                    Autocomplete<Map<String, dynamic>>(
+                      displayStringForOption: _texto,
+                      optionsBuilder: (value) {
+                        final q = value.text.trim().toLowerCase();
+                        if (q.isEmpty) return const Iterable<Map<String, dynamic>>.empty();
+                        return widget.clientes.where((c) =>
+                          _nombre(c).toLowerCase().contains(q) ||
+                          _codigo(c).toLowerCase().contains(q)).take(20);
+                      },
+                      onSelected: (c) => setState(() => _cliente = _codigo(c)),
+                      fieldViewBuilder: (context, controller, focusNode, onSubmitted) {
+                        return TextField(
+                          controller: controller,
+                          focusNode: focusNode,
+                          enabled: !_guardando,
+                          onChanged: (_) { if (_cliente.isNotEmpty) setState(() => _cliente = ''); },
+                          decoration: _campo(label: 'Cliente *', hint: 'Escribe nombre, RUC o código', icon: Icons.business_outlined).copyWith(
+                            suffixIcon: const Icon(Icons.search, color: Color(0xFF6C8299)),
+                            helperText: _cliente.isEmpty ? 'Busca y selecciona un cliente' : 'Cliente seleccionado',
+                            helperStyle: TextStyle(color: _cliente.isEmpty ? const Color(0xFF71869A) : Colors.green),
+                          ),
+                        );
+                      },
+                      optionsViewBuilder: (context, onSelected, options) {
+                        final lista = options.toList();
+                        return Align(
+                          alignment: Alignment.topLeft,
+                          child: Material(
+                            elevation: 10,
+                            borderRadius: BorderRadius.circular(14),
+                            clipBehavior: Clip.antiAlias,
+                            child: ConstrainedBox(
+                              constraints: const BoxConstraints(maxWidth: 880, maxHeight: 300),
+                              child: ListView.separated(
+                                padding: const EdgeInsets.symmetric(vertical: 6),
+                                shrinkWrap: true,
+                                itemCount: lista.length,
+                                separatorBuilder: (_, __) => const Divider(height: 1),
+                                itemBuilder: (_, i) {
+                                  final c = lista[i];
+                                  return ListTile(
+                                    leading: const CircleAvatar(backgroundColor: Color(0xFFEAF3FA), child: Icon(Icons.business_outlined, color: _azul)),
+                                    title: Text(_nombre(c), maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontWeight: FontWeight.w800)),
+                                    subtitle: Text('RUC / Código: ${_codigo(c)}'),
+                                    trailing: const Icon(Icons.arrow_forward_ios, size: 14),
+                                    onTap: () => onSelected(c),
+                                  );
+                                },
+                              ),
+                            ),
+                          ),
+                        );
+                      },
+                    ),
+                    const SizedBox(height: 14),
+                    DropdownButtonFormField<String>(
+                      value: _tiposTarea.contains(_tipo) ? _tipo : (_tiposTarea.isEmpty ? null : _tiposTarea.first),
+                      isExpanded: true,
+                      decoration: _campo(label: 'Tipo de tarea', hint: 'Selecciona tipo', icon: Icons.task_alt_outlined),
+                      items: _tiposTarea.map((e) => DropdownMenuItem(value: e, child: Text(e))).toList(),
+                      onChanged: _guardando ? null : (v) { if (v != null) setState(() => _tipo = v); },
+                    ),
+                    const SizedBox(height: 12),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: DropdownButtonFormField<String>(
+                            value: vendedores.contains(_vendedor) ? _vendedor : null,
+                            isExpanded: true,
+                            decoration: _campo(label: 'Asesor *', hint: 'Selecciona asesor', icon: Icons.person_outline),
+                            items: vendedores.where((e) => e.isNotEmpty).map((e) => DropdownMenuItem(value: e, child: Text(e, overflow: TextOverflow.ellipsis))).toList(),
+                            onChanged: _guardando ? null : (v) => setState(() => _vendedor = v ?? ''),
+                          ),
+                        ),
+                        const SizedBox(width: 12),
+                        Expanded(child: TextField(controller: _asunto, enabled: !_guardando, decoration: _campo(label: 'Tarea *', hint: 'Ej. Seguimiento de cotización', icon: Icons.task_outlined))),
+                      ],
+                    ),
+                    const SizedBox(height: 12),
+                    Row(
+                      children: [
+                        Expanded(child: TextField(controller: _proxima, enabled: !_guardando, decoration: _campo(label: 'Acción / compromiso', hint: 'Ej. Enviar propuesta', icon: Icons.next_plan_outlined))),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: InkWell(
+                            onTap: _guardando ? null : _seleccionarFecha,
+                            borderRadius: BorderRadius.circular(12),
+                            child: InputDecorator(
+                              decoration: _campo(label: 'Fecha de cumplimiento', hint: '', icon: Icons.calendar_today_outlined),
+                              child: Text(_fecha == null ? 'Seleccionar fecha' : DateFormat('dd/MM/yyyy').format(_fecha!),
+                                style: TextStyle(color: _fecha == null ? const Color(0xFF71869A) : _azul, fontWeight: _fecha == null ? FontWeight.w400 : FontWeight.w800)),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 12),
+                    TextField(controller: _descripcion, enabled: !_guardando, maxLines: 3, decoration: _campo(label: 'Descripción', hint: 'Detalle del compromiso', icon: Icons.notes_outlined)),
+                  ],
+                ),
+              ),
+            ),
+            Container(
+              padding: const EdgeInsets.fromLTRB(24, 12, 24, 16),
+              decoration: const BoxDecoration(color: Color(0xFFF7F9FC), borderRadius: BorderRadius.only(bottomLeft: Radius.circular(20), bottomRight: Radius.circular(20))),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.end,
+                children: [
+                  TextButton(onPressed: _guardando ? null : () => Navigator.pop(context, false), child: const Text('Cancelar')),
+                  const SizedBox(width: 10),
+                  FilledButton.icon(
+                    onPressed: _guardando ? null : _guardar,
+                    icon: _guardando ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2)) : const Icon(Icons.save_outlined),
+                    label: const Text('Guardar tarea'),
+                    style: FilledButton.styleFrom(backgroundColor: _azul, padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(11))),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
   }
 }
 
@@ -1615,6 +1625,19 @@ class _EditarTareaDialog extends StatefulWidget {
 }
 
 class _EditarTareaDialogState extends State<_EditarTareaDialog> {
+
+  InputDecoration _campo({required String label, required String hint, IconData? icon}) {
+    return InputDecoration(
+      labelText: label,
+      hintText: hint,
+      prefixIcon: icon == null ? null : Icon(icon),
+      border: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(10),
+      ),
+      filled: true,
+      fillColor: Colors.white,
+    );
+  }
   static const _azul = Color(0xFF0B3B63);
 
   final _asunto = TextEditingController();
@@ -1622,6 +1645,8 @@ class _EditarTareaDialogState extends State<_EditarTareaDialog> {
   final _proxima = TextEditingController();
 
   String _vendedor = '';
+  String _tipo = 'SEGUIMIENTO';
+  List<String> _tiposTarea = const ['SEGUIMIENTO'];
   DateTime? _fecha;
   bool _guardando = false;
 
@@ -1634,9 +1659,24 @@ class _EditarTareaDialogState extends State<_EditarTareaDialog> {
     _descripcion.text = t['descripcion']?.toString() ?? '';
     _proxima.text = t['proxima_accion']?.toString() ?? '';
     _vendedor = t['vendedor']?.toString() ?? '';
+    _tipo = t['tipo']?.toString().trim().isNotEmpty == true
+        ? t['tipo'].toString().trim()
+        : 'SEGUIMIENTO';
+    _cargarTiposTarea();
 
     final f = t['fecha_proxima_accion']?.toString() ?? '';
     if (f.isNotEmpty) _fecha = DateTime.tryParse(f);
+  }
+
+  Future<void> _cargarTiposTarea() async {
+    try {
+      final tipos = await CrmCatalogosService.obtenerNombres('tipos_tarea');
+      if (!mounted || tipos.isEmpty) return;
+      setState(() {
+        _tiposTarea = tipos;
+        if (!_tiposTarea.contains(_tipo)) _tipo = _tiposTarea.first;
+      });
+    } catch (_) {}
   }
 
   @override
@@ -1665,6 +1705,14 @@ class _EditarTareaDialogState extends State<_EditarTareaDialog> {
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
+              DropdownButtonFormField<String>(
+                value: _tiposTarea.contains(_tipo) ? _tipo : (_tiposTarea.isEmpty ? null : _tiposTarea.first),
+                isExpanded: true,
+                decoration: _campo(label: 'Tipo de tarea', hint: 'Selecciona tipo', icon: Icons.task_alt_outlined),
+                items: _tiposTarea.map((e) => DropdownMenuItem(value: e, child: Text(e))).toList(),
+                onChanged: _guardando ? null : (v) { if (v != null) setState(() => _tipo = v); },
+              ),
+              const SizedBox(height: 12),
               DropdownButtonFormField<String>(
                 value: vendedores.contains(_vendedor) ? _vendedor : null,
                 decoration: const InputDecoration(labelText: 'Asesor'),
@@ -1767,7 +1815,7 @@ class _EditarTareaDialogState extends State<_EditarTareaDialog> {
         'crm_actualizar_actividad',
         params: {
           'p_id': widget.tarea['id'],
-          'p_tipo': _sTipo(widget.tarea['tipo']),
+          'p_tipo': _tipo,
           'p_asunto': _asunto.text.trim(),
           'p_descripcion': _descripcion.text.trim().isEmpty
               ? null

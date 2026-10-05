@@ -178,15 +178,58 @@ class _CrmReportesPageState extends State<CrmReportesPage> {
       vendedores = List<String>.from(vendedoresPermitidos ?? const <String>[]);
       canal = rol == 'jefe provincia' ? 'PROVINCIAS' : 'LIMA';
     } else {
-      vendedoresPermitidos = Sesion.vendedor.trim().isEmpty
-          ? <String>[]
-          : <String>[Sesion.vendedor.trim()];
-      vendedores = List<String>.from(vendedoresPermitidos!);
-      canal = 'LIMA';
+      // RFIGUEROA: puede consultar TODOS los asesores de LIMA.
+      // El canal se mantiene restringido a LIMA y la lista de asesores
+      // se obtiene por codigo_vendedor:
+      // 001-099 = LIMA; 401 y 601 = LIMA.
+      final esRichardFigueroa = Sesion.vendedor.trim().toUpperCase() == 'RFIGUEROA' ||
+          Sesion.vendedor.trim().toUpperCase() == 'RICHARD FIGUEROA';
+
+      if (esRichardFigueroa) {
+        canal = 'LIMA';
+        vendedoresPermitidos = null;
+        vendedores = await _cargarListaVendedoresLima();
+        vendedor = 'TODOS';
+      } else {
+        vendedoresPermitidos = Sesion.vendedor.trim().isEmpty
+            ? <String>[]
+            : <String>[Sesion.vendedor.trim()];
+        vendedores = List<String>.from(vendedoresPermitidos!);
+        canal = 'LIMA';
+      }
     }
 
     if (vendedor != 'TODOS' && !vendedores.contains(vendedor)) {
       vendedor = 'TODOS';
+    }
+  }
+
+  Future<List<String>> _cargarListaVendedoresLima() async {
+    try {
+      final result = await db
+          .from('crm_facturas')
+          .select('vendedor,codigo_vendedor')
+          .not('vendedor', 'is', null)
+          .not('codigo_vendedor', 'is', null)
+          .limit(10000);
+
+      final set = <String>{};
+      for (final row in result as List) {
+        final nombre = _s(row['vendedor']);
+        final codigo = int.tryParse(_s(row['codigo_vendedor']));
+        if (nombre.isEmpty || codigo == null) continue;
+
+        final esLima = (codigo >= 1 && codigo <= 99) ||
+            codigo == 401 ||
+            codigo == 601;
+
+        if (esLima) set.add(nombre);
+      }
+
+      return set.toList()..sort();
+    } catch (e) {
+      debugPrint('Error cargando vendedores Lima: $e');
+      return <String>[];
     }
   }
 
@@ -220,10 +263,17 @@ class _CrmReportesPageState extends State<CrmReportesPage> {
     DateTime fechaDesde,
     DateTime fechaHasta,
   ) async {
+    final esRichardFigueroa = (
+      Sesion.vendedor.trim().toUpperCase().contains('RFIGUEROA') ||
+      Sesion.nombre.trim().toUpperCase().contains('RFIGUEROA') ||
+      Sesion.nombre.trim().toUpperCase().contains('RICHARD FIGUEROA')
+    );
+
     final result = await db.rpc(
       'crm_obtener_reportes',
       params: {
-        'p_vendedores_permitidos': vendedoresPermitidos,
+        'p_vendedores_permitidos':
+            esRichardFigueroa ? null : vendedoresPermitidos,
         'p_vendedor': nombreVendedor,
         'p_desde': DateFormat('yyyy-MM-dd').format(fechaDesde),
         'p_hasta': DateFormat('yyyy-MM-dd').format(fechaHasta),
@@ -321,10 +371,17 @@ class _CrmReportesPageState extends State<CrmReportesPage> {
     DateTime fechaDesde,
     DateTime fechaHasta,
   ) async {
+    final esRichardFigueroa = (
+      Sesion.vendedor.trim().toUpperCase().contains('RFIGUEROA') ||
+      Sesion.nombre.trim().toUpperCase().contains('RFIGUEROA') ||
+      Sesion.nombre.trim().toUpperCase().contains('RICHARD FIGUEROA')
+    );
+
     final result = await db.rpc(
       'crm_obtener_reportes',
       params: {
-        'p_vendedores_permitidos': vendedoresPermitidos,
+        'p_vendedores_permitidos':
+            esRichardFigueroa ? null : vendedoresPermitidos,
         'p_vendedor': vendedor,
         'p_desde': DateFormat('yyyy-MM-dd').format(fechaDesde),
         'p_hasta': DateFormat('yyyy-MM-dd').format(fechaHasta),
@@ -4267,6 +4324,7 @@ class _CrmReportesPageState extends State<CrmReportesPage> {
                                         azulClaro,
                                         _compactMoney(va),
                                         barWidth,
+                                        fontSize: 11.5,
                                       ),
                                       SizedBox(width: gap),
                                       _barComparativoCompact(
@@ -4275,6 +4333,8 @@ class _CrmReportesPageState extends State<CrmReportesPage> {
                                         naranja,
                                         _compactMoney(vb),
                                         barWidth,
+                                        fontSize: 11.5,
+                                        labelOffsetY: 9,
                                       ),
                                     ],
                                   ),
@@ -4322,8 +4382,10 @@ class _CrmReportesPageState extends State<CrmReportesPage> {
     double max,
     Color color,
     String label,
-    double width,
-  ) {
+    double width, {
+    double fontSize = 10,
+    double labelOffsetY = 0,
+  }) {
     final height = max <= 0 ? 8.0 : (value / max) * 195;
 
     return SizedBox(
@@ -4337,16 +4399,19 @@ class _CrmReportesPageState extends State<CrmReportesPage> {
               minWidth: 78,
               maxWidth: 78,
               alignment: Alignment.center,
-              child: Text(
-                label,
-                maxLines: 1,
-                softWrap: false,
-                overflow: TextOverflow.visible,
-                textAlign: TextAlign.center,
-                style: TextStyle(
-                  color: color,
-                  fontSize: 10,
-                  fontWeight: FontWeight.w900,
+              child: Transform.translate(
+                offset: Offset(0, labelOffsetY),
+                child: Text(
+                  label,
+                  maxLines: 1,
+                  softWrap: false,
+                  overflow: TextOverflow.visible,
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                    color: color,
+                    fontSize: fontSize,
+                    fontWeight: FontWeight.w900,
+                  ),
                 ),
               ),
             ),
@@ -4456,6 +4521,7 @@ class _CrmReportesPageState extends State<CrmReportesPage> {
                                         naranja,
                                         _compactKg(vb),
                                         barWidth,
+                                        labelOffsetY: 9,
                                       ),
                                     ],
                                   ),

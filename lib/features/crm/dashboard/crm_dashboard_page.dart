@@ -13,6 +13,8 @@ import '../reportes/crm_reportes_page.dart';
 import '../seguimientos/crm_seguimientos_page.dart';
 import '../oportunidades/crm_oportunidades_page.dart';
 import '../tareas/crm_tareas_page.dart';
+import '../catalogos/crm_catalogos_page.dart';
+import '../visitas/crm_visitas_page.dart';
 
 // Colores compartidos por el dashboard y sus CustomPainter/widgets auxiliares.
 const Color _azul = Color(0xFF0B3B63);
@@ -47,6 +49,45 @@ class _CrmDashboardPageState extends State<CrmDashboardPage> {
   String _vendedor = 'TODOS';
   String _busqueda = '';
   int _versionBusqueda = 0;
+
+  final Map<String, bool> _permisosCrm = {};
+  bool _cargandoPermisosCrm = true;
+
+  bool _puedeVerCrm(String codigo) {
+    final rol = Sesion.rol.trim().toLowerCase();
+    if (rol == 'administrador' || Sesion.esAdministrador || _esGerencia) return true;
+    if (codigo == 'crm_dashboard') return true;
+    return _permisosCrm[codigo] == true;
+  }
+
+  Future<void> _cargarPermisosCrm() async {
+    if (Sesion.idUsuario <= 0 || Sesion.esAdministrador || _esGerencia) {
+      if (mounted) setState(() => _cargandoPermisosCrm = false);
+      return;
+    }
+    try {
+      final data = await _db
+          .from('accesos_usuario')
+          .select('puede_ver, accesos_modulos!inner(codigo)')
+          .eq('usuario_id', Sesion.idUsuario);
+      final permisos = <String, bool>{};
+      for (final item in data as List) {
+        final row = Map<String, dynamic>.from(item as Map);
+        final modulo = row['accesos_modulos'];
+        if (modulo is Map) {
+          final codigo = modulo['codigo']?.toString().trim().toLowerCase();
+          if (codigo != null && codigo.startsWith('crm_')) {
+            permisos[codigo] = row['puede_ver'] == true || row['puede_ver']?.toString() == '1';
+          }
+        }
+      }
+      if (!mounted) return;
+      setState(() { _permisosCrm..clear()..addAll(permisos); _cargandoPermisosCrm = false; });
+    } catch (_) {
+      if (!mounted) return;
+      setState(() { _permisosCrm.clear(); _cargandoPermisosCrm = false; });
+    }
+  }
 
   String get _rolSesion => Sesion.rol.trim().toLowerCase();
 
@@ -98,6 +139,7 @@ class _CrmDashboardPageState extends State<CrmDashboardPage> {
   @override
   void initState() {
     super.initState();
+    _cargarPermisosCrm();
     _cargarDatos();
   }
 
@@ -399,76 +441,18 @@ class _CrmDashboardPageState extends State<CrmDashboardPage> {
                 padding: const EdgeInsets.symmetric(vertical: 12),
                 children: [
                   _navItem(context, Icons.home_outlined, 'Inicio CRM', selected: true),
-                  _navItem(context, Icons.people_alt_outlined, 'Clientes', onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const CrmClientesPage()))),
-                  _navItem(context, Icons.person_search_outlined, 'Cliente 360°', onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const CrmCliente360Page()))),
-                  _navItem(context, Icons.fact_check_outlined, 'Actividades', onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const CrmActividadesPage()))),
-                  _navItem(
-                    context,
-                    Icons.track_changes_outlined,
-                    'Seguimientos',
-                    onTap: () => Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                        builder: (_) => const CrmSeguimientosPage(),
-                      ),
-                    ),
-                  ),
-                  _navItem(
-                    context,
-                    Icons.business_center_outlined,
-                    'Oportunidades',
-                    onTap: () => Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                        builder: (_) => const CrmOportunidadesPage(),
-                      ),
-                    ),
-                  ),
-                  _navItem(
-                    context,
-                    Icons.task_alt_outlined,
-                    'Tareas',
-                    onTap: () => Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                        builder: (_) => const CrmTareasPage(),
-                      ),
-                    ),
-                  ),
-                  _navItem(context, Icons.receipt_long_outlined, 'Facturación', onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const FacturacionImportacionPage()))),
-                  _navItem(
-                    context,
-                    Icons.account_balance_wallet_outlined,
-                    'Cobranza',
-                    onTap: () => Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                        builder: (_) => const CrmCobranzaPage(),
-                      ),
-                    ),
-                  ),
-                  _navItem(
-                    context,
-                    Icons.percent_outlined,
-                    'Comisiones',
-                    onTap: () => Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                        builder: (_) => const ComisionesProductosPage(),
-                      ),
-                    ),
-                  ),
-                  _navItem(
-                    context,
-                    Icons.bar_chart_outlined,
-                    'Reportes',
-                    onTap: () => Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                        builder: (_) => const CrmReportesPage(),
-                      ),
-                    ),
-                  ),
+                  if (_puedeVerCrm('crm_clientes')) _navItem(context, Icons.people_alt_outlined, 'Clientes', onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const CrmClientesPage()))),
+                  if (_puedeVerCrm('crm_cliente_360')) _navItem(context, Icons.person_search_outlined, 'Cliente 360°', onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const CrmCliente360Page()))),
+                  if (_puedeVerCrm('crm_actividades')) _navItem(context, Icons.fact_check_outlined, 'Actividades', onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const CrmActividadesPage()))),
+                  if (_puedeVerCrm('crm_seguimientos')) _navItem(context, Icons.track_changes_outlined, 'Seguimientos', onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const CrmSeguimientosPage()))),
+                  if (_puedeVerCrm('crm_oportunidades')) _navItem(context, Icons.business_center_outlined, 'Oportunidades', onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const CrmOportunidadesPage()))),
+                  if (_puedeVerCrm('crm_tareas')) _navItem(context, Icons.task_alt_outlined, 'Tareas', onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const CrmTareasPage()))),
+                  if (_puedeVerCrm('crm_visitas')) _navItem(context, Icons.calendar_month_outlined, 'Visitas Comerciales', onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const CrmVisitasPage()))),
+                  if (_puedeVerCrm('crm_facturacion')) _navItem(context, Icons.receipt_long_outlined, 'Facturación', onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const FacturacionImportacionPage()))),
+                  if (_puedeVerCrm('crm_cobranza')) _navItem(context, Icons.account_balance_wallet_outlined, 'Cobranza', onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const CrmCobranzaPage()))),
+                  if (_puedeVerCrm('crm_comisiones')) _navItem(context, Icons.percent_outlined, 'Comisiones', onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const ComisionesProductosPage()))),
+                  if (_puedeVerCrm('crm_reportes')) _navItem(context, Icons.bar_chart_outlined, 'Reportes', onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const CrmReportesPage()))),
+                  if (_puedeVerCrm('crm_catalogos')) _navItem(context, Icons.menu_book_outlined, 'Catálogos CRM', onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => CrmCatalogosPage()))),
                 ],
               ),
             ),

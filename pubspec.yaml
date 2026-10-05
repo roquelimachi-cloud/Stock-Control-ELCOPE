@@ -18,6 +18,8 @@ dependencies:
   flutter_localizations:
     sdk: flutter
 
+  geolocator: ^14.0.2
+
   # ==========================
   # GENERAL
   # ==========================
@@ -44,6 +46,7 @@ dependencies:
   intl: ^0.20.2
   flutter_dotenv: ^5.2.1
   provider: ^6.1.5
+  timezone: ^0.11.1
 
   # ==========================
   # DASHBOARD
@@ -64,6 +67,7 @@ dependencies:
   # ==========================
 
   fluttertoast: ^8.2.12
+  flutter_local_notifications: ^22.3.1
 
   # ==========================
   # PDF E IMPRESIÓN

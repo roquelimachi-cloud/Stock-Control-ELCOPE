@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 
+import '../catalogos/crm_catalogos_service.dart';
+
 class CrmOportunidadesPage extends StatefulWidget {
   const CrmOportunidadesPage({super.key});
 
@@ -60,6 +62,24 @@ class _CrmOportunidadesPageState extends State<CrmOportunidadesPage> {
   ];
 
   String _etapa = 'TODAS';
+  List<String> _etapasFiltro = const ['TODAS'];
+
+  @override
+  void initState() {
+    super.initState();
+    _cargarEtapasFiltro();
+  }
+
+  Future<void> _cargarEtapasFiltro() async {
+    try {
+      final etapas = await CrmCatalogosService.obtenerNombres('etapas_oportunidad');
+      if (!mounted || etapas.isEmpty) return;
+      setState(() {
+        _etapasFiltro = ['TODAS', ...etapas];
+        if (!_etapasFiltro.contains(_etapa)) _etapa = 'TODAS';
+      });
+    } catch (_) {}
+  }
 
   @override
   void dispose() {
@@ -130,100 +150,6 @@ class _CrmOportunidadesPageState extends State<CrmOportunidadesPage> {
           ),
         ),
         onTap: selected ? null : () => Navigator.maybePop(context),
-      ),
-    );
-  }
-
-  Widget _sidebar() {
-    return Container(
-      width: 235,
-      decoration: const BoxDecoration(
-        gradient: LinearGradient(
-          begin: Alignment.topCenter,
-          end: Alignment.bottomCenter,
-          colors: [Color(0xFF063B63), Color(0xFF052C4B)],
-        ),
-      ),
-      child: Column(
-        children: [
-          const SizedBox(height: 18),
-          const Text(
-            'ELECTRO CONDUCTORES',
-            style: TextStyle(
-              color: Colors.white,
-              fontSize: 9,
-              fontWeight: FontWeight.w800,
-            ),
-          ),
-          const Text(
-            'PERUANOS',
-            style: TextStyle(
-              color: Colors.white,
-              fontSize: 9,
-              fontWeight: FontWeight.w800,
-            ),
-          ),
-          const Text(
-            'ELCOPE',
-            style: TextStyle(
-              color: Color(0xFF63D98D),
-              fontSize: 27,
-              fontWeight: FontWeight.w900,
-            ),
-          ),
-          const Padding(
-            padding: EdgeInsets.symmetric(horizontal: 10),
-            child: Divider(color: Colors.white24),
-          ),
-          Expanded(
-            child: ListView(
-              children: [
-                _nav(Icons.home_outlined, 'Inicio CRM'),
-                _nav(Icons.people_alt_outlined, 'Clientes'),
-                _nav(Icons.person_search_outlined, 'Cliente 360°'),
-                _nav(Icons.fact_check_outlined, 'Actividades'),
-                _nav(Icons.track_changes_outlined, 'Seguimientos'),
-                _nav(
-                  Icons.business_center_outlined,
-                  'Oportunidades',
-                  selected: true,
-                ),
-                _nav(Icons.task_alt_outlined, 'Tareas'),
-                _nav(Icons.receipt_long_outlined, 'Facturación'),
-                _nav(Icons.account_balance_wallet_outlined, 'Cobranza'),
-                _nav(Icons.percent_outlined, 'Comisiones'),
-                _nav(Icons.bar_chart_outlined, 'Reportes'),
-              ],
-            ),
-          ),
-          const Padding(
-            padding: EdgeInsets.all(14),
-            child: Column(
-              children: [
-                Text(
-                  'CABLES QUE CONECTAN',
-                  style: TextStyle(
-                    color: Colors.white,
-                    fontSize: 11,
-                    fontWeight: FontWeight.w900,
-                  ),
-                ),
-                Text(
-                  'TU PROGRESO',
-                  style: TextStyle(
-                    color: Color(0xFF63D98D),
-                    fontSize: 12,
-                    fontWeight: FontWeight.w900,
-                  ),
-                ),
-                Text(
-                  'Centro de Mando Comercial',
-                  style: TextStyle(color: Colors.white70, fontSize: 9),
-                ),
-              ],
-            ),
-          ),
-        ],
       ),
     );
   }
@@ -314,8 +240,8 @@ class _CrmOportunidadesPageState extends State<CrmOportunidadesPage> {
   }) {
     return Expanded(
       child: Container(
-        height: 86,
-        padding: const EdgeInsets.all(14),
+        height: 104,
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
         decoration: BoxDecoration(
           color: Colors.white,
           borderRadius: BorderRadius.circular(12),
@@ -378,13 +304,7 @@ class _CrmOportunidadesPageState extends State<CrmOportunidadesPage> {
   }
 
   Widget _filters() {
-    final stages = [
-      'TODAS',
-      'En evaluación',
-      'Propuesta enviada',
-      'Negociación',
-      'Ganada',
-    ];
+    final stages = _etapasFiltro;
 
     return Container(
       padding: const EdgeInsets.all(12),
@@ -928,12 +848,7 @@ class _CrmOportunidadesPageState extends State<CrmOportunidadesPage> {
     return Scaffold(
       backgroundColor: fondo,
       body: SafeArea(
-        child: Row(
-          children: [
-            _sidebar(),
-            Expanded(child: _body()),
-          ],
-        ),
+        child: _body(),
       ),
     );
   }
@@ -941,7 +856,7 @@ class _CrmOportunidadesPageState extends State<CrmOportunidadesPage> {
   Future<void> _nuevaOportunidad() async {
     final result = await showDialog<Map<String, dynamic>>(
       context: context,
-      builder: (_) => const _OportunidadDialog(),
+      builder: (_) => _OportunidadDialog(clientes: _oportunidades.map((e) => {'nombre': e['cliente'], 'codigo': ''}).toList()),
     );
 
     if (result == null) return;
@@ -954,7 +869,7 @@ class _CrmOportunidadesPageState extends State<CrmOportunidadesPage> {
   Future<void> _editarOportunidad(Map<String, dynamic> row) async {
     final result = await showDialog<Map<String, dynamic>>(
       context: context,
-      builder: (_) => _OportunidadDialog(initial: row),
+      builder: (_) => _OportunidadDialog(initial: row, clientes: _oportunidades.map((e) => {'nombre': e['cliente'], 'codigo': ''}).toList()),
     );
 
     if (result == null) return;
@@ -1065,15 +980,18 @@ class _ActivityPreview extends StatelessWidget {
 }
 
 class _OportunidadDialog extends StatefulWidget {
-  const _OportunidadDialog({this.initial});
+  const _OportunidadDialog({this.initial, required this.clientes});
 
   final Map<String, dynamic>? initial;
+  final List<Map<String, dynamic>> clientes;
 
   @override
   State<_OportunidadDialog> createState() => _OportunidadDialogState();
 }
 
 class _OportunidadDialogState extends State<_OportunidadDialog> {
+  static const Color azul = Color(0xFF063B63);
+  static const Color borde = Color(0xFFE0E7EF);
   final _cliente = TextEditingController();
   final _proyecto = TextEditingController();
   final _monto = TextEditingController();
@@ -1081,15 +999,18 @@ class _OportunidadDialogState extends State<_OportunidadDialog> {
   final _cierre = TextEditingController();
 
   String _etapa = 'En evaluación';
+  List<String> _etapasCatalogo = const ['En evaluación'];
   String _asesor = 'Michael Roque';
+  String _clienteSeleccionado = '';
 
   @override
   void initState() {
     super.initState();
-
+    _cargarEtapas();
     final row = widget.initial;
     if (row != null) {
       _cliente.text = row['cliente']?.toString() ?? '';
+      _clienteSeleccionado = _cliente.text;
       _proyecto.text = row['proyecto']?.toString() ?? '';
       _monto.text = row['monto']?.toString() ?? '';
       _probabilidad.text = row['probabilidad']?.toString() ?? '50';
@@ -1097,6 +1018,17 @@ class _OportunidadDialogState extends State<_OportunidadDialog> {
       _etapa = row['etapa']?.toString() ?? _etapa;
       _asesor = row['asesor']?.toString() ?? _asesor;
     }
+  }
+
+  Future<void> _cargarEtapas() async {
+    try {
+      final etapas = await CrmCatalogosService.obtenerNombres('etapas_oportunidad');
+      if (!mounted || etapas.isEmpty) return;
+      setState(() {
+        _etapasCatalogo = etapas;
+        if (!_etapasCatalogo.contains(_etapa)) _etapa = _etapasCatalogo.first;
+      });
+    } catch (_) {}
   }
 
   @override
@@ -1109,147 +1041,231 @@ class _OportunidadDialogState extends State<_OportunidadDialog> {
     super.dispose();
   }
 
+  String _nombre(Map<String, dynamic> c) => c['nombre']?.toString() ?? '';
+  String _codigo(Map<String, dynamic> c) => c['codigo']?.toString() ?? '';
+
+  InputDecoration _campo({required String label, required String hint, IconData? icon}) {
+    return InputDecoration(
+      labelText: label,
+      hintText: hint,
+      prefixIcon: icon == null ? null : Icon(icon, color: azul),
+      filled: true,
+      fillColor: const Color(0xFFF9FBFD),
+      contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 16),
+      border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: const BorderSide(color: borde)),
+      enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: const BorderSide(color: borde)),
+      focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: const BorderSide(color: azul, width: 1.5)),
+    );
+  }
+
+  Future<void> _seleccionarCierre() async {
+    final base = DateTime.tryParse(_cierre.text);
+    final date = await showDatePicker(
+      context: context,
+      firstDate: DateTime.now(),
+      lastDate: DateTime(2035),
+      initialDate: base ?? DateTime.now(),
+    );
+    if (date != null && mounted) {
+      setState(() => _cierre.text = DateFormat('dd/MM/yyyy').format(date));
+    }
+  }
+
   void _guardar() {
     final cliente = _cliente.text.trim();
     final proyecto = _proyecto.text.trim();
     final monto = double.tryParse(_monto.text.trim().replaceAll(',', ''));
     final prob = int.tryParse(_probabilidad.text.trim());
-
-    if (cliente.isEmpty ||
-        proyecto.isEmpty ||
-        monto == null ||
-        prob == null) {
+    if (cliente.isEmpty || proyecto.isEmpty || monto == null || prob == null) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text(
-            'Completa cliente, proyecto, monto y probabilidad.',
-          ),
-        ),
+        const SnackBar(content: Text('Completa cliente, proyecto, monto y probabilidad.')),
       );
       return;
     }
-
-    Navigator.pop(
-      context,
-      {
-        'cliente': cliente,
-        'proyecto': proyecto,
-        'monto': monto,
-        'etapa': _etapa,
-        'probabilidad': prob.clamp(0, 100),
-        'cierre': _cierre.text.trim().isEmpty
-            ? '-'
-            : _cierre.text.trim(),
-        'asesor': _asesor,
-      },
-    );
+    Navigator.pop(context, {
+      'cliente': cliente,
+      'proyecto': proyecto,
+      'monto': monto,
+      'etapa': _etapa,
+      'probabilidad': prob.clamp(0, 100),
+      'cierre': _cierre.text.trim().isEmpty ? '-' : _cierre.text.trim(),
+      'asesor': _asesor,
+    });
   }
 
   @override
   Widget build(BuildContext context) {
-    return AlertDialog(
-      title: Text(
-        widget.initial == null
-            ? 'Nueva oportunidad'
-            : 'Editar oportunidad',
-        style: const TextStyle(
-          color: Color(0xFF063B63),
-          fontWeight: FontWeight.w900,
-        ),
-      ),
-      content: SizedBox(
-        width: 620,
-        child: SingleChildScrollView(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              TextField(
-                controller: _cliente,
-                decoration: const InputDecoration(labelText: 'Cliente'),
+    const etapas = ['En evaluación', 'Propuesta enviada', 'Negociación', 'Ganada', 'Perdida'];
+    return Dialog(
+      insetPadding: const EdgeInsets.symmetric(horizontal: 30, vertical: 24),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 930, maxHeight: 720),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              padding: const EdgeInsets.fromLTRB(24, 18, 18, 18),
+              decoration: const BoxDecoration(
+                color: azul,
+                borderRadius: BorderRadius.only(topLeft: Radius.circular(20), topRight: Radius.circular(20)),
               ),
-              const SizedBox(height: 10),
-              TextField(
-                controller: _proyecto,
-                decoration: const InputDecoration(
-                  labelText: 'Proyecto / Oportunidad',
+              child: Row(
+                children: [
+                  Container(
+                    width: 46, height: 46,
+                    decoration: BoxDecoration(color: Colors.white.withValues(alpha: .14), borderRadius: BorderRadius.circular(13)),
+                    child: const Icon(Icons.business_center_outlined, color: Colors.white, size: 25),
+                  ),
+                  const SizedBox(width: 13),
+                  Expanded(
+                    child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                      Text(widget.initial == null ? 'Nueva oportunidad' : 'Editar oportunidad',
+                        style: const TextStyle(color: Colors.white, fontSize: 21, fontWeight: FontWeight.w900)),
+                      const SizedBox(height: 3),
+                      const Text('Registra un proyecto comercial y define su probabilidad de cierre.',
+                        style: TextStyle(color: Colors.white70, fontSize: 12)),
+                    ]),
+                  ),
+                  IconButton(onPressed: () => Navigator.pop(context), icon: const Icon(Icons.close, color: Colors.white)),
+                ],
+              ),
+            ),
+            Expanded(
+              child: SingleChildScrollView(
+                padding: const EdgeInsets.fromLTRB(24, 20, 24, 16),
+                child: Column(
+                  children: [
+                    Autocomplete<Map<String, dynamic>>(
+                      displayStringForOption: (c) => _nombre(c),
+                      optionsBuilder: (value) {
+                        final q = value.text.trim().toLowerCase();
+                        if (q.isEmpty) return const Iterable<Map<String, dynamic>>.empty();
+                        return widget.clientes.where((c) {
+                          final n = _nombre(c).toLowerCase();
+                          final code = _codigo(c).toLowerCase();
+                          return n.contains(q) || code.contains(q);
+                        }).take(20);
+                      },
+                      onSelected: (c) {
+                        setState(() {
+                          _clienteSeleccionado = _nombre(c);
+                          _cliente.text = _nombre(c);
+                        });
+                      },
+                      fieldViewBuilder: (context, controller, focusNode, onFieldSubmitted) {
+                        if (_cliente.text.isNotEmpty && controller.text.isEmpty) controller.text = _cliente.text;
+                        return TextField(
+                          controller: controller,
+                          focusNode: focusNode,
+                          onChanged: (v) {
+                            _cliente.text = v;
+                            if (_clienteSeleccionado.isNotEmpty) setState(() => _clienteSeleccionado = '');
+                          },
+                          decoration: _campo(label: 'Cliente *', hint: 'Escribe nombre, RUC o código', icon: Icons.business_outlined).copyWith(
+                            suffixIcon: const Icon(Icons.search, color: Color(0xFF6C8299)),
+                            helperText: _clienteSeleccionado.isEmpty ? 'Busca y selecciona un cliente' : 'Cliente seleccionado',
+                            helperStyle: TextStyle(color: _clienteSeleccionado.isEmpty ? const Color(0xFF71869A) : Colors.green),
+                          ),
+                        );
+                      },
+                      optionsViewBuilder: (context, onSelected, options) {
+                        final lista = options.toList();
+                        return Align(
+                          alignment: Alignment.topLeft,
+                          child: Material(
+                            elevation: 10,
+                            borderRadius: BorderRadius.circular(14),
+                            clipBehavior: Clip.antiAlias,
+                            child: ConstrainedBox(
+                              constraints: const BoxConstraints(maxWidth: 880, maxHeight: 280),
+                              child: ListView.separated(
+                                padding: const EdgeInsets.symmetric(vertical: 6),
+                                shrinkWrap: true,
+                                itemCount: lista.length,
+                                separatorBuilder: (_, __) => const Divider(height: 1),
+                                itemBuilder: (_, i) {
+                                  final c = lista[i];
+                                  return ListTile(
+                                    leading: const CircleAvatar(backgroundColor: Color(0xFFEAF3FA), child: Icon(Icons.business_outlined, color: azul)),
+                                    title: Text(_nombre(c), maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontWeight: FontWeight.w800)),
+                                    subtitle: Text(_codigo(c).isEmpty ? 'Cliente registrado' : 'RUC / Código: ${_codigo(c)}'),
+                                    trailing: const Icon(Icons.arrow_forward_ios, size: 14),
+                                    onTap: () => onSelected(c),
+                                  );
+                                },
+                              ),
+                            ),
+                          ),
+                        );
+                      },
+                    ),
+                    const SizedBox(height: 14),
+                    TextField(controller: _proyecto, decoration: _campo(label: 'Proyecto / Oportunidad *', hint: 'Ej. Sparq 140', icon: Icons.work_outline)),
+                    const SizedBox(height: 12),
+                    Row(
+                      children: [
+                        Expanded(child: TextField(controller: _monto, keyboardType: TextInputType.number, decoration: _campo(label: 'Valor estimado US\$ *', hint: 'Ej. 85000', icon: Icons.attach_money))),
+                        const SizedBox(width: 12),
+                        Expanded(child: TextField(controller: _probabilidad, keyboardType: TextInputType.number, decoration: _campo(label: 'Probabilidad % *', hint: '0 - 100', icon: Icons.percent))),
+                      ],
+                    ),
+                    const SizedBox(height: 12),
+                    DropdownButtonFormField<String>(
+                      value: _etapasCatalogo.contains(_etapa) ? _etapa : (_etapasCatalogo.isEmpty ? null : _etapasCatalogo.first),
+                      isExpanded: true,
+                      decoration: _campo(label: 'Etapa', hint: 'Selecciona etapa', icon: Icons.flag_outlined),
+                      items: _etapasCatalogo.map((e) => DropdownMenuItem(value: e, child: Text(e))).toList(),
+                      onChanged: (v) { if (v != null) setState(() => _etapa = v); },
+                    ),
+                    const SizedBox(height: 12),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: InkWell(
+                            onTap: _seleccionarCierre,
+                            borderRadius: BorderRadius.circular(12),
+                            child: InputDecorator(
+                              decoration: _campo(label: 'Cierre estimado', hint: '', icon: Icons.calendar_today_outlined),
+                              child: Text(_cierre.text.isEmpty ? 'Seleccionar fecha' : _cierre.text,
+                                style: TextStyle(color: _cierre.text.isEmpty ? const Color(0xFF71869A) : azul, fontWeight: _cierre.text.isEmpty ? FontWeight.w400 : FontWeight.w800)),
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: TextField(
+                            controller: TextEditingController(text: _asesor),
+                            readOnly: true,
+                            decoration: _campo(label: 'Asesor', hint: '', icon: Icons.person_outline),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
                 ),
               ),
-              const SizedBox(height: 10),
-              Row(
+            ),
+            Container(
+              padding: const EdgeInsets.fromLTRB(24, 12, 24, 16),
+              decoration: const BoxDecoration(color: Color(0xFFF7F9FC), borderRadius: BorderRadius.only(bottomLeft: Radius.circular(20), bottomRight: Radius.circular(20))),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.end,
                 children: [
-                  Expanded(
-                    child: TextField(
-                      controller: _monto,
-                      keyboardType: TextInputType.number,
-                      decoration: const InputDecoration(
-                        labelText: 'Valor estimado US\$',
-                      ),
-                    ),
-                  ),
+                  TextButton(onPressed: () => Navigator.pop(context), child: const Text('Cancelar')),
                   const SizedBox(width: 10),
-                  Expanded(
-                    child: TextField(
-                      controller: _probabilidad,
-                      keyboardType: TextInputType.number,
-                      decoration: const InputDecoration(
-                        labelText: 'Probabilidad %',
-                      ),
-                    ),
+                  FilledButton.icon(
+                    onPressed: _guardar,
+                    icon: const Icon(Icons.save_outlined),
+                    label: const Text('Guardar oportunidad'),
+                    style: FilledButton.styleFrom(backgroundColor: azul, padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(11))),
                   ),
                 ],
               ),
-              const SizedBox(height: 10),
-              DropdownButtonFormField<String>(
-                value: _etapa,
-                decoration: const InputDecoration(labelText: 'Etapa'),
-                items: const [
-                  'En evaluación',
-                  'Propuesta enviada',
-                  'Negociación',
-                  'Ganada',
-                  'Perdida',
-                ]
-                    .map(
-                      (item) => DropdownMenuItem(
-                        value: item,
-                        child: Text(item),
-                      ),
-                    )
-                    .toList(),
-                onChanged: (value) {
-                  if (value != null) {
-                    setState(() => _etapa = value);
-                  }
-                },
-              ),
-              const SizedBox(height: 10),
-              TextField(
-                controller: _cierre,
-                decoration: const InputDecoration(
-                  labelText: 'Cierre estimado',
-                  hintText: '15/10/2026',
-                ),
-              ),
-              const SizedBox(height: 10),
-              TextField(
-                controller: TextEditingController(text: _asesor),
-                readOnly: true,
-                decoration: const InputDecoration(labelText: 'Asesor'),
-              ),
-            ],
-          ),
+            ),
+          ],
         ),
       ),
-      actions: [
-        TextButton(
-          onPressed: () => Navigator.pop(context),
-          child: const Text('Cancelar'),
-        ),
-        FilledButton(
-          onPressed: _guardar,
-          child: const Text('Guardar'),
-        ),
-      ],
     );
   }
 }

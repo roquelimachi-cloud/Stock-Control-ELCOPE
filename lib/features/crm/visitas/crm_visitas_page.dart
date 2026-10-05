@@ -3,6 +3,7 @@ import 'package:intl/intl.dart';
 import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
 import 'package:printing/printing.dart';
+import 'package:url_launcher/url_launcher.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:timezone/data/latest_all.dart' as tz;
@@ -152,6 +153,7 @@ class _CrmVisitasPageState extends State<CrmVisitasPage> {
   String? _error;
   List<Map<String, dynamic>> _visitas = [];
   List<Map<String, dynamic>> _clientes = [];
+  final Map<String, String> _clientesVisitasPrivilegiados = {};
   List<String> _vendedoresPermitidos = [];
 
   String _vendedor = 'TODOS';
@@ -163,6 +165,13 @@ class _CrmVisitasPageState extends State<CrmVisitasPage> {
   bool get _esJefatura {
     final rol = Sesion.rol.trim().toLowerCase();
     return rol == 'jefe lima' || rol == 'jefe provincia';
+  }
+
+  /// La geolocalización visible en la vista previa está restringida
+  /// exclusivamente a Jefatura y Gerencia.
+  bool get _puedeVerGeolocalizacion {
+    final rol = Sesion.rol.trim().toLowerCase();
+    return rol.contains('gerencia') || rol.contains('jefe');
   }
 
   String get _vendedorActual =>
@@ -187,7 +196,7 @@ class _CrmVisitasPageState extends State<CrmVisitasPage> {
   String _s(dynamic value) => value?.toString().trim() ?? '';
 
   String _clienteCodigo(Map<String, dynamic> c) {
-    for (final key in ['codigo', 'codigo_cliente', 'ruc']) {
+    for (final key in ['codigo', 'codigo_cliente', 'ruc', 'numero_documento', 'documento']) {
       final value = _s(c[key]);
       if (value.isNotEmpty) return value;
     }
@@ -195,18 +204,156 @@ class _CrmVisitasPageState extends State<CrmVisitasPage> {
   }
 
   String _clienteNombre(Map<String, dynamic> c) {
-    for (final key in ['razon_social', 'nombre', 'cliente']) {
+    for (final key in ['razon_social', 'nombre', 'cliente', 'nombre_cliente']) {
       final value = _s(c[key]);
       if (value.isNotEmpty) return value;
     }
     return 'Cliente sin nombre';
   }
 
+  bool _clienteCoincide(Map<String, dynamic> c, String identificador) {
+    final buscado = identificador.trim().toLowerCase();
+    if (buscado.isEmpty) return false;
+
+    const campos = [
+      'codigo',
+      'codigo_cliente',
+      'ruc',
+      'numero_documento',
+      'documento',
+    ];
+
+    for (final campo in campos) {
+      final valor = _s(c[campo]).toLowerCase();
+      if (valor.isNotEmpty && valor == buscado) return true;
+    }
+
+    return false;
+  }
+
+  String _normalizarIdentificador(String value) {
+    return value
+        .trim()
+        .replaceAll(RegExp(r'[^0-9A-Za-z]'), '')
+        .toLowerCase();
+  }
+
   String _nombreClientePorCodigo(String codigo) {
+    final identificador = codigo.trim();
+    if (identificador.isEmpty) return 'Cliente sin nombre';
+
+    final directo = _clientesVisitasPrivilegiados[
+      _normalizarIdentificador(identificador)
+    ];
+    if (directo != null && directo.isNotEmpty) return directo;
+
     final found = _clientes.where(
-      (c) => _clienteCodigo(c).toLowerCase() == codigo.toLowerCase(),
+      (c) => _clienteCoincide(c, identificador),
     );
-    return found.isEmpty ? codigo : _clienteNombre(found.first);
+
+    if (found.isNotEmpty) return _clienteNombre(found.first);
+
+    final normalizado = _normalizarIdentificador(identificador);
+    final foundNormalizado = _clientes.where((c) {
+      for (final campo in [
+        'codigo',
+        'codigo_cliente',
+        'ruc',
+        'numero_documento',
+        'documento',
+      ]) {
+        if (_normalizarIdentificador(_s(c[campo])) == normalizado) return true;
+      }
+      return false;
+    });
+
+    return foundNormalizado.isNotEmpty
+        ? _clienteNombre(foundNormalizado.first)
+        : identificador;
+  }
+
+  String _nombreClienteDeVisita(Map<String, dynamic> visita) {
+    final nombre = _s(visita['cliente_nombre']);
+    if (nombre.isNotEmpty) return nombre;
+    return _nombreClientePorCodigo(_s(visita['codigo_cliente']));
+  }
+
+  Future<void> _resolverNombresVisitas() async {
+    if (_visitas.isEmpty) return;
+
+    try {
+      final codigos = _visitas
+          .map((v) => _s(v['codigo_cliente']))
+          .where((v) => v.isNotEmpty)
+          .toSet()
+          .toList();
+
+      if (codigos.isEmpty) return;
+
+      final nombres = <String, String>{};
+
+      final porRuc = await _db
+          .from('clientes')
+          .select('codigo,ruc,razon_social,nombre')
+          .inFilter('ruc', codigos);
+
+      for (final row in (porRuc as List)) {
+        final c = Map<String, dynamic>.from(row as Map);
+        final nombre = _s(c['razon_social']).isNotEmpty
+            ? _s(c['razon_social'])
+            : _s(c['nombre']);
+        if (nombre.isEmpty) continue;
+
+        final ruc = _s(c['ruc']);
+        final codigo = _s(c['codigo']);
+
+        if (ruc.isNotEmpty) {
+          nombres[_normalizarIdentificador(ruc)] = nombre;
+        }
+        if (codigo.isNotEmpty) {
+          nombres[_normalizarIdentificador(codigo)] = nombre;
+        }
+      }
+
+      final porCodigo = await _db
+          .from('clientes')
+          .select('codigo,ruc,razon_social,nombre')
+          .inFilter('codigo', codigos);
+
+      for (final row in (porCodigo as List)) {
+        final c = Map<String, dynamic>.from(row as Map);
+        final nombre = _s(c['razon_social']).isNotEmpty
+            ? _s(c['razon_social'])
+            : _s(c['nombre']);
+        if (nombre.isEmpty) continue;
+
+        final ruc = _s(c['ruc']);
+        final codigo = _s(c['codigo']);
+
+        if (ruc.isNotEmpty) {
+          nombres[_normalizarIdentificador(ruc)] = nombre;
+        }
+        if (codigo.isNotEmpty) {
+          nombres[_normalizarIdentificador(codigo)] = nombre;
+        }
+      }
+
+      for (final visita in _visitas) {
+        final nombreRpc = _s(visita['cliente_nombre']);
+        if (nombreRpc.isNotEmpty) continue;
+
+        final codigo = _s(visita['codigo_cliente']);
+        final nombre = nombres[_normalizarIdentificador(codigo)];
+
+        if (nombre != null && nombre.isNotEmpty) {
+          visita['cliente_nombre'] = nombre;
+        }
+      }
+
+      if (mounted) setState(() {});
+    } catch (e) {
+      debugPrint('No se pudieron resolver las razones sociales: $e');
+    }
   }
 
   Future<void> _cargarPermisos() async {
@@ -264,7 +411,7 @@ class _CrmVisitasPageState extends State<CrmVisitasPage> {
     final permitidos =
         _vendedoresPermitidos.isEmpty ? null : _vendedoresPermitidos;
 
-    final data = await _db.rpc('crm_obtener_visitas', params: {
+    final data = await _db.rpc('crm_obtener_visitas_con_cliente', params: {
       'p_vendedores_permitidos': permitidos,
       'p_vendedor': _vendedor,
       'p_desde': _rango?.start.toIso8601String().substring(0, 10),
@@ -321,6 +468,7 @@ class _CrmVisitasPageState extends State<CrmVisitasPage> {
       await _cargarPermisos();
       await _cargarClientes();
       await _cargarVisitas();
+      await _resolverNombresVisitas();
       await _programarRecordatorios();
 
       if (mounted) setState(() => _cargando = false);
@@ -361,7 +509,7 @@ class _CrmVisitasPageState extends State<CrmVisitasPage> {
         if (id == null || fechaHora == null) continue;
         if (!fechaHora.isAfter(DateTime.now())) continue;
 
-        final cliente = _nombreClientePorCodigo(_s(visita['codigo_cliente']));
+        final cliente = _nombreClienteDeVisita(visita);
         await CrmVisitasNotificaciones.programar(
           visitaId: id,
           cliente: cliente,
@@ -481,9 +629,7 @@ class _CrmVisitasPageState extends State<CrmVisitasPage> {
                   itemBuilder: (_, index) {
                     final visita = pendientes[index];
                     final fechaHora = _fechaHoraVisita(visita)!;
-                    final cliente = _nombreClientePorCodigo(
-                      _s(visita['codigo_cliente']),
-                    );
+                    final cliente = _nombreClienteDeVisita(visita);
                     return ListTile(
                       leading: const CircleAvatar(
                         child: Icon(Icons.notifications_none),
@@ -514,6 +660,7 @@ class _CrmVisitasPageState extends State<CrmVisitasPage> {
     setState(() => _cargando = true);
     try {
       await _cargarVisitas();
+      await _resolverNombresVisitas();
       await _programarRecordatorios();
       if (mounted) setState(() => _cargando = false);
     } catch (e) {
@@ -542,7 +689,8 @@ class _CrmVisitasPageState extends State<CrmVisitasPage> {
   }
 
   Future<void> _iniciarVisita(Map<String, dynamic> visita) async {
-    final id = (visita['id'] as num?)?.toInt();
+        if (_esJefatura) return;
+final id = (visita['id'] as num?)?.toInt();
     if (id == null) return;
 
     try {
@@ -568,7 +716,8 @@ class _CrmVisitasPageState extends State<CrmVisitasPage> {
   }
 
   Future<void> _finalizarVisita(Map<String, dynamic> visita) async {
-    final id = (visita['id'] as num?)?.toInt();
+        if (_esJefatura) return;
+final id = (visita['id'] as num?)?.toInt();
     if (id == null) return;
 
     final resultado = await showDialog<bool>(
@@ -595,7 +744,8 @@ class _CrmVisitasPageState extends State<CrmVisitasPage> {
   }
 
   Future<void> _cancelarVisita(Map<String, dynamic> visita) async {
-    final id = (visita['id'] as num?)?.toInt();
+        if (_esJefatura) return;
+final id = (visita['id'] as num?)?.toInt();
     if (id == null) return;
 
     final confirmar = await showDialog<bool>(
@@ -818,7 +968,7 @@ class _CrmVisitasPageState extends State<CrmVisitasPage> {
 
     final filas = _visitas.map((v) {
       final fecha = _date(v['fecha_visita']);
-      final cliente = _nombreClientePorCodigo(_s(v['codigo_cliente']));
+      final cliente = _nombreClienteDeVisita(v);
       return [
         fecha == null ? '-' : _fecha.format(fecha),
         _s(v['hora_programada']).isEmpty ? '-' : _hora(v['hora_programada']),
@@ -1316,12 +1466,578 @@ class _CrmVisitasPageState extends State<CrmVisitasPage> {
     );
   }
 
+
+  double? _gpsNumero(dynamic value) {
+    return double.tryParse(value?.toString() ?? '');
+  }
+
+  String _gpsCoordenadas(Map<String, dynamic> v, String momento) {
+    final lat = _gpsNumero(v['latitud_$momento']);
+    final lon = _gpsNumero(v['longitud_$momento']);
+    if (lat == null || lon == null) return 'No registrado';
+    return '${lat.toStringAsFixed(6)}, ${lon.toStringAsFixed(6)}';
+  }
+
+  Future<void> _abrirMapaGps(
+    double latitud,
+    double longitud,
+  ) async {
+    final uri = Uri.parse(
+      'https://www.google.com/maps/search/?api=1&query=$latitud,$longitud',
+    );
+
+    final ok = await launchUrl(
+      uri,
+      mode: LaunchMode.externalApplication,
+    );
+
+    if (!ok && mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('No se pudo abrir Google Maps.'),
+        ),
+      );
+    }
+  }
+
+  String _texto(dynamic value) {
+    final valueText = _s(value);
+    return valueText.isEmpty ? 'No registrado' : valueText;
+  }
+
+  Widget _filaVistaPrevia(
+    String titulo,
+    String valor, {
+    IconData? icon,
+  }) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 10),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          if (icon != null) ...[
+            Icon(icon, size: 19, color: _azulClaro),
+            const SizedBox(width: 8),
+          ],
+          SizedBox(
+            width: 125,
+            child: Text(
+              titulo,
+              style: const TextStyle(
+                color: Color(0xFF64748B),
+                fontSize: 12,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+          ),
+          Expanded(
+            child: Text(
+              valor,
+              style: const TextStyle(
+                color: _azul,
+                fontSize: 13,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _mostrarVistaPrevia(Map<String, dynamic> v) async {
+    final codigo = _s(v['codigo_cliente']);
+    final cliente = _nombreClienteDeVisita(v);
+    final estado = _s(v['estado']).isEmpty ? 'PROGRAMADA' : _s(v['estado']);
+    final fecha = _date(v['fecha_visita']);
+    final salida = _date(v['salida_at']);
+    final fin = _date(v['fin_at']);
+
+    final latInicio = _gpsNumero(v['latitud_inicio']);
+    final lonInicio = _gpsNumero(v['longitud_inicio']);
+    final latFin = _gpsNumero(v['latitud_fin']);
+    final lonFin = _gpsNumero(v['longitud_fin']);
+
+    Widget section(String title, IconData icon, List<Widget> children) {
+      return Container(
+        width: double.infinity,
+        margin: const EdgeInsets.only(bottom: 14),
+        padding: const EdgeInsets.fromLTRB(18, 15, 18, 8),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(color: const Color(0xFFE0E7EE)),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Icon(icon, size: 19, color: _azulClaro),
+                const SizedBox(width: 8),
+                Text(
+                  title,
+                  style: const TextStyle(
+                    color: _azul,
+                    fontSize: 14,
+                    fontWeight: FontWeight.w900,
+                  ),
+                ),
+              ],
+            ),
+            const Divider(height: 18),
+            ...children,
+          ],
+        ),
+      );
+    }
+
+    Widget infoTile(String label, String value, IconData icon) {
+      return Expanded(
+        child: Container(
+          margin: const EdgeInsets.only(bottom: 8),
+          padding: const EdgeInsets.all(11),
+          decoration: BoxDecoration(
+            color: const Color(0xFFF7F9FB),
+            borderRadius: BorderRadius.circular(10),
+          ),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Icon(icon, size: 17, color: _azulClaro),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      label,
+                      style: const TextStyle(
+                        color: Color(0xFF64748B),
+                        fontSize: 10,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                    const SizedBox(height: 3),
+                    Text(
+                      value,
+                      maxLines: 4,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        color: _azul,
+                        fontSize: 12,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+
+    await showDialog<void>(
+      context: context,
+      barrierDismissible: true,
+      builder: (dialogContext) {
+        return Dialog(
+          insetPadding: const EdgeInsets.symmetric(
+            horizontal: 32,
+            vertical: 24,
+          ),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(18),
+          ),
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(
+              maxWidth: 980,
+              maxHeight: 820,
+            ),
+            child: Column(
+              children: [
+                Container(
+                  padding: const EdgeInsets.fromLTRB(22, 18, 16, 18),
+                  decoration: const BoxDecoration(
+                    color: _azul,
+                    borderRadius: BorderRadius.vertical(
+                      top: Radius.circular(18),
+                    ),
+                  ),
+                  child: Row(
+                    children: [
+                      Container(
+                        padding: const EdgeInsets.all(10),
+                        decoration: BoxDecoration(
+                          color: Colors.white.withValues(alpha: .12),
+                          borderRadius: BorderRadius.circular(11),
+                        ),
+                        child: const Icon(
+                          Icons.business_outlined,
+                          color: Colors.white,
+                          size: 24,
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            const Text(
+                              'VISTA PREVIA DE VISITA COMERCIAL',
+                              style: TextStyle(
+                                color: Color(0xFFB9D9F1),
+                                fontSize: 10,
+                                fontWeight: FontWeight.w800,
+                                letterSpacing: .7,
+                              ),
+                            ),
+                            const SizedBox(height: 3),
+                            Text(
+                              cliente,
+                              maxLines: 2,
+                              overflow: TextOverflow.ellipsis,
+                              style: const TextStyle(
+                                color: Colors.white,
+                                fontSize: 19,
+                                fontWeight: FontWeight.w900,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      _chip(estado, _estadoColor(estado)),
+                      const SizedBox(width: 10),
+                      IconButton(
+                        tooltip: 'Cerrar',
+                        onPressed: () => Navigator.pop(dialogContext),
+                        icon: const Icon(
+                          Icons.close,
+                          color: Colors.white,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                Expanded(
+                  child: Container(
+                    color: const Color(0xFFF4F7FA),
+                    child: SingleChildScrollView(
+                      padding: const EdgeInsets.all(18),
+                      child: Column(
+                        children: [
+                          section(
+                            'Resumen de la visita',
+                            Icons.dashboard_outlined,
+                            [
+                              Row(
+                                children: [
+                                  infoTile(
+                                    'RUC / CÓDIGO',
+                                    codigo.isEmpty ? 'No registrado' : codigo,
+                                    Icons.badge_outlined,
+                                  ),
+                                  const SizedBox(width: 9),
+                                  infoTile(
+                                    'ASESOR',
+                                    _texto(v['vendedor']),
+                                    Icons.person_outline,
+                                  ),
+                                  const SizedBox(width: 9),
+                                  infoTile(
+                                    'FECHA',
+                                    fecha == null
+                                        ? 'No registrada'
+                                        : _fecha.format(fecha),
+                                    Icons.calendar_today_outlined,
+                                  ),
+                                  const SizedBox(width: 9),
+                                  infoTile(
+                                    'HORA',
+                                    _texto(v['hora_programada']),
+                                    Icons.schedule_outlined,
+                                  ),
+                                ],
+                              ),
+                            ],
+                          ),
+                          section(
+                            'Información comercial',
+                            Icons.business_center_outlined,
+                            [
+                              Row(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  infoTile(
+                                    'MOTIVO',
+                                    _texto(v['motivo']),
+                                    Icons.flag_outlined,
+                                  ),
+                                  const SizedBox(width: 9),
+                                  infoTile(
+                                    'OBJETIVO',
+                                    _texto(v['objetivo']),
+                                    Icons.track_changes_outlined,
+                                  ),
+                                ],
+                              ),
+                              Row(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  infoTile(
+                                    'LUGAR / DIRECCIÓN',
+                                    _texto(v['lugar']),
+                                    Icons.place_outlined,
+                                  ),
+                                ],
+                              ),
+                            ],
+                          ),
+                          section(
+                            'Contacto',
+                            Icons.contact_page_outlined,
+                            [
+                              Row(
+                                children: [
+                                  infoTile(
+                                    'CONTACTO',
+                                    _texto(v['contacto_nombre']),
+                                    Icons.person_outline,
+                                  ),
+                                  const SizedBox(width: 9),
+                                  infoTile(
+                                    'CARGO',
+                                    _texto(v['contacto_cargo']),
+                                    Icons.badge_outlined,
+                                  ),
+                                  const SizedBox(width: 9),
+                                  infoTile(
+                                    'TELÉFONO',
+                                    _texto(v['contacto_telefono']),
+                                    Icons.phone_outlined,
+                                  ),
+                                  const SizedBox(width: 9),
+                                  infoTile(
+                                    'CORREO',
+                                    _texto(v['contacto_email']),
+                                    Icons.email_outlined,
+                                  ),
+                                ],
+                              ),
+                            ],
+                          ),
+                          section(
+                            'Resultado y seguimiento',
+                            Icons.assignment_outlined,
+                            [
+                              Row(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  infoTile(
+                                    'RESULTADO',
+                                    _texto(v['resultado']),
+                                    Icons.assignment_turned_in_outlined,
+                                  ),
+                                  const SizedBox(width: 9),
+                                  infoTile(
+                                    'PRÓXIMA ACCIÓN',
+                                    _texto(v['proxima_accion']),
+                                    Icons.next_plan_outlined,
+                                  ),
+                                  const SizedBox(width: 9),
+                                  infoTile(
+                                    'FECHA PRÓXIMA ACCIÓN',
+                                    _date(v['fecha_proxima_accion']) == null
+                                        ? 'No registrada'
+                                        : _fecha.format(
+                                            _date(v['fecha_proxima_accion'])!,
+                                          ),
+                                    Icons.event_outlined,
+                                  ),
+                                ],
+                              ),
+                              Row(
+                                children: [
+                                  infoTile(
+                                    'INICIO',
+                                    salida == null
+                                        ? 'No iniciado'
+                                        : DateFormat('dd/MM/yyyy HH:mm')
+                                            .format(salida),
+                                    Icons.play_circle_outline,
+                                  ),
+                                  const SizedBox(width: 9),
+                                  infoTile(
+                                    'FIN',
+                                    fin == null
+                                        ? 'No finalizado'
+                                        : DateFormat('dd/MM/yyyy HH:mm')
+                                            .format(fin),
+                                    Icons.stop_circle_outlined,
+                                  ),
+                                  const SizedBox(width: 9),
+                                  infoTile(
+                                    'DURACIÓN',
+                                    _duracion(v),
+                                    Icons.timer_outlined,
+                                  ),
+                                ],
+                              ),
+                            ],
+                          ),
+                          if (_puedeVerGeolocalizacion)
+                            section(
+                              'Geolocalización de la visita',
+                              Icons.location_on_outlined,
+                              [
+                                Container(
+                                  width: double.infinity,
+                                  margin: const EdgeInsets.only(bottom: 8),
+                                  padding: const EdgeInsets.all(11),
+                                  decoration: BoxDecoration(
+                                    color: const Color(0xFFF0F7FC),
+                                    borderRadius: BorderRadius.circular(10),
+                                  ),
+                                  child: const Text(
+                                    'Visible exclusivamente para Jefatura y Gerencia. '
+                                    'Las coordenadas corresponden al momento de inicio y finalización.',
+                                    style: TextStyle(
+                                      color: _azul,
+                                      fontSize: 11,
+                                      fontWeight: FontWeight.w600,
+                                    ),
+                                  ),
+                                ),
+                                Row(
+                                  children: [
+                                    Expanded(
+                                      child: _gpsPanel(
+                                        titulo: 'GPS DE INICIO',
+                                        coordenadas:
+                                            _gpsCoordenadas(v, 'inicio'),
+                                        latitud: latInicio,
+                                        longitud: lonInicio,
+                                      ),
+                                    ),
+                                    const SizedBox(width: 10),
+                                    Expanded(
+                                      child: _gpsPanel(
+                                        titulo: 'GPS DE FIN',
+                                        coordenadas: _gpsCoordenadas(v, 'fin'),
+                                        latitud: latFin,
+                                        longitud: lonFin,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ],
+                            ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+                Container(
+                  padding: const EdgeInsets.fromLTRB(18, 12, 18, 12),
+                  decoration: const BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.vertical(
+                      bottom: Radius.circular(18),
+                    ),
+                    border: Border(
+                      top: BorderSide(color: Color(0xFFE0E7EE)),
+                    ),
+                  ),
+                  child: Row(
+                    children: [
+                      const Icon(
+                        Icons.info_outline,
+                        size: 17,
+                        color: Color(0xFF64748B),
+                      ),
+                      const SizedBox(width: 7),
+                      const Expanded(
+                        child: Text(
+                          'Vista de consulta · Los datos se muestran según los permisos del usuario.',
+                          style: TextStyle(
+                            color: Color(0xFF64748B),
+                            fontSize: 10,
+                          ),
+                        ),
+                      ),
+                      FilledButton.icon(
+                        onPressed: () => Navigator.pop(dialogContext),
+                        icon: const Icon(Icons.check, size: 17),
+                        label: const Text('Cerrar'),
+                        style: FilledButton.styleFrom(
+                          backgroundColor: _azul,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _gpsPanel({
+    required String titulo,
+    required String coordenadas,
+    required double? latitud,
+    required double? longitud,
+  }) {
+    final disponible = latitud != null && longitud != null;
+
+    return Container(
+      padding: const EdgeInsets.all(11),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: const Color(0xFFDCE7EF)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            titulo,
+            style: const TextStyle(
+              color: _azul,
+              fontWeight: FontWeight.w800,
+              fontSize: 12,
+            ),
+          ),
+          const SizedBox(height: 5),
+          Text(
+            coordenadas,
+            style: const TextStyle(
+              color: Color(0xFF52657A),
+              fontSize: 11,
+            ),
+          ),
+          if (disponible) ...[
+            const SizedBox(height: 8),
+            OutlinedButton.icon(
+              onPressed: () => _abrirMapaGps(latitud, longitud),
+              icon: const Icon(Icons.map_outlined, size: 16),
+              label: const Text('Abrir mapa'),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
   Widget _tarjetaVisita(Map<String, dynamic> v) {
     final estado = _s(v['estado']).isEmpty ? 'PROGRAMADA' : _s(v['estado']);
     final estadoColor = _estadoColor(estado);
     final fecha = _date(v['fecha_visita']);
     final codigo = _s(v['codigo_cliente']);
-    final cliente = _nombreClientePorCodigo(codigo);
+    final cliente = _nombreClienteDeVisita(v);
     final vendedor = _s(v['vendedor']);
     final hora = _hora(v['hora_programada']);
     final motivo = _s(v['motivo']);
@@ -1413,9 +2129,11 @@ class _CrmVisitasPageState extends State<CrmVisitasPage> {
                       if (motivo.isNotEmpty) _dato(Icons.flag_outlined, motivo),
                       if (lugar.isNotEmpty)
                         _dato(Icons.place_outlined, lugar),
-                      if (v['latitud_inicio'] != null)
+                      if (_puedeVerGeolocalizacion &&
+                          v['latitud_inicio'] != null)
                         _dato(Icons.gps_fixed, 'GPS inicio'),
-                      if (v['latitud_fin'] != null)
+                      if (_puedeVerGeolocalizacion &&
+                          v['latitud_fin'] != null)
                         _dato(Icons.gps_fixed, 'GPS fin'),
                     ],
                   ),
@@ -1467,13 +2185,13 @@ class _CrmVisitasPageState extends State<CrmVisitasPage> {
             runSpacing: 7,
             alignment: WrapAlignment.end,
             children: [
-              if (estado == 'PROGRAMADA')
+              if (!_esJefatura && estado == 'PROGRAMADA')
                 OutlinedButton.icon(
                   onPressed: () => _iniciarVisita(v),
                   icon: const Icon(Icons.play_arrow_rounded, size: 18),
                   label: const Text('Iniciar'),
                 ),
-              if (estado == 'EN CURSO')
+              if (!_esJefatura && estado == 'EN CURSO')
                 FilledButton.icon(
                   onPressed: () => _finalizarVisita(v),
                   icon: const Icon(Icons.stop_circle_outlined, size: 18),
@@ -1482,7 +2200,7 @@ class _CrmVisitasPageState extends State<CrmVisitasPage> {
                     backgroundColor: _verde,
                   ),
                 ),
-              if (estado == 'PROGRAMADA')
+              if (!_esJefatura && estado == 'PROGRAMADA')
                 IconButton(
                   tooltip: 'Cancelar',
                   onPressed: () => _cancelarVisita(v),
@@ -1496,12 +2214,16 @@ class _CrmVisitasPageState extends State<CrmVisitasPage> {
             return Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Row(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    fechaBox,
-                    contenido,
-                  ],
+                InkWell(
+                  borderRadius: BorderRadius.circular(12),
+                  onTap: () => _mostrarVistaPrevia(v),
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      fechaBox,
+                      contenido,
+                    ],
+                  ),
                 ),
                 const SizedBox(height: 12),
                 Align(
@@ -1515,8 +2237,19 @@ class _CrmVisitasPageState extends State<CrmVisitasPage> {
           return Row(
             crossAxisAlignment: CrossAxisAlignment.center,
             children: [
-              fechaBox,
-              contenido,
+              Expanded(
+                child: InkWell(
+                  borderRadius: BorderRadius.circular(12),
+                  onTap: () => _mostrarVistaPrevia(v),
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.center,
+                    children: [
+                      fechaBox,
+                      contenido,
+                    ],
+                  ),
+                ),
+              ),
               SizedBox(width: 240, child: acciones),
             ],
           );
@@ -2116,9 +2849,8 @@ class _NuevaVisitaDialogState extends State<_NuevaVisitaDialog> {
             _seccion('4. Detalle de la visita',Icons.assignment_outlined,Column(children:[LayoutBuilder(builder:(context,cs){final compact=cs.maxWidth<650;final m=_campo(label:'Motivo',controller:_motivo,hint:'Seguimiento de cotización',icon:Icons.flag_outlined);final l=_campo(label:'Lugar / dirección',controller:_lugar,hint:direccion.isEmpty?'Dirección donde se realizará la visita':direccion,icon:Icons.place_outlined);return compact?Column(children:[m,const SizedBox(height:10),l]):Row(children:[Expanded(child:m),const SizedBox(width:10),Expanded(child:l)]);}),const SizedBox(height:10),_campo(label:'Objetivo de la visita',controller:_objetivo,hint:'¿Qué deseas conseguir o revisar?',icon:Icons.flag_circle_outlined,maxLines:2)])),
             _seccion('5. Clasificación comercial',Icons.track_changes_outlined,LayoutBuilder(builder:(context,cs){final compact=cs.maxWidth<650;final estado=DropdownButtonFormField<String>(value:_estadoComercial,decoration:_dec('Estado comercial','',Icons.sell_outlined),items:_estadosComerciales.map((e)=>DropdownMenuItem(value:e,child:Text(e))).toList(),onChanged:(v){if(v!=null)setState(()=>_estadoComercial=v);});final vend=DropdownButtonFormField<String>(value:_vendedor.isEmpty?null:_vendedor,isExpanded:true,decoration:_dec('Asesor responsable *','',Icons.person_pin_outlined),items:(widget.vendedores.isEmpty?[_vendedor]:widget.vendedores).where((e)=>e.isNotEmpty).toSet().map((e)=>DropdownMenuItem(value:e,child:Text(e,overflow:TextOverflow.ellipsis))).toList(),onChanged:(v){if(v!=null)setState(()=>_vendedor=v);});return compact?Column(children:[estado,const SizedBox(height:10),vend]):Row(children:[Expanded(child:estado),const SizedBox(width:10),Expanded(child:vend)]);})),
           ]))),
-          Container(padding:const EdgeInsets.fromLTRB(20,12,20,16),decoration:const BoxDecoration(color:Colors.white,border:Border(top:BorderSide(color:_borde)),borderRadius:BorderRadius.only(bottomLeft:Radius.circular(22),bottomRight:Radius.circular(22))),child:Row(mainAxisAlignment:MainAxisAlignment.end,children:[TextButton(onPressed:_guardando?null:()=>Navigator.pop(context,false),child:const Text('Cancelar')),const SizedBox(width:10),FilledButton.icon(onPressed:_guardando?null:_guardar,style:FilledButton.styleFrom(backgroundColor:_verde,padding:const EdgeInsets.symmetric(horizontal:20,vertical:13)),icon:_guardando?const SizedBox(width:16,height:16,child:CircularProgressIndicator(strokeWidth:2,color:Colors.white)):const Icon(Icons.event_available_outlined),label:const Text('Programar visita'))]),),
-        ],
-      ),
+          Container(padding:const EdgeInsets.fromLTRB(20,12,20,16),decoration:const BoxDecoration(color:Colors.white,border:Border(top:BorderSide(color:_borde)),borderRadius:BorderRadius.only(bottomLeft:Radius.circular(22),bottomRight:Radius.circular(22))),child:Row(mainAxisAlignment:MainAxisAlignment.end,children:[TextButton(onPressed:_guardando?null:()=>Navigator.pop(context,false),child:const Text('Cancelar')),const SizedBox(width:10),FilledButton.icon(onPressed:_guardando?null:_guardar,style:FilledButton.styleFrom(backgroundColor:_verde,padding:const EdgeInsets.symmetric(horizontal:20,vertical:13)),icon:_guardando?const SizedBox(width:16,height:16,child:CircularProgressIndicator(strokeWidth:2,color:Colors.white)):const Icon(Icons.event_available_outlined),label:const Text('Programar visita'))])),
+        ]),
       ),
     );
   }

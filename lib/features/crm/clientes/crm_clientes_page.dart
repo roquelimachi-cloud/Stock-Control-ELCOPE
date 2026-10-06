@@ -648,13 +648,114 @@ class _CrmClientesPageState extends State<CrmClientesPage> {
   }
 
   Future<void> _exportarExcel() async {
-    if (_clientes.isEmpty) {
+    if (_clientes.isEmpty && _totalClientes <= 0) {
       _mensaje('No hay clientes para exportar.');
       return;
     }
 
     try {
       setState(() => _procesando = true);
+      _mensaje('Preparando todos los clientes para exportar...');
+
+      // IMPORTANTE: _clientes solo contiene los 12 registros de la página
+      // actual. Para exportar, consultamos nuevamente Supabase sin paginar,
+      // respetando los mismos filtros de la pantalla.
+      final rol = Sesion.rol.trim().toLowerCase();
+      final vendedorSesion = await _vendedorRealSesion();
+      final vendedoresPermitidos = await _vendedoresPermitidos();
+
+      final vendedorEfectivo = vendedorSesion.isNotEmpty &&
+              rol != 'jefe lima' &&
+              rol != 'jefe provincia' &&
+              rol != 'gerencia'
+          ? vendedorSesion
+          : _vendedor;
+      final departamentoEfectivo = _esJefeLima ? 'LIMA' : _departamento;
+
+      // La cartera actual es pequeña (350-357 clientes), por lo que 5000
+      // permite obtener todos los registros en una sola llamada, evitando
+      // exportar solamente los 12 visibles.
+      final respuesta = await _db.rpc(
+        'crm_obtener_clientes_pagina_por_usuario_v2',
+        params: {
+          'p_usuario_id': Sesion.idUsuario,
+          'p_busqueda': _busqueda.trim(),
+          'p_vendedor': vendedorEfectivo,
+          'p_vendedores_permitidos': vendedoresPermitidos,
+          'p_sector': _sector,
+          'p_giro': _giro,
+          'p_departamento': departamentoEfectivo,
+          'p_solo_activos': _soloActivos,
+          'p_anio': _anio == 'TODOS' ? null : int.tryParse(_anio),
+          'p_compra_filtro': _compraFiltro,
+          'p_limit': 5000,
+          'p_offset': 0,
+          'p_orden': _orden,
+        },
+      );
+
+      final todos = List<Map<String, dynamic>>.from(
+        (respuesta as List).map((e) => Map<String, dynamic>.from(e as Map)),
+      );
+
+      if (todos.isEmpty) {
+        _mensaje('No hay clientes que coincidan con los filtros actuales.');
+        return;
+      }
+
+      // Si se está usando un segmento de gestión, cargamos sus flags para que
+      // la exportación también respete exactamente el segmento seleccionado.
+      var clientesExportar = todos;
+      if (_segmento != 'TODOS') {
+        try {
+          final codigos = todos
+              .map((c) => _s(c['codigo']))
+              .where((v) => v.isNotEmpty)
+              .toList();
+          if (codigos.isNotEmpty) {
+            final flags = await _db.rpc(
+              'crm_obtener_clientes_gestion_flags_v1',
+              params: {'p_codigos': codigos},
+            );
+            final porCodigo = <String, Map<String, dynamic>>{};
+            for (final row in List.from(flags as List)) {
+              final m = Map<String, dynamic>.from(row as Map);
+              porCodigo[_s(m['codigo'])] = m;
+            }
+            bool coincide(Map<String, dynamic> c) {
+              final f = porCodigo[_s(c['codigo'])] ?? const <String, dynamic>{};
+              final llamada = f['tiene_llamada'] == true;
+              final whatsapp = f['tiene_whatsapp'] == true;
+              final correo = f['tiene_correo'] == true;
+              final visita = f['tiene_visita'] == true;
+              final oportunidad = f['tiene_oportunidad'] == true;
+              final alerta = _s(f['alerta_contacto']).toUpperCase();
+              final activo = c['activo'] == true;
+              switch (_segmento) {
+                case 'SIN LLAMADA': return !llamada;
+                case 'SIN WHATSAPP': return !whatsapp;
+                case 'SIN CORREO': return !correo;
+                case 'SIN VISITA': return !visita;
+                case 'SIN OPORTUNIDAD': return !oportunidad;
+                case 'SIN CONTACTO': return alerta == 'NUNCA';
+                case 'EN RIESGO': return alerta == 'VENCIDO';
+                case 'CON OPORTUNIDAD': return oportunidad;
+                case 'ACTIVOS': return activo;
+                case 'INACTIVOS': return !activo;
+                default: return true;
+              }
+            }
+            clientesExportar = todos.where(coincide).toList();
+          }
+        } catch (_) {
+          // Si los flags no están disponibles, exportamos la cartera base.
+        }
+      }
+
+      if (clientesExportar.isEmpty) {
+        _mensaje('No hay clientes que coincidan con el segmento seleccionado.');
+        return;
+      }
 
       final excel = Excel.createExcel();
       final sheet = excel['Clientes'];
@@ -670,11 +771,16 @@ class _CrmClientesPageState extends State<CrmClientesPage> {
         TextCellValue('Facturación'),
         TextCellValue('Peso (kg)'),
         TextCellValue('Última compra'),
+        TextCellValue('Días sin compra'),
         TextCellValue('Estado'),
       ]);
 
-      for (final c in _clientes) {
-        final fecha = _ultimaCompra(c);
+      for (final c in clientesExportar) {
+        final fecha = _date(c['ultima_compra']);
+        final diasSinCompra = fecha == null
+            ? 'Nunca'
+            : '${DateTime.now().difference(DateTime(fecha.year, fecha.month, fecha.day)).inDays}';
+
         sheet.appendRow([
           TextCellValue(_s(c['codigo'])),
           TextCellValue(_s(c['ruc'])),
@@ -683,15 +789,15 @@ class _CrmClientesPageState extends State<CrmClientesPage> {
           TextCellValue(_s(c['sector'])),
           TextCellValue(_s(c['giro'])),
           TextCellValue(_s(c['departamento'])),
-          DoubleCellValue(_facturacionCliente(c)),
-          DoubleCellValue(_pesoCliente(c)),
-          TextCellValue(
-            fecha == null ? '' : DateFormat('dd/MM/yyyy').format(fecha),
-          ),
+          DoubleCellValue(_n(c['facturacion'])),
+          DoubleCellValue(_n(c['peso_kg'])),
+          TextCellValue(fecha == null ? '' : DateFormat('dd/MM/yyyy').format(fecha)),
+          TextCellValue(diasSinCompra),
           TextCellValue(c['activo'] == true ? 'ACTIVO' : 'INACTIVO'),
         ]);
       }
 
+      _mensaje('Generando Excel con ${clientesExportar.length} clientes...');
       final bytes = excel.encode();
       if (bytes == null) {
         throw Exception('No se pudo generar el archivo Excel.');
@@ -709,7 +815,7 @@ class _CrmClientesPageState extends State<CrmClientesPage> {
       final path = ruta.toLowerCase().endsWith('.xlsx') ? ruta : '$ruta.xlsx';
       await File(path).writeAsBytes(bytes, flush: true);
 
-      _mensaje('Excel generado correctamente.');
+      _mensaje('Excel generado correctamente con ${clientesExportar.length} clientes.');
     } catch (e) {
       _mensaje('Error al exportar Excel: $e', error: true);
     } finally {

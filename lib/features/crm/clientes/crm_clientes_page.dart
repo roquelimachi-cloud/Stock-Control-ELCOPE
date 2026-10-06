@@ -182,7 +182,11 @@ class _CrmClientesPageState extends State<CrmClientesPage> {
     // la cartera inicial debe ser exclusivamente la de ese vendedor, incluso
     // si el usuario tiene rol Administrador. El permiso de importación sigue
     // siendo independiente.
-    if (vendedorSesion.isNotEmpty && rol != 'jefe lima' && rol != 'jefe provincia' && rol != 'gerencia') {
+    if (rol == 'jefe lima') {
+      // Jefe Lima: la cartera SIEMPRE pertenece al departamento LIMA.
+      // El usuario puede cambiar vendedor/sector/giro, pero nunca salir de LIMA.
+      _departamento = 'LIMA';
+    } else if (vendedorSesion.isNotEmpty && rol != 'jefe provincia' && rol != 'gerencia') {
       _vendedor = vendedorSesion;
     }
     _cargar();
@@ -244,10 +248,22 @@ class _CrmClientesPageState extends State<CrmClientesPage> {
     final rol = Sesion.rol.trim().toLowerCase();
     final vendedorSesion = Sesion.vendedor.trim();
 
-    // Jefe Lima trabaja con TODA la cartera de Lima, no solo con
-    // los vendedores registrados en usuario_permisos.
+    // Jefe Lima: únicamente los vendedores asignados a su área en
+    // usuario_permisos. El departamento LIMA se fuerza además en _cargar().
     if (rol == 'jefe lima') {
-      return null;
+      final data = await _db
+          .from('usuario_permisos')
+          .select('vendedor, ver_produccion')
+          .eq('usuario_jefe_id', Sesion.idUsuario)
+          .eq('ver_produccion', true);
+
+      final permitidos = <String>{};
+      for (final row in data as List) {
+        final v = row['vendedor']?.toString().trim();
+        if (v != null && v.isNotEmpty) permitidos.add(v);
+      }
+      if (vendedorSesion.isNotEmpty) permitidos.add(vendedorSesion);
+      return permitidos.toList()..sort();
     }
 
     // Administrador y Gerencia pueden consultar toda la cartera.
@@ -302,6 +318,9 @@ class _CrmClientesPageState extends State<CrmClientesPage> {
 
     try {
       final rol = Sesion.rol.trim().toLowerCase();
+      if (rol == 'jefe lima' && _departamento != 'LIMA' && mounted) {
+        setState(() => _departamento = 'LIMA');
+      }
       // La fuente de verdad del usuario es public.usuarios. Esto evita que
       // un Administrador con vendedor asignado termine viendo TODA la cartera.
       final vendedorSesion = await _vendedorRealSesion();
@@ -323,6 +342,9 @@ class _CrmClientesPageState extends State<CrmClientesPage> {
           ? vendedorSesion
           : _vendedor;
       final departamentoEfectivo = _esJefeLima ? 'LIMA' : _departamento;
+
+      // Jefe Lima queda limitado simultáneamente por área (LIMA) y por
+      // los vendedores asignados en usuario_permisos.
 
       final baseParams = <String, dynamic>{
         'p_busqueda': _busqueda.trim(),
@@ -672,31 +694,55 @@ class _CrmClientesPageState extends State<CrmClientesPage> {
           : _vendedor;
       final departamentoEfectivo = _esJefeLima ? 'LIMA' : _departamento;
 
-      // La cartera actual es pequeña (350-357 clientes), por lo que 5000
-      // permite obtener todos los registros en una sola llamada, evitando
-      // exportar solamente los 12 visibles.
-      final respuesta = await _db.rpc(
-        'crm_obtener_clientes_pagina_por_usuario_v2',
-        params: {
-          'p_usuario_id': Sesion.idUsuario,
-          'p_busqueda': _busqueda.trim(),
-          'p_vendedor': vendedorEfectivo,
-          'p_vendedores_permitidos': vendedoresPermitidos,
-          'p_sector': _sector,
-          'p_giro': _giro,
-          'p_departamento': departamentoEfectivo,
-          'p_solo_activos': _soloActivos,
-          'p_anio': _anio == 'TODOS' ? null : int.tryParse(_anio),
-          'p_compra_filtro': _compraFiltro,
-          'p_limit': 5000,
-          'p_offset': 0,
-          'p_orden': _orden,
-        },
-      );
+      // Jefe Lima queda limitado simultáneamente por área (LIMA) y por
+      // los vendedores asignados en usuario_permisos.
 
-      final todos = List<Map<String, dynamic>>.from(
-        (respuesta as List).map((e) => Map<String, dynamic>.from(e as Map)),
-      );
+      // IMPORTANTE: una jefatura puede tener miles de clientes (por ejemplo,
+      // 7,958 en el área de Lima). No debemos limitar la exportación a 5,000
+      // ni a los 12 visibles. Descargamos la cartera completa por bloques y
+      // respetamos exactamente los filtros actuales.
+      const int tamanoBloque = 1000;
+      final todos = <Map<String, dynamic>>[];
+      var offsetExportacion = 0;
+      var totalEsperado = 0;
+
+      while (true) {
+        final respuesta = await _db.rpc(
+          'crm_obtener_clientes_pagina_por_usuario_v2',
+          params: {
+            'p_usuario_id': Sesion.idUsuario,
+            'p_busqueda': _busqueda.trim(),
+            'p_vendedor': vendedorEfectivo,
+            'p_vendedores_permitidos': vendedoresPermitidos,
+            'p_sector': _sector,
+            'p_giro': _giro,
+            'p_departamento': departamentoEfectivo,
+            'p_solo_activos': _soloActivos,
+            'p_anio': _anio == 'TODOS' ? null : int.tryParse(_anio),
+            'p_compra_filtro': _compraFiltro,
+            'p_limit': tamanoBloque,
+            'p_offset': offsetExportacion,
+            'p_orden': _orden,
+          },
+        );
+
+        final bloque = List<Map<String, dynamic>>.from(
+          (respuesta as List).map((e) => Map<String, dynamic>.from(e as Map)),
+        );
+
+        if (bloque.isEmpty) break;
+
+        todos.addAll(bloque);
+        totalEsperado = _n(bloque.first['total_clientes']).round();
+        offsetExportacion += bloque.length;
+
+        _mensaje('Preparando Excel: ${todos.length} de $totalEsperado clientes...');
+
+        if (bloque.length < tamanoBloque ||
+            (totalEsperado > 0 && todos.length >= totalEsperado)) {
+          break;
+        }
+      }
 
       if (todos.isEmpty) {
         _mensaje('No hay clientes que coincidan con los filtros actuales.');
@@ -1437,7 +1483,17 @@ class _CrmClientesPageState extends State<CrmClientesPage> {
       }),
       _filtro('Sector', _sector, _opcionesLocales('sector'), (v) { setState(() { _sector = v; _pagina = 0; }); _cargar(); }),
       _filtro('Giro', _giro, _opcionesLocales('giro'), (v) { setState(() { _giro = v; _pagina = 0; }); _cargar(); }),
-      _filtro('Departamento', _departamento, _opcionesLocales('departamento'), (v) { setState(() { _departamento = v; _pagina = 0; }); _cargar(); }),
+      _filtro(
+        'Departamento',
+        _esJefeLima ? 'LIMA' : _departamento,
+        _esJefeLima ? const ['LIMA'] : _opcionesLocales('departamento'),
+        (v) {
+          if (_esJefeLima) return;
+          setState(() { _departamento = v; _pagina = 0; });
+          _cargar();
+        },
+        enabled: !_esJefeLima,
+      ),
       _filtro('Estado', _segmento == 'ACTIVOS' ? 'ACTIVO' : _segmento == 'INACTIVOS' ? 'INACTIVO' : 'TODOS', const ['TODOS','ACTIVO','INACTIVO'], (v) {
         setState(() { _segmento = v == 'ACTIVO' ? 'ACTIVOS' : v == 'INACTIVO' ? 'INACTIVOS' : 'TODOS'; _pagina = 0; }); _cargar();
       }),
@@ -1489,6 +1545,7 @@ class _CrmClientesPageState extends State<CrmClientesPage> {
     List<String> options,
     ValueChanged<String> onChanged, {
     bool labels = false,
+    bool enabled = true,
   }) {
     return SizedBox(
       width: 210,
@@ -1515,9 +1572,9 @@ class _CrmClientesPageState extends State<CrmClientesPage> {
               ),
             )
             .toList(),
-        onChanged: (v) {
+        onChanged: enabled ? (v) {
           if (v != null) onChanged(v);
-        },
+        } : null,
       ),
     );
   }

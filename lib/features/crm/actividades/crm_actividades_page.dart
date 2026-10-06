@@ -950,13 +950,7 @@ class _NuevaActividadDialog extends StatefulWidget {
   final String vendedorActual;
   final int usuarioId;
 
-  const _NuevaActividadDialog({
-    required this.db,
-    required this.clientes,
-    required this.vendedores,
-    required this.vendedorActual,
-    required this.usuarioId,
-  });
+  const _NuevaActividadDialog({required this.db, required this.clientes, required this.vendedores, required this.vendedorActual, required this.usuarioId});
 
   @override
   State<_NuevaActividadDialog> createState() => _NuevaActividadDialogState();
@@ -964,23 +958,16 @@ class _NuevaActividadDialog extends StatefulWidget {
 
 class _NuevaActividadDialogState extends State<_NuevaActividadDialog> {
   static const _azul = Color(0xFF0B3B63);
-  static const _azul2 = Color(0xFF1677B8);
-  static const _verde = Color(0xFF0A9B61);
-  static const _fondo = Color(0xFFF5F8FB);
-  static const _borde = Color(0xFFD9E3EC);
-
   final _asunto = TextEditingController();
   final _descripcion = TextEditingController();
   final _resultado = TextEditingController();
   final _proxima = TextEditingController();
-  final _buscarCliente = TextEditingController();
 
   String _tipo = 'LLAMADA';
   String _cliente = '';
   String _vendedor = '';
   DateTime? _fechaProxima;
   bool _guardando = false;
-  List<Map<String, dynamic>> _tiposGestion = [];
 
   @override
   void initState() {
@@ -988,7 +975,6 @@ class _NuevaActividadDialogState extends State<_NuevaActividadDialog> {
     _vendedor = widget.vendedorActual.isNotEmpty
         ? widget.vendedorActual
         : (widget.vendedores.isNotEmpty ? widget.vendedores.first : '');
-    _cargarTiposGestion();
   }
 
   @override
@@ -997,7 +983,6 @@ class _NuevaActividadDialogState extends State<_NuevaActividadDialog> {
     _descripcion.dispose();
     _resultado.dispose();
     _proxima.dispose();
-    _buscarCliente.dispose();
     super.dispose();
   }
 
@@ -1026,72 +1011,11 @@ class _NuevaActividadDialogState extends State<_NuevaActividadDialog> {
   bool _coincideCliente(Map<String, dynamic> c, String query) {
     final q = query.trim().toLowerCase();
     if (q.isEmpty) return true;
-    return _nombreCliente(c).toLowerCase().contains(q) ||
-        _codigoCliente(c).toLowerCase().contains(q);
-  }
 
-  Future<void> _cargarTiposGestion() async {
-    try {
-      final data = await widget.db
-          .from('crm_catalogos')
-          .select('id,nombre,descripcion,activo,orden')
-          .eq('categoria', 'tipos_gestion')
-          .eq('activo', true)
-          .order('orden')
-          .order('nombre');
+    final nombre = _nombreCliente(c).toLowerCase();
+    final codigo = _codigoCliente(c).toLowerCase();
 
-      final tipos = List<Map<String, dynamic>>.from(data);
-      if (!mounted) return;
-
-      setState(() {
-        _tiposGestion = tipos;
-        if (tipos.isNotEmpty &&
-            !tipos.any((e) => _s(e['nombre']).toUpperCase() == _tipo)) {
-          _tipo = _s(tipos.first['nombre']).toUpperCase();
-        }
-      });
-    } catch (_) {
-      // Mantiene los tipos base si el catálogo no está disponible.
-    }
-  }
-
-  IconData _iconoTipo(String tipo) {
-    switch (tipo.trim().toUpperCase()) {
-      case 'LLAMADA':
-        return Icons.phone_outlined;
-      case 'WHATSAPP':
-        return Icons.chat_outlined;
-      case 'CORREO':
-        return Icons.email_outlined;
-      case 'VISITA':
-        return Icons.location_on_outlined;
-      case 'REUNION':
-      case 'REUNIÓN':
-        return Icons.groups_outlined;
-      case 'SEGUIMIENTO':
-        return Icons.sync_alt;
-      case 'COBRANZA':
-        return Icons.payments_outlined;
-      case 'VIDEOLLAMADA':
-      case 'VIDEO LLAMADA':
-        return Icons.video_call_outlined;
-      default:
-        return Icons.task_alt_outlined;
-    }
-  }
-
-  Color _colorTipo(String tipo) {
-    switch (tipo.trim().toUpperCase()) {
-      case 'LLAMADA': return _azul2;
-      case 'WHATSAPP': return const Color(0xFF159447);
-      case 'CORREO': return const Color(0xFF5B4BB7);
-      case 'VISITA': return const Color(0xFFD45151);
-      case 'REUNION':
-      case 'REUNIÓN': return const Color(0xFFE58A19);
-      case 'SEGUIMIENTO': return _azul;
-      case 'COBRANZA': return const Color(0xFF7B4D9B);
-      default: return _azul2;
-    }
+    return nombre.contains(q) || codigo.contains(q);
   }
 
   Future<void> _guardar() async {
@@ -1140,7 +1064,6 @@ class _NuevaActividadDialogState extends State<_NuevaActividadDialog> {
       firstDate: DateTime.now(),
       lastDate: DateTime(2035),
       initialDate: _fechaProxima ?? DateTime.now(),
-      locale: const Locale('es'),
     );
 
     if (fecha != null && mounted) {
@@ -1148,118 +1071,52 @@ class _NuevaActividadDialogState extends State<_NuevaActividadDialog> {
     }
   }
 
+
+  Widget _tipoButton({
+    required String tipo,
+    required IconData icon,
+    required Color color,
+    double? width,
+  }) {
+    final selected = _tipo == tipo;
+    final button = OutlinedButton.icon(
+      onPressed: _guardando ? null : () => setState(() => _tipo = tipo),
+      icon: Icon(icon, size: 18),
+      label: Text(tipo, maxLines: 1, overflow: TextOverflow.ellipsis),
+      style: OutlinedButton.styleFrom(
+        backgroundColor: selected ? _azul : Colors.white,
+        foregroundColor: selected ? Colors.white : _azul,
+        side: BorderSide(color: selected ? _azul : const Color(0xFFD6E1EC)),
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 13),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+      ),
+    );
+    return width == null ? Expanded(child: button) : SizedBox(width: width, child: button);
+  }
+
   InputDecoration _campo({
-    required String label,
     required String hint,
     IconData? icon,
+    String? label,
   }) {
     return InputDecoration(
       labelText: label,
       hintText: hint,
-      prefixIcon: icon == null ? null : Icon(icon, color: _azul2, size: 20),
+      prefixIcon: icon == null ? null : Icon(icon, color: _azul),
       filled: true,
-      fillColor: Colors.white,
-      contentPadding: const EdgeInsets.symmetric(horizontal: 15, vertical: 15),
+      fillColor: const Color(0xFFF9FBFD),
+      contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 16),
       border: OutlineInputBorder(
         borderRadius: BorderRadius.circular(12),
-        borderSide: const BorderSide(color: _borde),
+        borderSide: const BorderSide(color: Color(0xFFD6E1EC)),
       ),
       enabledBorder: OutlineInputBorder(
         borderRadius: BorderRadius.circular(12),
-        borderSide: const BorderSide(color: _borde),
+        borderSide: const BorderSide(color: Color(0xFFD6E1EC)),
       ),
       focusedBorder: OutlineInputBorder(
         borderRadius: BorderRadius.circular(12),
-        borderSide: const BorderSide(color: _azul2, width: 1.5),
-      ),
-    );
-  }
-
-  Widget _tipoCard(String tipo) {
-    final key = tipo.trim().toUpperCase();
-    final selected = _tipo.toUpperCase() == key;
-    final color = _colorTipo(key);
-    final label = _s(tipo).replaceAll('_', ' ');
-
-    return InkWell(
-      onTap: _guardando ? null : () => setState(() => _tipo = key),
-      borderRadius: BorderRadius.circular(12),
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 160),
-        constraints: const BoxConstraints(minWidth: 118),
-        padding: const EdgeInsets.symmetric(horizontal: 13, vertical: 11),
-        decoration: BoxDecoration(
-          color: selected ? color : Colors.white,
-          borderRadius: BorderRadius.circular(12),
-          border: Border.all(color: selected ? color : _borde),
-          boxShadow: selected
-              ? [BoxShadow(color: color.withValues(alpha: .18), blurRadius: 8, offset: const Offset(0, 3))]
-              : null,
-        ),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(_iconoTipo(key), size: 18, color: selected ? Colors.white : color),
-            const SizedBox(width: 8),
-            Text(
-              label,
-              style: TextStyle(
-                color: selected ? Colors.white : _azul,
-                fontSize: 12,
-                fontWeight: FontWeight.w900,
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _seccion({
-    required String titulo,
-    required String subtitulo,
-    required IconData icon,
-    required Widget child,
-  }) {
-    return Container(
-      width: double.infinity,
-      margin: const EdgeInsets.only(bottom: 16),
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: _fondo,
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: const Color(0xFFE2EAF1)),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              Container(
-                width: 34,
-                height: 34,
-                decoration: BoxDecoration(
-                  color: _azul.withValues(alpha: .09),
-                  borderRadius: BorderRadius.circular(10),
-                ),
-                child: Icon(icon, color: _azul, size: 19),
-              ),
-              const SizedBox(width: 10),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(titulo, style: const TextStyle(color: _azul, fontSize: 14, fontWeight: FontWeight.w900)),
-                    const SizedBox(height: 2),
-                    Text(subtitulo, style: const TextStyle(color: Color(0xFF71869A), fontSize: 11)),
-                  ],
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 13),
-          child,
-        ],
+        borderSide: const BorderSide(color: _azul, width: 1.5),
       ),
     );
   }
@@ -1270,56 +1127,70 @@ class _NuevaActividadDialogState extends State<_NuevaActividadDialog> {
         ? <String>[_vendedor]
         : widget.vendedores.toSet().toList();
 
-    final tipos = _tiposGestion.isNotEmpty
-        ? _tiposGestion.map((e) => _s(e['nombre'])).where((e) => e.isNotEmpty).toList()
-        : const ['LLAMADA', 'WHATSAPP', 'CORREO', 'VISITA', 'REUNION', 'SEGUIMIENTO'];
-
-    Map<String, dynamic>? clienteSeleccionado;
-    if (_cliente.isNotEmpty) {
-      for (final c in widget.clientes) {
-        if (_codigoCliente(c) == _cliente) {
-          clienteSeleccionado = c;
-          break;
-        }
-      }
-    }
+    final screen = MediaQuery.sizeOf(context);
+    final compact = screen.width < 600;
+    final dialogWidth = compact
+        ? (screen.width - 24).clamp(280.0, 560.0).toDouble()
+        : ((screen.width - 60) > 930 ? 930.0 : (screen.width - 60));
+    final availableHeight = screen.height - (compact ? 24 : 48);
+    final dialogHeight = availableHeight < 420
+        ? availableHeight
+        : (availableHeight > 760 ? 760.0 : availableHeight);
 
     return Dialog(
-      insetPadding: const EdgeInsets.symmetric(horizontal: 28, vertical: 22),
-      backgroundColor: Colors.white,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(22)),
-      child: ConstrainedBox(
-        constraints: const BoxConstraints(maxWidth: 980, maxHeight: 820),
+      insetPadding: EdgeInsets.symmetric(
+        horizontal: compact ? 12 : 30,
+        vertical: compact ? 12 : 24,
+      ),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(compact ? 16 : 20)),
+      child: SizedBox(
+        width: dialogWidth,
+        height: dialogHeight,
         child: Column(
+          mainAxisSize: MainAxisSize.min,
           children: [
             Container(
-              padding: const EdgeInsets.fromLTRB(24, 18, 18, 18),
+              padding: EdgeInsets.fromLTRB(compact ? 14 : 24, compact ? 14 : 18, compact ? 12 : 18, compact ? 14 : 18),
               decoration: const BoxDecoration(
                 color: _azul,
-                borderRadius: BorderRadius.only(topLeft: Radius.circular(22), topRight: Radius.circular(22)),
+                borderRadius: BorderRadius.only(
+                  topLeft: Radius.circular(20),
+                  topRight: Radius.circular(20),
+                ),
               ),
               child: Row(
                 children: [
                   Container(
-                    width: 48,
-                    height: 48,
-                    decoration: BoxDecoration(color: Colors.white.withValues(alpha: .13), borderRadius: BorderRadius.circular(14)),
-                    child: const Icon(Icons.add_task_rounded, color: Colors.white, size: 25),
+                    width: 46,
+                    height: 46,
+                    decoration: BoxDecoration(
+                      color: Colors.white.withValues(alpha: .14),
+                      borderRadius: BorderRadius.circular(13),
+                    ),
+                    child: Icon(Icons.event_note_outlined,
+                        color: Colors.white, size: compact ? 21 : 25),
                   ),
-                  const SizedBox(width: 13),
-                  const Expanded(
+                  const SizedBox(width: 10),
+                  Expanded(
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Text('Nueva actividad comercial', style: TextStyle(color: Colors.white, fontSize: 21, fontWeight: FontWeight.w900)),
-                        SizedBox(height: 3),
-                        Text('Registra la gestión, el resultado y la próxima acción.', style: TextStyle(color: Colors.white70, fontSize: 12)),
+                        Text('Nueva actividad',
+                            style: TextStyle(
+                                color: Colors.white,
+                                fontSize: compact ? 17 : 21,
+                                fontWeight: FontWeight.w900)),
+                        const SizedBox(height: 3),
+                        Text('Registra la gestión comercial y define la próxima acción.',
+                            maxLines: compact ? 2 : 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(color: Colors.white70, fontSize: compact ? 10 : 12)),
                       ],
                     ),
                   ),
                   IconButton(
                     tooltip: 'Cerrar',
-                    onPressed: _guardando ? null : () => Navigator.pop(context, false),
+                    onPressed: _guardando ? null : () => Navigator.pop(context),
                     icon: const Icon(Icons.close, color: Colors.white),
                   ),
                 ],
@@ -1327,178 +1198,266 @@ class _NuevaActividadDialogState extends State<_NuevaActividadDialog> {
             ),
             Expanded(
               child: SingleChildScrollView(
-                padding: const EdgeInsets.fromLTRB(24, 20, 24, 10),
+                padding: const EdgeInsets.fromLTRB(24, 20, 24, 16),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    _seccion(
-                      titulo: 'Tipo de gestión',
-                      subtitulo: 'Selecciona cómo se realizará el contacto con el cliente.',
-                      icon: Icons.category_outlined,
-                      child: Wrap(spacing: 8, runSpacing: 8, children: tipos.map(_tipoCard).toList()),
+                    const Text('Tipo de gestión',
+                        style: TextStyle(
+                            color: _azul,
+                            fontWeight: FontWeight.w900,
+                            fontSize: 13)),
+                    const SizedBox(height: 9),
+                    LayoutBuilder(
+                      builder: (context, constraints) {
+                        if (constraints.maxWidth < 600) {
+                          final w = (constraints.maxWidth - 8) / 2;
+                          return Wrap(
+                            spacing: 8,
+                            runSpacing: 8,
+                            children: [
+                              _tipoButton(tipo: 'LLAMADA', icon: Icons.phone_outlined, color: _azul, width: w),
+                              _tipoButton(tipo: 'WHATSAPP', icon: Icons.chat_outlined, color: Colors.green, width: w),
+                              _tipoButton(tipo: 'CORREO', icon: Icons.mail_outline, color: Colors.indigo, width: w),
+                              _tipoButton(tipo: 'VISITA', icon: Icons.location_on_outlined, color: Colors.deepPurple, width: w),
+                              _tipoButton(tipo: 'REUNION', icon: Icons.groups_outlined, color: Colors.orange, width: w),
+                              _tipoButton(tipo: 'SEGUIMIENTO', icon: Icons.sync_alt, color: _azul, width: w),
+                            ],
+                          );
+                        }
+                        return Row(
+                          children: [
+                            _tipoButton(tipo: 'LLAMADA', icon: Icons.phone_outlined, color: _azul),
+                            const SizedBox(width: 8),
+                            _tipoButton(tipo: 'WHATSAPP', icon: Icons.chat_outlined, color: Colors.green),
+                            const SizedBox(width: 8),
+                            _tipoButton(tipo: 'CORREO', icon: Icons.mail_outline, color: Colors.indigo),
+                            const SizedBox(width: 8),
+                            _tipoButton(tipo: 'VISITA', icon: Icons.location_on_outlined, color: Colors.deepPurple),
+                            const SizedBox(width: 8),
+                            _tipoButton(tipo: 'REUNION', icon: Icons.groups_outlined, color: Colors.orange),
+                            const SizedBox(width: 8),
+                            _tipoButton(tipo: 'SEGUIMIENTO', icon: Icons.sync_alt, color: _azul),
+                          ],
+                        );
+                      },
                     ),
-                    _seccion(
-                      titulo: 'Cliente y responsable',
-                      subtitulo: 'Selecciona el cliente y el asesor responsable de la gestión.',
-                      icon: Icons.business_center_outlined,
-                      child: Column(
-                        children: [
-                          Autocomplete<Map<String, dynamic>>(
-                            displayStringForOption: _textoCliente,
-                            optionsBuilder: (value) {
-                              final q = value.text.trim().toLowerCase();
-                              if (q.isEmpty) return const Iterable<Map<String, dynamic>>.empty();
-                              return widget.clientes.where((c) => _coincideCliente(c, q)).take(20);
-                            },
-                            onSelected: (cliente) {
-                              setState(() {
-                                _cliente = _codigoCliente(cliente);
-                                _buscarCliente.text = _textoCliente(cliente);
-                              });
-                            },
-                            fieldViewBuilder: (context, controller, focusNode, onSubmitted) {
-                              if (_cliente.isNotEmpty && controller.text.isEmpty && clienteSeleccionado != null) {
-                                controller.text = _textoCliente(clienteSeleccionado!);
-                              }
-                              return TextField(
-                                controller: controller,
-                                focusNode: focusNode,
-                                enabled: !_guardando,
-                                onChanged: (_) {
-                                  if (_cliente.isNotEmpty) setState(() => _cliente = '');
+                    const SizedBox(height: 16),
+                    Autocomplete<Map<String, dynamic>>(
+                      displayStringForOption: _textoCliente,
+                      optionsBuilder: (value) {
+                        final q = value.text.trim().toLowerCase();
+                        if (q.isEmpty) {
+                          return const Iterable<Map<String, dynamic>>.empty();
+                        }
+                        return widget.clientes.where((c) => _coincideCliente(c, q)).take(20);
+                      },
+                      onSelected: (cliente) {
+                        setState(() => _cliente = _codigoCliente(cliente));
+                      },
+                      fieldViewBuilder: (context, controller, focusNode, onSubmitted) {
+                        if (_cliente.isNotEmpty && controller.text.isEmpty) {
+                          final selected = widget.clientes.where(
+                            (c) => _codigoCliente(c) == _cliente,
+                          );
+                          if (selected.isNotEmpty) {
+                            controller.text = _textoCliente(selected.first);
+                          }
+                        }
+                        return TextField(
+                          controller: controller,
+                          focusNode: focusNode,
+                          enabled: !_guardando,
+                          onChanged: (_) {
+                            if (_cliente.isNotEmpty) {
+                              setState(() => _cliente = '');
+                            }
+                          },
+                          decoration: _campo(
+                            label: 'Cliente *',
+                            hint: 'Escribe nombre, RUC o código',
+                            icon: Icons.business_outlined,
+                          ).copyWith(
+                            suffixIcon: const Icon(Icons.search, color: Color(0xFF6C8299)),
+                            helperText: _cliente.isEmpty
+                                ? 'Busca y selecciona un cliente para continuar'
+                                : 'Cliente seleccionado',
+                            helperStyle: TextStyle(
+                              color: _cliente.isEmpty ? const Color(0xFF71869A) : Colors.green,
+                            ),
+                          ),
+                        );
+                      },
+                      optionsViewBuilder: (context, onSelected, options) {
+                        final lista = options.toList();
+                        return Align(
+                          alignment: Alignment.topLeft,
+                          child: Material(
+                            elevation: 10,
+                            borderRadius: BorderRadius.circular(14),
+                            clipBehavior: Clip.antiAlias,
+                            child: ConstrainedBox(
+                              constraints: const BoxConstraints(maxWidth: 880, maxHeight: 300),
+                              child: ListView.separated(
+                                padding: const EdgeInsets.symmetric(vertical: 6),
+                                shrinkWrap: true,
+                                itemCount: lista.length,
+                                separatorBuilder: (_, __) => const Divider(height: 1),
+                                itemBuilder: (_, index) {
+                                  final c = lista[index];
+                                  return ListTile(
+                                    leading: const CircleAvatar(
+                                      backgroundColor: Color(0xFFEAF3FA),
+                                      child: Icon(Icons.business_outlined, color: _azul),
+                                    ),
+                                    title: Text(_nombreCliente(c),
+                                        maxLines: 1, overflow: TextOverflow.ellipsis,
+                                        style: const TextStyle(fontWeight: FontWeight.w800)),
+                                    subtitle: Text('RUC / Código: ${_codigoCliente(c)}'),
+                                    trailing: const Icon(Icons.arrow_forward_ios, size: 14),
+                                    onTap: () => onSelected(c),
+                                  );
                                 },
-                                decoration: _campo(label: 'Cliente *', hint: 'Buscar por razón social, nombre, RUC o código', icon: Icons.business_outlined).copyWith(
-                                  suffixIcon: Icon(_cliente.isEmpty ? Icons.search_rounded : Icons.check_circle, color: _cliente.isEmpty ? const Color(0xFF71869A) : _verde),
-                                  helperText: _cliente.isEmpty ? 'Escribe para buscar y selecciona un cliente' : 'Cliente seleccionado correctamente',
-                                  helperStyle: TextStyle(color: _cliente.isEmpty ? const Color(0xFF71869A) : _verde, fontWeight: FontWeight.w600),
-                                ),
-                              );
-                            },
-                            optionsViewBuilder: (context, onSelected, options) {
-                              final lista = options.toList();
-                              return Align(
-                                alignment: Alignment.topLeft,
-                                child: Material(
-                                  elevation: 12,
-                                  borderRadius: BorderRadius.circular(14),
-                                  clipBehavior: Clip.antiAlias,
-                                  child: ConstrainedBox(
-                                    constraints: const BoxConstraints(maxWidth: 920, maxHeight: 310),
-                                    child: ListView.separated(
-                                      padding: const EdgeInsets.symmetric(vertical: 6),
-                                      shrinkWrap: true,
-                                      itemCount: lista.length,
-                                      separatorBuilder: (_, __) => const Divider(height: 1),
-                                      itemBuilder: (_, index) {
-                                        final c = lista[index];
-                                        return ListTile(
-                                          leading: CircleAvatar(backgroundColor: const Color(0xFFEAF3FA), child: const Icon(Icons.business_outlined, color: _azul)),
-                                          title: Text(_nombreCliente(c), maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontWeight: FontWeight.w800)),
-                                          subtitle: Text('RUC / Código: ${_codigoCliente(c)}'),
-                                          trailing: const Icon(Icons.arrow_forward_ios_rounded, size: 14),
-                                          onTap: () => onSelected(c),
-                                        );
-                                      },
-                                    ),
-                                  ),
-                                ),
-                              );
-                            },
-                          ),
-                          const SizedBox(height: 12),
-                          Row(
-                            children: [
-                              Expanded(
-                                child: DropdownButtonFormField<String>(
-                                  value: vendedores.contains(_vendedor) ? _vendedor : null,
-                                  isExpanded: true,
-                                  decoration: _campo(label: 'Asesor responsable *', hint: 'Selecciona asesor', icon: Icons.person_outline),
-                                  items: vendedores.where((e) => e.isNotEmpty).map((e) => DropdownMenuItem(value: e, child: Text(e, overflow: TextOverflow.ellipsis))).toList(),
-                                  onChanged: _guardando ? null : (v) => setState(() => _vendedor = v ?? ''),
-                                ),
                               ),
-                              const SizedBox(width: 12),
-                              Expanded(
-                                child: TextField(
-                                  controller: _asunto,
-                                  enabled: !_guardando,
-                                  decoration: _campo(label: 'Asunto *', hint: 'Ej. Revisión de cotización', icon: Icons.subject_outlined),
-                                ),
-                              ),
-                            ],
+                            ),
                           ),
-                        ],
-                      ),
+                        );
+                      },
                     ),
-                    _seccion(
-                      titulo: 'Seguimiento comercial',
-                      subtitulo: 'Registra lo ocurrido y define qué debe hacerse después.',
-                      icon: Icons.timeline_outlined,
-                      child: Column(
-                        children: [
-                          Row(
-                            children: [
-                              Expanded(child: TextField(controller: _resultado, enabled: !_guardando, decoration: _campo(label: 'Resultado', hint: 'Ej. Cliente interesado / En evaluación', icon: Icons.fact_check_outlined))),
-                              const SizedBox(width: 12),
-                              Expanded(child: TextField(controller: _proxima, enabled: !_guardando, decoration: _campo(label: 'Próxima acción', hint: 'Ej. Enviar cotización', icon: Icons.next_plan_outlined))),
-                            ],
+                    const SizedBox(height: 14),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: DropdownButtonFormField<String>(
+                            value: vendedores.contains(_vendedor) ? _vendedor : null,
+                            isExpanded: true,
+                            decoration: _campo(label: 'Asesor *', hint: 'Selecciona asesor', icon: Icons.person_outline),
+                            items: vendedores.where((e) => e.isNotEmpty).map(
+                              (e) => DropdownMenuItem(value: e, child: Text(e, overflow: TextOverflow.ellipsis)),
+                            ).toList(),
+                            onChanged: _guardando ? null : (v) => setState(() => _vendedor = v ?? ''),
                           ),
-                          const SizedBox(height: 12),
-                          Row(
-                            children: [
-                              Expanded(
-                                child: InkWell(
-                                  onTap: _guardando ? null : _seleccionarFecha,
-                                  borderRadius: BorderRadius.circular(12),
-                                  child: InputDecorator(
-                                    decoration: _campo(label: 'Fecha de próxima acción', hint: 'Seleccionar fecha', icon: Icons.calendar_month_outlined),
-                                    child: Text(
-                                      _fechaProxima == null ? 'Seleccionar fecha' : DateFormat('dd/MM/yyyy').format(_fechaProxima!),
-                                      style: TextStyle(color: _fechaProxima == null ? const Color(0xFF71869A) : _azul, fontWeight: _fechaProxima == null ? FontWeight.w400 : FontWeight.w800),
-                                    ),
-                                  ),
+                        ),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: TextField(
+                            controller: _asunto,
+                            enabled: !_guardando,
+                            decoration: _campo(label: 'Asunto *', hint: 'Ej. Revisión de cotización', icon: Icons.subject_outlined),
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 12),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: TextField(
+                            controller: _resultado,
+                            enabled: !_guardando,
+                            decoration: _campo(label: 'Resultado', hint: 'Ej. Interesado / En evaluación', icon: Icons.fact_check_outlined),
+                          ),
+                        ),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: TextField(
+                            controller: _proxima,
+                            enabled: !_guardando,
+                            decoration: _campo(label: 'Próxima acción', hint: 'Ej. Enviar cotización', icon: Icons.next_plan_outlined),
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 12),
+                    Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Expanded(
+                          child: InkWell(
+                            onTap: _guardando ? null : _seleccionarFecha,
+                            borderRadius: BorderRadius.circular(12),
+                            child: InputDecorator(
+                              decoration: _campo(label: 'Fecha próxima acción', hint: '', icon: Icons.calendar_today_outlined),
+                              child: Text(
+                                _fechaProxima == null
+                                    ? 'Seleccionar fecha'
+                                    : DateFormat('dd/MM/yyyy').format(_fechaProxima!),
+                                style: TextStyle(
+                                  color: _fechaProxima == null ? const Color(0xFF71869A) : _azul,
+                                  fontWeight: _fechaProxima == null ? FontWeight.w400 : FontWeight.w800,
                                 ),
                               ),
-                              const SizedBox(width: 12),
-                              Expanded(
-                                child: TextField(
-                                  controller: _descripcion,
-                                  enabled: !_guardando,
-                                  maxLines: 2,
-                                  decoration: _campo(label: 'Descripción', hint: 'Detalle de la gestión realizada', icon: Icons.notes_outlined),
-                                ),
-                              ),
-                            ],
+                            ),
                           ),
-                        ],
-                      ),
+                        ),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: TextField(
+                            controller: _descripcion,
+                            enabled: !_guardando,
+                            maxLines: 2,
+                            decoration: _campo(label: 'Descripción', hint: 'Detalle de la gestión realizada', icon: Icons.notes_outlined),
+                          ),
+                        ),
+                      ],
                     ),
                   ],
                 ),
               ),
             ),
             Container(
-              padding: const EdgeInsets.fromLTRB(24, 13, 24, 16),
-              decoration: const BoxDecoration(color: Color(0xFFF7F9FC), borderRadius: BorderRadius.only(bottomLeft: Radius.circular(22), bottomRight: Radius.circular(22))),
-              child: Row(
-                children: [
-                  if (_cliente.isNotEmpty) ...[
-                    const Icon(Icons.check_circle, color: _verde, size: 18),
-                    const SizedBox(width: 7),
-                    const Text('Cliente seleccionado', style: TextStyle(color: _verde, fontSize: 12, fontWeight: FontWeight.w700)),
-                    const Spacer(),
-                  ] else
-                    const Spacer(),
-                  TextButton(onPressed: _guardando ? null : () => Navigator.pop(context, false), child: const Text('Cancelar')),
-                  const SizedBox(width: 10),
-                  FilledButton.icon(
-                    onPressed: _guardando ? null : _guardar,
-                    icon: _guardando ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white)) : const Icon(Icons.check_rounded),
-                    label: const Text('Registrar actividad'),
-                    style: FilledButton.styleFrom(backgroundColor: _azul, padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(11))),
-                  ),
-                ],
+              padding: const EdgeInsets.fromLTRB(24, 12, 24, 16),
+              decoration: const BoxDecoration(
+                color: Color(0xFFF7F9FC),
+                borderRadius: BorderRadius.only(
+                  bottomLeft: Radius.circular(20),
+                  bottomRight: Radius.circular(20),
+                ),
               ),
+              child: compact
+                  ? Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        FilledButton.icon(
+                          onPressed: _guardando ? null : _guardar,
+                          icon: _guardando
+                              ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2))
+                              : const Icon(Icons.save_outlined),
+                          label: const Text('Guardar actividad'),
+                          style: FilledButton.styleFrom(
+                            backgroundColor: _azul,
+                            padding: const EdgeInsets.symmetric(vertical: 13),
+                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(11)),
+                          ),
+                        ),
+                        TextButton(
+                          onPressed: _guardando ? null : () => Navigator.pop(context, false),
+                          child: const Text('Cancelar'),
+                        ),
+                      ],
+                    )
+                  : Row(
+                      mainAxisAlignment: MainAxisAlignment.end,
+                      children: [
+                        TextButton(
+                          onPressed: _guardando ? null : () => Navigator.pop(context, false),
+                          child: const Text('Cancelar'),
+                        ),
+                        const SizedBox(width: 10),
+                        FilledButton.icon(
+                          onPressed: _guardando ? null : _guardar,
+                          icon: _guardando
+                              ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2))
+                              : const Icon(Icons.save_outlined),
+                          label: const Text('Guardar actividad'),
+                          style: FilledButton.styleFrom(
+                            backgroundColor: _azul,
+                            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
+                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(11)),
+                          ),
+                        ),
+                      ],
+                    ),
             ),
           ],
         ),

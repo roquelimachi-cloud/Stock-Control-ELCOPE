@@ -71,46 +71,76 @@ class _StockAntiguoPageState extends State<StockAntiguoPage> {
       inicio += tamanoPagina;
     }
 
-    // Gerencia ve todo.
-    if (Sesion.rol == 'Gerencia') {
+    // Solo Gerencia puede consultar todo el stock.
+    // Administrador/Vendedor (como mroque) debe ver únicamente su vendedor.
+    final rol = Sesion.rol.trim().toLowerCase();
+    if (rol == 'gerencia') {
       return datos;
     }
 
+    // En la tabla stock.vendedor se guarda el CÓDIGO del vendedor,
+    // mientras que Sesion.vendedor y usuario_permisos pueden guardar
+    // el NOMBRE. Por eso aquí normalizamos nombre <-> código usando clientes.
+    final mapaVendedor = <String, String>{};
+    final respuestaVendedores = await db
+        .from('clientes')
+        .select('codigo_vendedor, vendedor');
+
+    for (final fila in (respuestaVendedores as List)) {
+      final codigo = fila['codigo_vendedor']?.toString().trim() ?? '';
+      final nombre = fila['vendedor']?.toString().trim() ?? '';
+      if (codigo.isEmpty || nombre.isEmpty) continue;
+      mapaVendedor[nombre.toLowerCase()] = codigo.toLowerCase();
+      mapaVendedor[codigo.toLowerCase()] = codigo.toLowerCase();
+    }
+
     // Jefaturas: vendedores autorizados.
-    if (Sesion.rol == 'Jefe Lima' || Sesion.rol == 'Jefe Provincia') {
+    if (rol == 'jefe lima' || rol == 'jefe provincia') {
       final respuesta = await db
           .from('usuario_permisos')
           .select('vendedor, ver_produccion')
           .eq('usuario_jefe_id', Sesion.idUsuario)
           .eq('ver_produccion', true);
 
-      final permitidos = (respuesta as List)
-          .map(
-            (e) => e['vendedor']?.toString().trim().toLowerCase() ?? '',
-          )
-          .where((e) => e.isNotEmpty)
-          .toSet();
+      final permitidos = <String>{};
+      for (final fila in (respuesta as List)) {
+        final vendedor =
+            fila['vendedor']?.toString().trim().toLowerCase() ?? '';
+        if (vendedor.isEmpty) continue;
+        permitidos.add(vendedor);
+        final codigo = mapaVendedor[vendedor];
+        if (codigo != null && codigo.isNotEmpty) {
+          permitidos.add(codigo);
+        }
+      }
 
       return datos.where((fila) {
         final vendedor =
             fila['vendedor']?.toString().trim().toLowerCase() ?? '';
-        return permitidos.contains(vendedor);
+        final codigo = mapaVendedor[vendedor] ?? vendedor;
+        return permitidos.contains(vendedor) || permitidos.contains(codigo);
       }).toList();
     }
 
-    // Usuario con vendedor asignado: solo su vendedor.
+    // Usuario comercial/vendedor: solo su vendedor.
     final vendedorSesion = Sesion.vendedor.trim().toLowerCase();
 
     if (vendedorSesion.isNotEmpty) {
+      final codigoSesion =
+          mapaVendedor[vendedorSesion] ?? vendedorSesion;
+
       return datos.where((fila) {
         final vendedor =
             fila['vendedor']?.toString().trim().toLowerCase() ?? '';
-        return vendedor == vendedorSesion;
+        return vendedor == codigoSesion ||
+            vendedor == vendedorSesion ||
+            (mapaVendedor[vendedor] ?? vendedor) == codigoSesion;
       }).toList();
     }
 
     return [];
   }
+
 
   double _double(dynamic valor) {
     if (valor == null) return 0;
@@ -142,6 +172,64 @@ class _StockAntiguoPageState extends State<StockAntiguoPage> {
     return null;
   }
 
+  Future<Map<String, String>> _cargarMapaClientes() async {
+    final db = SupabaseService.client;
+    final mapa = <String, String>{};
+
+    final respuesta = await db
+        .from('clientes')
+        .select('codigo, ruc, razon_social');
+
+    for (final fila in (respuesta as List)) {
+      final nombre = fila['razon_social']?.toString().trim() ?? '';
+      if (nombre.isEmpty) continue;
+
+      final codigo = fila['codigo']?.toString().trim() ?? '';
+      final ruc = fila['ruc']?.toString().trim() ?? '';
+
+      if (codigo.isNotEmpty) mapa[codigo.toLowerCase()] = nombre;
+      if (ruc.isNotEmpty) mapa[ruc.toLowerCase()] = nombre;
+    }
+
+    return mapa;
+  }
+
+  Future<Map<String, double>> _cargarPreciosProductos(
+    List<Map<String, dynamic>> filas,
+  ) async {
+    final db = SupabaseService.client;
+    final precios = <String, double>{};
+
+    final codigos = filas
+        .map((fila) => _texto(
+              fila,
+              ['codigo', 'codigo_articulo', 'codigoArticulo'],
+            ).trim().toUpperCase())
+        .where((codigo) => codigo.isNotEmpty)
+        .toSet()
+        .toList();
+
+    for (var inicio = 0; inicio < codigos.length; inicio += 500) {
+      final fin = (inicio + 500 < codigos.length)
+          ? inicio + 500
+          : codigos.length;
+      final lote = codigos.sublist(inicio, fin);
+
+      final respuesta = await db
+          .from('productos')
+          .select('codigo, precio_vigente_dolar')
+          .inFilter('codigo', lote);
+
+      for (final fila in (respuesta as List)) {
+        final codigo = fila['codigo']?.toString().trim().toUpperCase() ?? '';
+        if (codigo.isEmpty) continue;
+        precios[codigo] = _double(fila['precio_vigente_dolar']);
+      }
+    }
+
+    return precios;
+  }
+
   Future<void> _cargar() async {
     setState(() {
       _cargando = true;
@@ -151,6 +239,8 @@ class _StockAntiguoPageState extends State<StockAntiguoPage> {
     try {
       final datos = await _obtenerStockPermitido();
       final hoy = DateTime.now();
+      final mapaClientes = await _cargarMapaClientes();
+      final preciosProductos = await _cargarPreciosProductos(datos);
 
       final lista = <_StockAntiguoItem>[];
 
@@ -176,27 +266,46 @@ class _StockAntiguoPageState extends State<StockAntiguoPage> {
 
         lista.add(
           _StockAntiguoItem(
-            codigo: _texto(fila, ['codigo_articulo', 'codigoArticulo']),
+            codigo: _texto(fila, ['codigo', 'codigo_articulo', 'codigoArticulo']),
             descripcion: _texto(
               fila,
               ['descripcion', 'articulo'],
               fallback: 'SIN DESCRIPCIÓN',
             ),
-            cliente: _texto(
-              fila,
-              ['cliente'],
-              fallback: 'SIN CLIENTE',
-            ),
+            cliente: () {
+              final clienteRaw = _texto(fila, ['cliente']);
+              if (clienteRaw.isEmpty) return 'SIN CLIENTE';
+              return mapaClientes[clienteRaw.toLowerCase()] ?? clienteRaw;
+            }(),
             fechaIngreso: fechaIngreso,
             dias: dias,
             stock: _double(fila['stock']),
-            precio: _double(
-              fila['lista_precio_dolar'] ??
-                  fila['precio_lista_dolar'] ??
-                  fila['ultimo_precio_facturado_dolar'] ??
-                  fila['precio'],
-            ),
-            valorTotal: _double(fila['valor_lista_precio_dolar']),
+            precio: () {
+              final codigo = _texto(
+                fila,
+                ['codigo', 'codigo_articulo', 'codigoArticulo'],
+              ).trim().toUpperCase();
+              final precioProducto = preciosProductos[codigo] ?? 0;
+              if (precioProducto > 0) return precioProducto;
+              return _double(fila['lista_precio_dolar']);
+            }(),
+            valorTotal: () {
+              final directo = _double(fila['valor_lista_precio_dolar']);
+              if (directo > 0) return directo;
+
+              final codigo = _texto(
+                fila,
+                ['codigo', 'codigo_articulo', 'codigoArticulo'],
+              ).trim().toUpperCase();
+              final precioProducto = preciosProductos[codigo] ?? 0;
+              final stock = _double(fila['stock']);
+              final factor = _double(fila['lista_precio_dolar']);
+
+              if (precioProducto > 0 && stock > 0) {
+                return stock * precioProducto * (factor > 0 ? factor : 1);
+              }
+              return 0.0;
+            }(),
             peso: _double(fila['peso']),
           ),
         );
@@ -561,7 +670,7 @@ class _StockAntiguoPageState extends State<StockAntiguoPage> {
       ),
       _KpiData(
         'PESO COBRE',
-        '${_monedaFormat.format(_pesoTotal)} t',
+        '${_monedaFormat.format(_pesoTotal)} kg',
         'en stock antiguo',
         Icons.scale_outlined,
         naranja,
@@ -987,7 +1096,7 @@ class _StockAntiguoPageState extends State<StockAntiguoPage> {
                 ),
                 DataCell(
                   Text(
-                    '${_monedaFormat.format(item.peso)} t',
+                    '${_monedaFormat.format(item.peso)} kg',
                     style: _textoTabla(),
                   ),
                 ),
@@ -1066,7 +1175,7 @@ class _StockAntiguoPageState extends State<StockAntiguoPage> {
                   Text('Ingreso: ${_fechaFormat.format(item.fechaIngreso)}'),
                   Text('Stock: ${_numeroFormat.format(item.stock)}'),
                   Text('US\$ ${_monedaFormat.format(item.valorTotal)}'),
-                  Text('${_monedaFormat.format(item.peso)} t'),
+                  Text('${_monedaFormat.format(item.peso)} kg'),
                 ],
               ),
             ],
@@ -1195,7 +1304,7 @@ class _StockAntiguoPageState extends State<StockAntiguoPage> {
     final datos = _clientesAntiguos.entries.toList()
       ..sort((a, b) => b.value.compareTo(a.value));
 
-    final top = datos.take(5).toList();
+    final top = datos.take(7).toList();
     final maximo = top.isEmpty ? 0.0 : top.first.value;
 
     return Container(
@@ -1213,7 +1322,7 @@ class _StockAntiguoPageState extends State<StockAntiguoPage> {
               ),
               SizedBox(width: 7),
               Text(
-                'TOP 5 CLIENTES CON STOCK ANTIGUO',
+                'TOP 7 CLIENTES CON STOCK ANTIGUO',
                 style: TextStyle(
                   color: verde,
                   fontWeight: FontWeight.w800,

@@ -5,7 +5,9 @@ import '../../../services/sesion.dart';
 import '../../../services/supabase/supabase_service.dart';
 
 class CrmActividadesPage extends StatefulWidget {
-  const CrmActividadesPage({super.key});
+  const CrmActividadesPage({super.key, this.clienteInicial});
+
+  final String? clienteInicial;
 
   @override
   State<CrmActividadesPage> createState() => _CrmActividadesPageState();
@@ -43,6 +45,10 @@ class _CrmActividadesPageState extends State<CrmActividadesPage> {
   @override
   void initState() {
     super.initState();
+    final inicial = widget.clienteInicial?.trim() ?? '';
+    if (inicial.isNotEmpty) {
+      _buscarController.text = inicial;
+    }
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) _inicializar();
     });
@@ -1071,397 +1077,244 @@ class _NuevaActividadDialogState extends State<_NuevaActividadDialog> {
     }
   }
 
-
-  Widget _tipoButton({
-    required String tipo,
-    required IconData icon,
-    required Color color,
-    double? width,
-  }) {
-    final selected = _tipo == tipo;
-    final button = OutlinedButton.icon(
-      onPressed: _guardando ? null : () => setState(() => _tipo = tipo),
-      icon: Icon(icon, size: 18),
-      label: Text(tipo, maxLines: 1, overflow: TextOverflow.ellipsis),
-      style: OutlinedButton.styleFrom(
-        backgroundColor: selected ? _azul : Colors.white,
-        foregroundColor: selected ? Colors.white : _azul,
-        side: BorderSide(color: selected ? _azul : const Color(0xFFD6E1EC)),
-        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 13),
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-      ),
-    );
-    return width == null ? Expanded(child: button) : SizedBox(width: width, child: button);
-  }
-
-  InputDecoration _campo({
-    required String hint,
-    IconData? icon,
-    String? label,
-  }) {
-    return InputDecoration(
-      labelText: label,
-      hintText: hint,
-      prefixIcon: icon == null ? null : Icon(icon, color: _azul),
-      filled: true,
-      fillColor: const Color(0xFFF9FBFD),
-      contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 16),
-      border: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(12),
-        borderSide: const BorderSide(color: Color(0xFFD6E1EC)),
-      ),
-      enabledBorder: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(12),
-        borderSide: const BorderSide(color: Color(0xFFD6E1EC)),
-      ),
-      focusedBorder: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(12),
-        borderSide: const BorderSide(color: _azul, width: 1.5),
-      ),
-    );
-  }
-
   @override
   Widget build(BuildContext context) {
     final vendedores = widget.vendedores.isEmpty
         ? <String>[_vendedor]
         : widget.vendedores.toSet().toList();
 
-    final screen = MediaQuery.sizeOf(context);
-    final compact = screen.width < 600;
-    final dialogWidth = compact
-        ? (screen.width - 24).clamp(280.0, 560.0).toDouble()
-        : ((screen.width - 60) > 930 ? 930.0 : (screen.width - 60));
-    final availableHeight = screen.height - (compact ? 24 : 48);
-    final dialogHeight = availableHeight < 420
-        ? availableHeight
-        : (availableHeight > 760 ? 760.0 : availableHeight);
-
-    return Dialog(
-      insetPadding: EdgeInsets.symmetric(
-        horizontal: compact ? 12 : 30,
-        vertical: compact ? 12 : 24,
+    return AlertDialog(
+      title: const Text(
+        'Nueva actividad',
+        style: TextStyle(fontWeight: FontWeight.w900, color: _azul),
       ),
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(compact ? 16 : 20)),
-      child: SizedBox(
-        width: dialogWidth,
-        height: dialogHeight,
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Container(
-              padding: EdgeInsets.fromLTRB(compact ? 14 : 24, compact ? 14 : 18, compact ? 12 : 18, compact ? 14 : 18),
-              decoration: const BoxDecoration(
-                color: _azul,
-                borderRadius: BorderRadius.only(
-                  topLeft: Radius.circular(20),
-                  topRight: Radius.circular(20),
-                ),
+      content: SizedBox(
+        width: 700,
+        child: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              DropdownButtonFormField<String>(
+                value: _tipo,
+                decoration: const InputDecoration(labelText: 'Tipo'),
+                items: const [
+                  'LLAMADA',
+                  'WHATSAPP',
+                  'CORREO',
+                  'VISITA',
+                  'REUNION',
+                  'SEGUIMIENTO',
+                  'COBRANZA',
+                ]
+                    .map(
+                      (e) => DropdownMenuItem(
+                        value: e,
+                        child: Text(e),
+                      ),
+                    )
+                    .toList(),
+                onChanged:
+                    _guardando ? null : (v) => setState(() => _tipo = v!),
               ),
-              child: Row(
+              const SizedBox(height: 12),
+
+              // Búsqueda directa por nombre o RUC.
+              Autocomplete<Map<String, dynamic>>(
+                displayStringForOption: _textoCliente,
+                optionsBuilder: (textEditingValue) {
+                  final query = textEditingValue.text;
+                  if (query.trim().isEmpty) {
+                    return const Iterable<Map<String, dynamic>>.empty();
+                  }
+
+                  return widget.clientes
+                      .where((cliente) => _coincideCliente(cliente, query))
+                      .take(80);
+                },
+                onSelected: (cliente) {
+                  setState(() {
+                    _cliente = _codigoCliente(cliente);
+                  });
+                },
+                fieldViewBuilder:
+                    (context, controller, focusNode, onFieldSubmitted) {
+                  if (_cliente.isNotEmpty && controller.text.isEmpty) {
+                    final clienteSeleccionado = widget.clientes.where(
+                      (c) => _codigoCliente(c) == _cliente,
+                    );
+                    if (clienteSeleccionado.isNotEmpty) {
+                      controller.text = _textoCliente(clienteSeleccionado.first);
+                      controller.selection = TextSelection.collapsed(
+                        offset: controller.text.length,
+                      );
+                    }
+                  }
+
+                  return TextField(
+                    controller: controller,
+                    focusNode: focusNode,
+                    enabled: !_guardando,
+                    onChanged: (_) {
+                      // Al modificar la búsqueda, obligamos a volver a elegir
+                      // un cliente para evitar guardar un RUC anterior.
+                      if (_cliente.isNotEmpty) {
+                        setState(() => _cliente = '');
+                      }
+                    },
+                    decoration: InputDecoration(
+                      labelText: 'Cliente *',
+                      hintText: 'Escribe nombre o RUC',
+                      prefixIcon: const Icon(Icons.business_outlined),
+                      suffixIcon: IconButton(
+                        tooltip: 'Limpiar cliente',
+                        icon: const Icon(Icons.clear),
+                        onPressed: _guardando
+                            ? null
+                            : () {
+                                controller.clear();
+                                setState(() => _cliente = '');
+                                focusNode.requestFocus();
+                              },
+                      ),
+                      helperText: _cliente.isEmpty
+                          ? 'Busca por razón social, nombre o RUC'
+                          : 'Cliente seleccionado: $_cliente',
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                    ),
+                  );
+                },
+                optionsViewBuilder: (context, onSelected, options) {
+                  final lista = options.toList();
+
+                  return Align(
+                    alignment: Alignment.topLeft,
+                    child: Material(
+                      elevation: 8,
+                      borderRadius: BorderRadius.circular(12),
+                      child: ConstrainedBox(
+                        constraints: const BoxConstraints(
+                          maxWidth: 680,
+                          maxHeight: 360,
+                        ),
+                        child: ListView.separated(
+                          padding: const EdgeInsets.symmetric(vertical: 6),
+                          shrinkWrap: true,
+                          itemCount: lista.length,
+                          separatorBuilder: (_, __) =>
+                              const Divider(height: 1),
+                          itemBuilder: (context, index) {
+                            final cliente = lista[index];
+                            final codigo = _codigoCliente(cliente);
+                            final nombre = _nombreCliente(cliente);
+
+                            return ListTile(
+                              dense: true,
+                              leading: const CircleAvatar(
+                                child: Icon(Icons.business_outlined),
+                              ),
+                              title: Text(
+                                nombre,
+                                maxLines: 2,
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                              subtitle: Text('RUC / Código: $codigo'),
+                              trailing: const Icon(
+                                Icons.arrow_forward_ios,
+                                size: 14,
+                              ),
+                              onTap: () => onSelected(cliente),
+                            );
+                          },
+                        ),
+                      ),
+                    ),
+                  );
+                },
+              ),
+              const SizedBox(height: 12),
+
+              DropdownButtonFormField<String>(
+                value: vendedores.contains(_vendedor) ? _vendedor : null,
+                decoration: const InputDecoration(labelText: 'Vendedor'),
+                items: vendedores
+                    .where((e) => e.isNotEmpty)
+                    .map(
+                      (e) => DropdownMenuItem(
+                        value: e,
+                        child: Text(e),
+                      ),
+                    )
+                    .toList(),
+                onChanged:
+                    _guardando ? null : (v) => setState(() => _vendedor = v ?? ''),
+              ),
+              const SizedBox(height: 12),
+              TextField(
+                controller: _asunto,
+                enabled: !_guardando,
+                decoration: const InputDecoration(labelText: 'Asunto *'),
+              ),
+              const SizedBox(height: 12),
+              TextField(
+                controller: _descripcion,
+                enabled: !_guardando,
+                maxLines: 3,
+                decoration: const InputDecoration(labelText: 'Descripción'),
+              ),
+              const SizedBox(height: 12),
+              TextField(
+                controller: _resultado,
+                enabled: !_guardando,
+                maxLines: 2,
+                decoration: const InputDecoration(labelText: 'Resultado'),
+              ),
+              const SizedBox(height: 12),
+              TextField(
+                controller: _proxima,
+                enabled: !_guardando,
+                decoration: const InputDecoration(labelText: 'Próxima acción'),
+              ),
+              const SizedBox(height: 12),
+              Row(
                 children: [
-                  Container(
-                    width: 46,
-                    height: 46,
-                    decoration: BoxDecoration(
-                      color: Colors.white.withValues(alpha: .14),
-                      borderRadius: BorderRadius.circular(13),
-                    ),
-                    child: Icon(Icons.event_note_outlined,
-                        color: Colors.white, size: compact ? 21 : 25),
-                  ),
-                  const SizedBox(width: 10),
                   Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text('Nueva actividad',
-                            style: TextStyle(
-                                color: Colors.white,
-                                fontSize: compact ? 17 : 21,
-                                fontWeight: FontWeight.w900)),
-                        const SizedBox(height: 3),
-                        Text('Registra la gestión comercial y define la próxima acción.',
-                            maxLines: compact ? 2 : 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: TextStyle(color: Colors.white70, fontSize: compact ? 10 : 12)),
-                      ],
+                    child: Text(
+                      _fechaProxima == null
+                          ? 'Sin fecha de próxima acción'
+                          : 'Próxima: ${DateFormat('dd/MM/yyyy').format(_fechaProxima!)}',
                     ),
                   ),
-                  IconButton(
-                    tooltip: 'Cerrar',
-                    onPressed: _guardando ? null : () => Navigator.pop(context),
-                    icon: const Icon(Icons.close, color: Colors.white),
+                  TextButton.icon(
+                    onPressed: _guardando ? null : _seleccionarFecha,
+                    icon: const Icon(Icons.calendar_today),
+                    label: const Text('Fecha'),
                   ),
                 ],
               ),
-            ),
-            Expanded(
-              child: SingleChildScrollView(
-                padding: const EdgeInsets.fromLTRB(24, 20, 24, 16),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    const Text('Tipo de gestión',
-                        style: TextStyle(
-                            color: _azul,
-                            fontWeight: FontWeight.w900,
-                            fontSize: 13)),
-                    const SizedBox(height: 9),
-                    LayoutBuilder(
-                      builder: (context, constraints) {
-                        if (constraints.maxWidth < 600) {
-                          final w = (constraints.maxWidth - 8) / 2;
-                          return Wrap(
-                            spacing: 8,
-                            runSpacing: 8,
-                            children: [
-                              _tipoButton(tipo: 'LLAMADA', icon: Icons.phone_outlined, color: _azul, width: w),
-                              _tipoButton(tipo: 'WHATSAPP', icon: Icons.chat_outlined, color: Colors.green, width: w),
-                              _tipoButton(tipo: 'CORREO', icon: Icons.mail_outline, color: Colors.indigo, width: w),
-                              _tipoButton(tipo: 'VISITA', icon: Icons.location_on_outlined, color: Colors.deepPurple, width: w),
-                              _tipoButton(tipo: 'REUNION', icon: Icons.groups_outlined, color: Colors.orange, width: w),
-                              _tipoButton(tipo: 'SEGUIMIENTO', icon: Icons.sync_alt, color: _azul, width: w),
-                            ],
-                          );
-                        }
-                        return Row(
-                          children: [
-                            _tipoButton(tipo: 'LLAMADA', icon: Icons.phone_outlined, color: _azul),
-                            const SizedBox(width: 8),
-                            _tipoButton(tipo: 'WHATSAPP', icon: Icons.chat_outlined, color: Colors.green),
-                            const SizedBox(width: 8),
-                            _tipoButton(tipo: 'CORREO', icon: Icons.mail_outline, color: Colors.indigo),
-                            const SizedBox(width: 8),
-                            _tipoButton(tipo: 'VISITA', icon: Icons.location_on_outlined, color: Colors.deepPurple),
-                            const SizedBox(width: 8),
-                            _tipoButton(tipo: 'REUNION', icon: Icons.groups_outlined, color: Colors.orange),
-                            const SizedBox(width: 8),
-                            _tipoButton(tipo: 'SEGUIMIENTO', icon: Icons.sync_alt, color: _azul),
-                          ],
-                        );
-                      },
-                    ),
-                    const SizedBox(height: 16),
-                    Autocomplete<Map<String, dynamic>>(
-                      displayStringForOption: _textoCliente,
-                      optionsBuilder: (value) {
-                        final q = value.text.trim().toLowerCase();
-                        if (q.isEmpty) {
-                          return const Iterable<Map<String, dynamic>>.empty();
-                        }
-                        return widget.clientes.where((c) => _coincideCliente(c, q)).take(20);
-                      },
-                      onSelected: (cliente) {
-                        setState(() => _cliente = _codigoCliente(cliente));
-                      },
-                      fieldViewBuilder: (context, controller, focusNode, onSubmitted) {
-                        if (_cliente.isNotEmpty && controller.text.isEmpty) {
-                          final selected = widget.clientes.where(
-                            (c) => _codigoCliente(c) == _cliente,
-                          );
-                          if (selected.isNotEmpty) {
-                            controller.text = _textoCliente(selected.first);
-                          }
-                        }
-                        return TextField(
-                          controller: controller,
-                          focusNode: focusNode,
-                          enabled: !_guardando,
-                          onChanged: (_) {
-                            if (_cliente.isNotEmpty) {
-                              setState(() => _cliente = '');
-                            }
-                          },
-                          decoration: _campo(
-                            label: 'Cliente *',
-                            hint: 'Escribe nombre, RUC o código',
-                            icon: Icons.business_outlined,
-                          ).copyWith(
-                            suffixIcon: const Icon(Icons.search, color: Color(0xFF6C8299)),
-                            helperText: _cliente.isEmpty
-                                ? 'Busca y selecciona un cliente para continuar'
-                                : 'Cliente seleccionado',
-                            helperStyle: TextStyle(
-                              color: _cliente.isEmpty ? const Color(0xFF71869A) : Colors.green,
-                            ),
-                          ),
-                        );
-                      },
-                      optionsViewBuilder: (context, onSelected, options) {
-                        final lista = options.toList();
-                        return Align(
-                          alignment: Alignment.topLeft,
-                          child: Material(
-                            elevation: 10,
-                            borderRadius: BorderRadius.circular(14),
-                            clipBehavior: Clip.antiAlias,
-                            child: ConstrainedBox(
-                              constraints: const BoxConstraints(maxWidth: 880, maxHeight: 300),
-                              child: ListView.separated(
-                                padding: const EdgeInsets.symmetric(vertical: 6),
-                                shrinkWrap: true,
-                                itemCount: lista.length,
-                                separatorBuilder: (_, __) => const Divider(height: 1),
-                                itemBuilder: (_, index) {
-                                  final c = lista[index];
-                                  return ListTile(
-                                    leading: const CircleAvatar(
-                                      backgroundColor: Color(0xFFEAF3FA),
-                                      child: Icon(Icons.business_outlined, color: _azul),
-                                    ),
-                                    title: Text(_nombreCliente(c),
-                                        maxLines: 1, overflow: TextOverflow.ellipsis,
-                                        style: const TextStyle(fontWeight: FontWeight.w800)),
-                                    subtitle: Text('RUC / Código: ${_codigoCliente(c)}'),
-                                    trailing: const Icon(Icons.arrow_forward_ios, size: 14),
-                                    onTap: () => onSelected(c),
-                                  );
-                                },
-                              ),
-                            ),
-                          ),
-                        );
-                      },
-                    ),
-                    const SizedBox(height: 14),
-                    Row(
-                      children: [
-                        Expanded(
-                          child: DropdownButtonFormField<String>(
-                            value: vendedores.contains(_vendedor) ? _vendedor : null,
-                            isExpanded: true,
-                            decoration: _campo(label: 'Asesor *', hint: 'Selecciona asesor', icon: Icons.person_outline),
-                            items: vendedores.where((e) => e.isNotEmpty).map(
-                              (e) => DropdownMenuItem(value: e, child: Text(e, overflow: TextOverflow.ellipsis)),
-                            ).toList(),
-                            onChanged: _guardando ? null : (v) => setState(() => _vendedor = v ?? ''),
-                          ),
-                        ),
-                        const SizedBox(width: 12),
-                        Expanded(
-                          child: TextField(
-                            controller: _asunto,
-                            enabled: !_guardando,
-                            decoration: _campo(label: 'Asunto *', hint: 'Ej. Revisión de cotización', icon: Icons.subject_outlined),
-                          ),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 12),
-                    Row(
-                      children: [
-                        Expanded(
-                          child: TextField(
-                            controller: _resultado,
-                            enabled: !_guardando,
-                            decoration: _campo(label: 'Resultado', hint: 'Ej. Interesado / En evaluación', icon: Icons.fact_check_outlined),
-                          ),
-                        ),
-                        const SizedBox(width: 12),
-                        Expanded(
-                          child: TextField(
-                            controller: _proxima,
-                            enabled: !_guardando,
-                            decoration: _campo(label: 'Próxima acción', hint: 'Ej. Enviar cotización', icon: Icons.next_plan_outlined),
-                          ),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 12),
-                    Row(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Expanded(
-                          child: InkWell(
-                            onTap: _guardando ? null : _seleccionarFecha,
-                            borderRadius: BorderRadius.circular(12),
-                            child: InputDecorator(
-                              decoration: _campo(label: 'Fecha próxima acción', hint: '', icon: Icons.calendar_today_outlined),
-                              child: Text(
-                                _fechaProxima == null
-                                    ? 'Seleccionar fecha'
-                                    : DateFormat('dd/MM/yyyy').format(_fechaProxima!),
-                                style: TextStyle(
-                                  color: _fechaProxima == null ? const Color(0xFF71869A) : _azul,
-                                  fontWeight: _fechaProxima == null ? FontWeight.w400 : FontWeight.w800,
-                                ),
-                              ),
-                            ),
-                          ),
-                        ),
-                        const SizedBox(width: 12),
-                        Expanded(
-                          child: TextField(
-                            controller: _descripcion,
-                            enabled: !_guardando,
-                            maxLines: 2,
-                            decoration: _campo(label: 'Descripción', hint: 'Detalle de la gestión realizada', icon: Icons.notes_outlined),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ],
-                ),
-              ),
-            ),
-            Container(
-              padding: const EdgeInsets.fromLTRB(24, 12, 24, 16),
-              decoration: const BoxDecoration(
-                color: Color(0xFFF7F9FC),
-                borderRadius: BorderRadius.only(
-                  bottomLeft: Radius.circular(20),
-                  bottomRight: Radius.circular(20),
-                ),
-              ),
-              child: compact
-                  ? Column(
-                      crossAxisAlignment: CrossAxisAlignment.stretch,
-                      children: [
-                        FilledButton.icon(
-                          onPressed: _guardando ? null : _guardar,
-                          icon: _guardando
-                              ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2))
-                              : const Icon(Icons.save_outlined),
-                          label: const Text('Guardar actividad'),
-                          style: FilledButton.styleFrom(
-                            backgroundColor: _azul,
-                            padding: const EdgeInsets.symmetric(vertical: 13),
-                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(11)),
-                          ),
-                        ),
-                        TextButton(
-                          onPressed: _guardando ? null : () => Navigator.pop(context, false),
-                          child: const Text('Cancelar'),
-                        ),
-                      ],
-                    )
-                  : Row(
-                      mainAxisAlignment: MainAxisAlignment.end,
-                      children: [
-                        TextButton(
-                          onPressed: _guardando ? null : () => Navigator.pop(context, false),
-                          child: const Text('Cancelar'),
-                        ),
-                        const SizedBox(width: 10),
-                        FilledButton.icon(
-                          onPressed: _guardando ? null : _guardar,
-                          icon: _guardando
-                              ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2))
-                              : const Icon(Icons.save_outlined),
-                          label: const Text('Guardar actividad'),
-                          style: FilledButton.styleFrom(
-                            backgroundColor: _azul,
-                            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
-                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(11)),
-                          ),
-                        ),
-                      ],
-                    ),
-            ),
-          ],
+            ],
+          ),
         ),
       ),
+      actions: [
+        TextButton(
+          onPressed:
+              _guardando ? null : () => Navigator.pop(context, false),
+          child: const Text('Cancelar'),
+        ),
+        ElevatedButton.icon(
+          onPressed: _guardando ? null : _guardar,
+          icon: _guardando
+              ? const SizedBox(
+                  width: 16,
+                  height: 16,
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                )
+              : const Icon(Icons.save),
+          label: const Text('Guardar'),
+        ),
+      ],
     );
   }
 }

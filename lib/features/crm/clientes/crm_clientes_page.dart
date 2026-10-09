@@ -1,10 +1,12 @@
-import 'dart:convert';
+import 'dart:async';
 import 'dart:io';
+import 'package:flutter/foundation.dart' show compute;
+import 'dart:math' as math;
+import 'dart:ui' as ui;
 import 'dart:typed_data';
 
-import 'package:excel/excel.dart' hide Border;
+import 'package:excel/excel.dart' hide Border, TextSpan, TextDirection;
 import 'package:file_picker/file_picker.dart';
-import 'package:flutter/foundation.dart' show compute;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:intl/intl.dart';
@@ -16,115 +18,6 @@ import '../../../services/supabase/supabase_service.dart';
 import '../../../services/sesion.dart';
 import '../cliente_360/crm_cliente_360_page.dart';
 
-
-String _normalizarExcelImport(String value) {
-  return value
-      .toLowerCase()
-      .trim()
-      .replaceAll('á', 'a')
-      .replaceAll('é', 'e')
-      .replaceAll('í', 'i')
-      .replaceAll('ó', 'o')
-      .replaceAll('ú', 'u')
-      .replaceAll('ñ', 'n')
-      .replaceAll(RegExp(r'[^a-z0-9]+'), '_')
-      .replaceAll(RegExp(r'^_|_$'), '');
-}
-
-List<Map<String, dynamic>> _parsearClientesExcel(Uint8List bytes) {
-  final excel = Excel.decodeBytes(bytes);
-  if (excel.tables.isEmpty) return <Map<String, dynamic>>[];
-
-  final sheet = excel.tables[excel.tables.keys.first];
-  if (sheet == null || sheet.maxRows < 2) return <Map<String, dynamic>>[];
-
-  final headers = sheet.rows.first.map((cell) {
-    return _normalizarExcelImport(cell?.value?.toString() ?? '');
-  }).toList();
-
-  int colAny(List<String> names) {
-    for (final name in names) {
-      final index = headers.indexOf(_normalizarExcelImport(name));
-      if (index >= 0) return index;
-    }
-    return -1;
-  }
-
-  final cCodigo = colAny(['codigo cliente', 'codigo', 'codigo_cliente']);
-  final cRuc = colAny(['ruc']);
-  final cNombre = colAny(['nombre', 'cliente']);
-  final cRazon = colAny([
-    'descripcion del cliente',
-    'descripcion cliente',
-    'razon social',
-    'razon_social',
-  ]);
-  final cDireccion = colAny(['direccion']);
-  final cLocalidad = colAny(['localidad']);
-  final cDepartamento = colAny(['departamento']);
-  final cCanal = colAny(['canal']);
-  final cGiro = colAny(['giro']);
-  final cSector = colAny(['sector']);
-  final cCodigoVendedor = colAny(['codigo vendedor', 'codigo_vendedor']);
-  final cVendedor = colAny(['vendedor']);
-  final cActivo = colAny(['activo', 'estado']);
-
-  if (cCodigo < 0 && cRuc < 0) {
-    throw Exception('El Excel debe contener por lo menos Código Cliente o RUC.');
-  }
-
-  String cell(List<dynamic> row, int index) {
-    if (index < 0 || index >= row.length) return '';
-    return row[index]?.value?.toString().trim() ?? '';
-  }
-
-  bool activo(String value) {
-    final v = value.toLowerCase().trim();
-    return v == 'true' || v == '1' || v == 'si' || v == 'sí' || v == 'activo';
-  }
-
-  final registros = <Map<String, dynamic>>[];
-
-  for (final row in sheet.rows.skip(1)) {
-    final codigo = cell(row, cCodigo);
-    final ruc = cell(row, cRuc);
-    final razon = cell(row, cRazon);
-    final nombreExcel = cell(row, cNombre);
-    final nombre = nombreExcel.isNotEmpty ? nombreExcel : razon;
-
-    if (codigo.isEmpty && ruc.isEmpty) continue;
-    if (razon.isEmpty && nombre.isEmpty) continue;
-
-    final direccion = cell(row, cDireccion);
-    final localidad = cell(row, cLocalidad);
-    final departamento = cell(row, cDepartamento);
-    final canal = cell(row, cCanal);
-    final giro = cell(row, cGiro);
-    final sector = cell(row, cSector);
-    final codigoVendedor = cell(row, cCodigoVendedor);
-    final vendedor = cell(row, cVendedor);
-    final activoTexto = cell(row, cActivo);
-
-    registros.add({
-      if (codigo.isNotEmpty) 'codigo': codigo,
-      if (ruc.isNotEmpty) 'ruc': ruc,
-      if (nombre.isNotEmpty) 'nombre': nombre,
-      if (razon.isNotEmpty) 'razon_social': razon,
-      if (direccion.isNotEmpty) 'direccion': direccion,
-      if (localidad.isNotEmpty) 'localidad': localidad,
-      if (departamento.isNotEmpty) 'departamento': departamento,
-      if (canal.isNotEmpty) 'canal': canal,
-      if (giro.isNotEmpty) 'giro': giro,
-      if (sector.isNotEmpty) 'sector': sector,
-      if (codigoVendedor.isNotEmpty) 'codigo_vendedor': codigoVendedor,
-      if (vendedor.isNotEmpty) 'vendedor': vendedor,
-      if (activoTexto.isNotEmpty) 'activo': activo(activoTexto),
-    });
-  }
-
-  return registros;
-}
-
 class CrmClientesPage extends StatefulWidget {
   const CrmClientesPage({super.key});
 
@@ -133,11 +26,11 @@ class CrmClientesPage extends StatefulWidget {
 }
 
 class _CrmClientesPageState extends State<CrmClientesPage> {
-  static const _azul = Color(0xFF0B4F83);
-  static const _azulClaro = Color(0xFF1677C8);
-  static const _verde = Color(0xFF12A36A);
-  static const _fondo = Color(0xFFF5F8FC);
-  static const _borde = Color(0xFFE2E8F0);
+  static const _azul = Color(0xFF0B3B63);
+  static const _azulClaro = Color(0xFF1468A8);
+  static const _verde = Color(0xFF0A9B61);
+  static const _fondo = Color(0xFFF4F7FA);
+  static const _borde = Color(0xFFE1E7EC);
 
   final _db = SupabaseService.client;
   final _money = NumberFormat('#,##0.00', 'en_US');
@@ -152,13 +45,18 @@ class _CrmClientesPageState extends State<CrmClientesPage> {
   Map<String, DateTime> _ultimaCompraPorCliente = {};
 
   String _busqueda = '';
+  Timer? _busquedaDebounce;
+  List<String> _vendedoresAutorizados = [];
   String _vendedor = 'TODOS';
   String _sector = 'TODOS';
   String _giro = 'TODOS';
   String _departamento = 'TODOS';
   String _anio = 'TODOS';
-  String _compraFiltro = 'TODOS';
   bool _soloActivos = true;
+  String _estado = 'TODOS';
+  String _ultimaCompraFiltro = 'TODAS';
+  Map<String, dynamic> _gestionStats = {};
+  final Map<int, double> _facturacionMensual = {for (var i = 1; i <= 12; i++) i: 0};
 
   int _pagina = 0;
   static const int _porPagina = 12;
@@ -169,26 +67,31 @@ class _CrmClientesPageState extends State<CrmClientesPage> {
   int _totalClientes = 0;
   int _conFacturacion = 0;
 
-  String _segmento = 'TODOS';
-  Map<String, int> _carteraStats = {};
-  Map<String, int> _contactoResumen = {};
+  // Acepta el indicador de sesión y el rol textual usado en el encabezado.
+  // Esto evita ocultar la importación cuando el rol dice Administrador,
+  // pero el booleano de sesión no fue actualizado correctamente.
+  bool get _puedeImportarCartera {
+    final rol = Sesion.rol.trim().toLowerCase();
+    return Sesion.esAdministrador ||
+        rol == 'administrador' ||
+        rol == 'admin';
+  }
 
   @override
   void initState() {
     super.initState();
     final rol = Sesion.rol.trim().toLowerCase();
     final vendedorSesion = Sesion.vendedor.trim();
-    // Si la sesión tiene vendedor asignado (ej. mroque -> Michael Roque),
-    // la cartera inicial debe ser exclusivamente la de ese vendedor, incluso
-    // si el usuario tiene rol Administrador. El permiso de importación sigue
-    // siendo independiente.
-    if (rol == 'jefe lima') {
-      // Jefe Lima: la cartera SIEMPRE pertenece al departamento LIMA.
-      // El usuario puede cambiar vendedor/sector/giro, pero nunca salir de LIMA.
-      _departamento = 'LIMA';
-    } else if (vendedorSesion.isNotEmpty && rol != 'jefe provincia' && rol != 'gerencia') {
+    // Un asesor, incluso si además tiene rol Administrador, inicia viendo su propia cartera.
+    // Las jefaturas pueden trabajar con TODOS los vendedores autorizados.
+    if (vendedorSesion.isNotEmpty && rol != 'jefe lima' && rol != 'jefe provincia' && rol != 'gerencia') {
       _vendedor = vendedorSesion;
     }
+    // La jefatura inicia con todos los departamentos para ver la cartera
+    // completa de sus vendedores autorizados. El alcance sigue restringido
+    // por _vendedoresPermitidos() y por p_vendedores_permitidos en Supabase.
+    // El usuario puede elegir LIMA manualmente si necesita ese filtro.
+    _departamento = 'TODOS';
     _cargar();
   }
 
@@ -234,48 +137,62 @@ class _CrmClientesPageState extends State<CrmClientesPage> {
     return d == null ? '' : d.year.toString();
   }
 
-  bool get _puedeImportarCartera {
-    final rol = Sesion.rol.trim().toLowerCase();
-    return Sesion.esAdministrador &&
-        (rol == 'administrador' ||
-            rol == 'admin' ||
-            rol.contains('administrador'));
+
+  double _facturacionCliente(Map<String, dynamic> c) {
+    final id = _s(c['id']);
+    final codigo = _s(c['codigo']);
+    if (id.isNotEmpty) return _facturacionPorCliente['ID:$id'] ?? _n(c['facturacion']);
+    if (codigo.isNotEmpty) return _facturacionPorCliente['COD:$codigo'] ?? _n(c['facturacion']);
+    return _n(c['facturacion']);
   }
 
-  bool get _esJefeLima => Sesion.rol.trim().toLowerCase() == 'jefe lima';
+  double _pesoCliente(Map<String, dynamic> c) {
+    final id = _s(c['id']);
+    final codigo = _s(c['codigo']);
+    if (id.isNotEmpty) return _pesoPorCliente['ID:$id'] ?? _n(c['peso_kg']);
+    if (codigo.isNotEmpty) return _pesoPorCliente['COD:$codigo'] ?? _n(c['peso_kg']);
+    return _n(c['peso_kg']);
+  }
+
+  DateTime? _ultimaCompra(Map<String, dynamic> c) {
+    final id = _s(c['id']);
+    final codigo = _s(c['codigo']);
+    if (id.isNotEmpty && _ultimaCompraPorCliente.containsKey('ID:$id')) {
+      return _ultimaCompraPorCliente['ID:$id'];
+    }
+    if (codigo.isNotEmpty && _ultimaCompraPorCliente.containsKey('COD:$codigo')) {
+      return _ultimaCompraPorCliente['COD:$codigo'];
+    }
+    return _date(c['ultima_compra']);
+  }
+
+  Widget _estadoDark(bool activo) {
+    final color = activo ? const Color(0xFF35D39A) : const Color(0xFFFF5252);
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 4),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: .12),
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: color.withValues(alpha: .35)),
+      ),
+      child: Text(
+        activo ? 'Activo' : 'Inactivo',
+        style: TextStyle(color: color, fontSize: 10, fontWeight: FontWeight.w800),
+      ),
+    );
+  }
 
   Future<List<String>?> _vendedoresPermitidos() async {
     final rol = Sesion.rol.trim().toLowerCase();
     final vendedorSesion = Sesion.vendedor.trim();
 
-    // Jefe Lima: únicamente los vendedores asignados a su área en
-    // usuario_permisos. El departamento LIMA se fuerza además en _cargar().
-    if (rol == 'jefe lima') {
-      final data = await _db
-          .from('usuario_permisos')
-          .select('vendedor, ver_produccion')
-          .eq('usuario_jefe_id', Sesion.idUsuario)
-          .eq('ver_produccion', true);
-
-      final permitidos = <String>{};
-      for (final row in data as List) {
-        final v = row['vendedor']?.toString().trim();
-        if (v != null && v.isNotEmpty) permitidos.add(v);
-      }
-      if (vendedorSesion.isNotEmpty) permitidos.add(vendedorSesion);
-      return permitidos.toList()..sort();
-    }
-
-    // Administrador y Gerencia pueden consultar toda la cartera.
-    if (rol == 'administrador' ||
-        rol == 'admin' ||
-        rol.contains('administrador') ||
-        rol == 'gerencia') {
+    // Gerencia puede consultar todo.
+    if (rol == 'gerencia') {
       return null;
     }
 
-    // Jefe Provincia mantiene la cartera autorizada por usuario_permisos.
-    if (rol == 'jefe provincia') {
+    // Jefaturas: solo vendedores autorizados en usuario_permisos.
+    if (rol == 'jefe lima' || rol == 'jefe provincia') {
       final data = await _db
           .from('usuario_permisos')
           .select('vendedor, ver_produccion')
@@ -287,180 +204,189 @@ class _CrmClientesPageState extends State<CrmClientesPage> {
         final v = row['vendedor']?.toString().trim();
         if (v != null && v.isNotEmpty) permitidos.add(v);
       }
+
       if (vendedorSesion.isNotEmpty) permitidos.add(vendedorSesion);
       return permitidos.toList();
     }
 
-    // Asesor/vendedor: exclusivamente su vendedor de sesión.
+    // Usuario/vendedor: exclusivamente su vendedor de sesión.
     if (vendedorSesion.isEmpty) return <String>[];
     return <String>[vendedorSesion];
   }
 
-  Future<String> _vendedorRealSesion() async {
-    final directo = Sesion.vendedor.trim();
-    if (directo.isNotEmpty) return directo;
-    try {
-      final row = await _db
-          .from('usuarios')
-          .select('vendedor')
-          .eq('id', Sesion.idUsuario)
-          .maybeSingle();
-      final vendedor = _s(row?['vendedor']);
-      return vendedor;
-    } catch (_) {
-      return '';
-    }
-  }
-
   Future<void> _cargar() async {
     if (!mounted) return;
-    setState(() { _cargando = true; _error = null; });
+    setState(() {
+      _cargando = true;
+      _error = null;
+    });
 
     try {
-      final rol = Sesion.rol.trim().toLowerCase();
-      if (rol == 'jefe lima' && _departamento != 'LIMA' && mounted) {
-        setState(() => _departamento = 'LIMA');
-      }
-      // La fuente de verdad del usuario es public.usuarios. Esto evita que
-      // un Administrador con vendedor asignado termine viendo TODA la cartera.
-      final vendedorSesion = await _vendedorRealSesion();
-
-      if (vendedorSesion.isNotEmpty &&
-          rol != 'jefe lima' &&
-          rol != 'jefe provincia' &&
-          rol != 'gerencia' &&
-          _vendedor != vendedorSesion) {
-        if (mounted) setState(() => _vendedor = vendedorSesion);
-      }
-
       final vendedoresPermitidos = await _vendedoresPermitidos();
+      final vendedoresOpciones = <String>{};
+      if (vendedoresPermitidos != null) {
+        vendedoresOpciones.addAll(vendedoresPermitidos.where((v) => v.trim().isNotEmpty));
+      } else {
+        // Gerencia puede consultar vendedores de toda la cartera; se recogen
+        // los nombres de todos los registros paginados.
+      }
 
-      final vendedorEfectivo = vendedorSesion.isNotEmpty &&
-              rol != 'jefe lima' &&
-              rol != 'jefe provincia' &&
-              rol != 'gerencia'
-          ? vendedorSesion
-          : _vendedor;
-      final departamentoEfectivo = _esJefeLima ? 'LIMA' : _departamento;
-
-      // Jefe Lima queda limitado simultáneamente por área (LIMA) y por
-      // los vendedores asignados en usuario_permisos.
-
-      final baseParams = <String, dynamic>{
-        'p_busqueda': _busqueda.trim(),
-        'p_vendedor': vendedorEfectivo,
-        'p_vendedores_permitidos': vendedoresPermitidos,
-        'p_sector': _sector,
-        'p_giro': _giro,
-        'p_departamento': departamentoEfectivo,
-        'p_solo_activos': _soloActivos,
-        'p_anio': _anio == 'TODOS' ? null : int.tryParse(_anio),
-        'p_compra_filtro': _compraFiltro,
+      final compraFiltroRpc = switch (_ultimaCompraFiltro) {
+        'SIN_VENTAS' => 'SIN VENTAS',
+        'CON_VENTAS' => 'CON VENTAS',
+        '0_30' => '0-30 DIAS',
+        '31_60' => '31-60 DIAS',
+        '61_90' => '61-90 DIAS',
+        'MAS_30' => 'MAS DE 30 DIAS',
+        'MAS_60' => 'MAS DE 60 DIAS',
+        'MAS_90' => 'MAS DE 90 DIAS',
+        _ => 'TODAS',
       };
 
-      // IMPORTANTE: la tabla base usa el RPC v6 que ya estaba probado y
-      // optimizado en este proyecto. NO usar aquí crm_obtener_cartera_gestion_v1
-      // ni crm_obtener_clientes_cartera_v2 porque son los que provocaban 57014.
-      dynamic result;
-      Object? ultimoError;
+      // Carga todas las páginas de la consulta filtrada. El límite de 200 es
+      // por llamada a Supabase, no el total de clientes que debe ver el usuario.
+      const int pageSize = 200;
+      final clientes = <Map<String, dynamic>>[];
+      var offset = 0;
+      while (true) {
+        final result = await _db.rpc(
+          'crm_obtener_clientes_cartera_fast_v1',
+          params: {
+            'p_busqueda': _busqueda.trim(),
+            'p_vendedor': _vendedor,
+            'p_sector': _sector,
+            'p_giro': _giro,
+            'p_departamento': _departamento,
+            'p_estado': _estado,
+            'p_segmento': 'TODOS',
+            'p_solo_activos': _soloActivos,
+            'p_limit': pageSize,
+            'p_offset': offset,
+            'p_orden': _orden,
+            'p_anio': _anio == 'TODOS' ? null : int.tryParse(_anio),
+            'p_vendedores_permitidos': vendedoresPermitidos,
+            'p_compra_filtro': compraFiltroRpc,
+          },
+        );
+        final page = List<Map<String, dynamic>>.from(
+          (result as List).map((row) => Map<String, dynamic>.from(row as Map)),
+        );
+        clientes.addAll(page);
+        for (final c in page) {
+          final v = _s(c['vendedor']);
+          if (v.isNotEmpty) vendedoresOpciones.add(v);
+        }
+        if (page.length < pageSize) break;
+        offset += page.length;
+      }
 
-      for (var intento = 1; intento <= 2; intento++) {
-        try {
-          result = await _db.rpc(
-            'crm_obtener_clientes_pagina_por_usuario_v2',
-            params: {
-              'p_usuario_id': Sesion.idUsuario,
-              ...baseParams,
-              'p_limit': _porPagina,
-              'p_offset': _pagina * _porPagina,
-              'p_orden': _orden,
-            },
-          );
-          ultimoError = null;
-          break;
-        } catch (e) {
-          ultimoError = e;
-          if (intento < 2) {
-            await Future<void>.delayed(const Duration(milliseconds: 250));
+      // Las banderas se consultan por bloques para que las estadísticas y el
+      // gráfico se calculen con toda la cartera filtrada, no solo la primera página.
+      const int flagsBatchSize = 200;
+      for (var start = 0; start < clientes.length; start += flagsBatchSize) {
+        final end = (start + flagsBatchSize < clientes.length)
+            ? start + flagsBatchSize
+            : clientes.length;
+        final bloque = clientes.sublist(start, end);
+        final codigos = bloque.map((c) => _s(c['codigo']))
+            .where((c) => c.isNotEmpty).toSet().toList();
+        if (codigos.isEmpty) continue;
+        final flagsResult = await _db.rpc(
+          'crm_obtener_clientes_gestion_flags_v1',
+          params: {'p_codigos': codigos},
+        );
+        final flags = <String, Map<String, dynamic>>{};
+        if (flagsResult is List) {
+          for (final row in flagsResult) {
+            if (row is Map) {
+              final codigo = _s(row['codigo']);
+              if (codigo.isNotEmpty) flags[codigo] = Map<String, dynamic>.from(row);
+            }
           }
+        }
+        for (final cliente in bloque) {
+          final f = flags[_s(cliente['codigo'])];
+          if (f == null) continue;
+          cliente['ultimo_contacto'] = f['ultimo_contacto'];
+          cliente['dias_sin_contacto'] = f['dias_sin_contacto'];
+          cliente['tiene_llamada'] = f['tiene_llamada'];
+          cliente['tiene_whatsapp'] = f['tiene_whatsapp'];
+          cliente['tiene_correo'] = f['tiene_correo'];
+          cliente['tiene_visita'] = f['tiene_visita'];
+          cliente['tiene_oportunidad'] = f['tiene_oportunidad'];
+          cliente['alerta_contacto'] = f['alerta_contacto'];
+          cliente['proxima_accion'] = f['proxima_accion'];
+          cliente['fecha_proxima_accion'] = f['fecha_proxima_accion'];
         }
       }
 
-      if (ultimoError != null || result == null) {
-        throw ultimoError ?? Exception('No se pudo cargar la cartera base.');
-      }
+      // Estadísticas derivadas de exactamente la misma lista filtrada que se
+      // presenta en la tabla. Evita que los KPI incluyan otros departamentos,
+      // estados o clientes fuera de la búsqueda actual.
+      final activos = clientes.where((c) => c['activo'] == true).length;
+      final sinLlamada = clientes.where((c) => !_b(c['tiene_llamada'])).length;
+      final sinWhatsapp = clientes.where((c) => !_b(c['tiene_whatsapp'])).length;
+      final sinCorreo = clientes.where((c) => !_b(c['tiene_correo'])).length;
+      final sinVisita = clientes.where((c) => !_b(c['tiene_visita'])).length;
+      final sinOportunidad = clientes.where((c) => !_b(c['tiene_oportunidad'])).length;
+      final sinContacto = clientes.where((c) => !_b(c['tiene_llamada']) &&
+          !_b(c['tiene_whatsapp']) && !_b(c['tiene_correo']) && !_b(c['tiene_visita'])).length;
+      final oportunidades = clientes.where((c) => _b(c['tiene_oportunidad'])).length;
+      final gestionStats = <String, dynamic>{
+        'total': clientes.length,
+        'activos': activos,
+        'inactivos': clientes.length - activos,
+        'sin_llamada': sinLlamada,
+        'sin_whatsapp': sinWhatsapp,
+        'sin_correo': sinCorreo,
+        'sin_visita': sinVisita,
+        'sin_oportunidad': sinOportunidad,
+        'sin_contacto': sinContacto,
+        'con_oportunidad': oportunidades,
+        'en_riesgo': sinContacto,
+      };
 
-      var clientes = List<Map<String, dynamic>>.from(result as List);
-      final totalDesdeRpc = clientes.isNotEmpty ? int.tryParse(clientes.first['total_clientes']?.toString() ?? '') : 0;
-
-      // Los indicadores comerciales se consultan SOLO para los 12 clientes
-      // visibles. Así evitamos una consulta pesada sobre toda la cartera.
+      final mensual = <int, double>{for (var i = 1; i <= 12; i++) i: 0};
       try {
-        final codigos = clientes
-            .map((c) => _s(c['codigo']))
-            .where((v) => v.isNotEmpty)
-            .toList();
-
-        if (codigos.isNotEmpty) {
-          final flags = await _db.rpc(
-            'crm_obtener_clientes_gestion_flags_v1',
-            params: {'p_codigos': codigos},
-          );
-
-          final porCodigo = <String, Map<String, dynamic>>{};
-          for (final row in List.from(flags as List)) {
-            final m = Map<String, dynamic>.from(row as Map);
-            porCodigo[_s(m['codigo'])] = m;
+        final resumen = await _db.rpc(
+          'crm_obtener_facturacion_mensual_anio_v1',
+          params: {
+            'p_anio': DateTime.now().year,
+            'p_vendedor': _vendedor,
+            'p_usuario_id': Sesion.idUsuario,
+          },
+        );
+        if (resumen is Map && resumen['meses'] is List) {
+          for (final item in resumen['meses']) {
+            if (item is! Map) continue;
+            final mes = int.tryParse(_s(item['mes']));
+            if (mes != null && mes >= 1 && mes <= 12) {
+              mensual[mes] = _n(item['facturacion']);
+            }
           }
-
-          clientes = clientes.map((c) {
-            final f = porCodigo[_s(c['codigo'])];
-            if (f == null) return c;
-            return {...c, ...f};
-          }).toList();
         }
       } catch (_) {
-        // Los indicadores son secundarios: la tabla debe seguir apareciendo.
-      }
-
-      // Si se seleccionó un segmento, filtramos los clientes visibles sin
-      // volver a ejecutar una consulta pesada sobre toda la base.
-      if (_segmento != 'TODOS') {
-        bool coincide(Map<String, dynamic> c) {
-          final llamada = c['tiene_llamada'] == true;
-          final whatsapp = c['tiene_whatsapp'] == true;
-          final correo = c['tiene_correo'] == true;
-          final visita = c['tiene_visita'] == true;
-          final oportunidad = c['tiene_oportunidad'] == true;
-          final alerta = _s(c['alerta_contacto']).toUpperCase();
-          final activo = c['activo'] == true;
-
-          switch (_segmento) {
-            case 'SIN LLAMADA': return !llamada;
-            case 'SIN WHATSAPP': return !whatsapp;
-            case 'SIN CORREO': return !correo;
-            case 'SIN VISITA': return !visita;
-            case 'SIN OPORTUNIDAD': return !oportunidad;
-            case 'SIN CONTACTO': return alerta == 'NUNCA';
-            case 'EN RIESGO': return alerta == 'VENCIDO';
-            case 'CON OPORTUNIDAD': return oportunidad;
-            case 'ACTIVOS': return activo;
-            case 'INACTIVOS': return !activo;
-            default: return true;
-          }
-        }
-        clientes = clientes.where(coincide).toList();
+        // Un fallo del gráfico mensual no debe impedir la carga de clientes.
       }
 
       if (!mounted) return;
       setState(() {
         _clientes = clientes;
-        _cargando = false;
-        _totalClientes = totalDesdeRpc ?? 0;
+        _gestionStats = gestionStats;
+        _vendedoresAutorizados = (Sesion.rol.trim().toLowerCase() == 'gerencia'
+                ? vendedoresOpciones.toList()
+                : (vendedoresPermitidos ?? vendedoresOpciones.toList()))
+            .where((v) => v.trim().isNotEmpty).toSet().toList()..sort();
+        _facturacionMensual
+          ..clear()
+          ..addAll(mensual);
+        _facturacionTotal = clientes.fold<double>(0, (sum, c) => sum + _n(c['facturacion']));
+        _pesoTotal = clientes.fold<double>(0, (sum, c) => sum + _n(c['peso_kg']));
+        _totalClientes = clientes.length;
+        _conFacturacion = clientes.where((c) => _n(c['facturacion']) > 0).length;
         _facturacionPorCliente = {};
         _pesoPorCliente = {};
         _ultimaCompraPorCliente = {};
-
         for (final c in clientes) {
           final id = _s(c['id']);
           final codigo = _s(c['codigo']);
@@ -470,101 +396,10 @@ class _CrmClientesPageState extends State<CrmClientesPage> {
           final fecha = _date(c['ultima_compra']);
           if (fecha != null) _ultimaCompraPorCliente[key] = fecha;
         }
-
-        _haySiguiente = clientes.length == _porPagina && _segmento == 'TODOS';
+        _pagina = 0;
+        _haySiguiente = _clientesVisibles.length > _porPagina;
+        _cargando = false;
       });
-
-      // Todo lo siguiente es complementario. Si alguno falla por timeout,
-      // NO se vuelve a caer la pantalla de Clientes.
-      try {
-        final stats = await _db.rpc(
-          'crm_obtener_clientes_estadisticas_v6',
-          params: baseParams,
-        );
-        final st = (stats as List).isNotEmpty
-            ? Map<String, dynamic>.from((stats as List).first)
-            : <String, dynamic>{};
-        if (mounted) {
-          setState(() {
-            _facturacionTotal = _n(st['total_facturacion']);
-            _pesoTotal = _n(st['total_peso_kg']);
-            _conFacturacion = int.tryParse(
-                  st['total_con_facturacion']?.toString() ?? '',
-                ) ??
-                0;
-          });
-        }
-      } catch (_) {}
-
-      try {
-        final stats = await _db.rpc(
-          'crm_obtener_cartera_gestion_stats_v2',
-          params: {
-            ...baseParams,
-          },
-        );
-        final g = (stats as List).isNotEmpty
-            ? Map<String, dynamic>.from((stats as List).first)
-            : <String, dynamic>{};
-        int n(String k) => int.tryParse(g[k]?.toString() ?? '') ?? 0;
-        if (mounted) {
-          setState(() {
-            _carteraStats = {
-              'TODOS': n('total_clientes') > 0 ? n('total_clientes') : _totalClientes,
-              'SIN LLAMADA': n('sin_llamada'),
-              'SIN WHATSAPP': n('sin_whatsapp'),
-              'SIN CORREO': n('sin_correo'),
-              'SIN VISITA': n('sin_visita'),
-              'SIN OPORTUNIDAD': n('sin_oportunidad'),
-              'SIN CONTACTO': n('sin_contacto'),
-              'EN RIESGO': n('en_riesgo'),
-              'CON OPORTUNIDAD': n('con_oportunidad'),
-              'ACTIVOS': n('activos'),
-              'INACTIVOS': n('inactivos'),
-            };
-            final totalStats = n('total_clientes');
-            if (_compraFiltro == 'TODOS') {
-              _totalClientes = _segmento == 'TODOS'
-                  ? (totalStats > 0 ? totalStats : _totalClientes)
-                  : n(_segmento);
-            }
-            _haySiguiente = clientes.length == _porPagina && (_pagina + 1) * _porPagina < _totalClientes;
-          });
-        }
-      } catch (_) {}
-
-      try {
-        final rs = await _db.rpc(
-          'crm_obtener_cartera_contacto_resumen_v1',
-          params: {
-            'p_vendedor': vendedorEfectivo,
-            'p_departamento': departamentoEfectivo,
-            'p_sector': _sector,
-            'p_giro': _giro,
-            'p_solo_activos': _soloActivos,
-            'p_vendedores_permitidos': vendedoresPermitidos,
-          },
-        );
-        final r = (rs as List).isNotEmpty
-            ? Map<String, dynamic>.from((rs as List).first)
-            : <String, dynamic>{};
-        int n(String k) => int.tryParse(r[k]?.toString() ?? '') ?? 0;
-        if (mounted) {
-          setState(() {
-            _contactoResumen = {
-              'total_clientes': n('total_clientes'),
-              'sin_contacto': n('sin_contacto'),
-              'con_contacto': n('con_contacto'),
-              'con_oportunidad': n('con_oportunidad'),
-              'inactivos': n('inactivos'),
-              'hace_0_7': n('hace_0_7'),
-              'hace_8_30': n('hace_8_30'),
-              'hace_31_90': n('hace_31_90'),
-              'mas_90': n('mas_90'),
-            };
-          });
-        }
-      } catch (_) {}
     } catch (e) {
       if (!mounted) return;
       setState(() {
@@ -572,6 +407,67 @@ class _CrmClientesPageState extends State<CrmClientesPage> {
         _error = e.toString();
       });
     }
+  }
+
+  @override
+  void dispose() {
+    _busquedaDebounce?.cancel();
+    super.dispose();
+  }
+
+  List<Map<String, dynamic>> get _clientesVisibles {
+    final hoy = DateTime.now();
+    final lista = _clientes.where((c) {
+      final fecha = _ultimaCompra(c);
+      switch (_ultimaCompraFiltro) {
+        case 'SIN_VENTAS':
+          return fecha == null;
+        case 'CON_VENTAS':
+          return fecha != null;
+        case '0_30':
+          return fecha != null && hoy.difference(fecha).inDays >= 0 &&
+              hoy.difference(fecha).inDays <= 30;
+        case '31_60':
+          return fecha != null && hoy.difference(fecha).inDays >= 31 &&
+              hoy.difference(fecha).inDays <= 60;
+        case '61_90':
+          return fecha != null && hoy.difference(fecha).inDays >= 61 &&
+              hoy.difference(fecha).inDays <= 90;
+        case 'MAS_30':
+          return fecha != null && hoy.difference(fecha).inDays > 30;
+        case 'MAS_60':
+          return fecha != null && hoy.difference(fecha).inDays > 60;
+        case 'MAS_90':
+          return fecha != null && hoy.difference(fecha).inDays > 90;
+        default:
+          return true;
+      }
+    }).toList();
+
+    if (_orden == 'CLIENTE_ASC') {
+      lista.sort((a,b) => _nombreCliente(a).compareTo(_nombreCliente(b)));
+    } else if (_orden == 'CLIENTE_DESC') {
+      lista.sort((a,b) => _nombreCliente(b).compareTo(_nombreCliente(a)));
+    } else if (_orden == 'ULTIMA_COMPRA_DESC') {
+      lista.sort((a,b) => (_ultimaCompra(b) ?? DateTime(1900))
+          .compareTo(_ultimaCompra(a) ?? DateTime(1900)));
+    } else if (_orden == 'ULTIMA_COMPRA_ASC') {
+      lista.sort((a,b) => (_ultimaCompra(a) ?? DateTime(1900))
+          .compareTo(_ultimaCompra(b) ?? DateTime(1900)));
+    } else if (_orden == 'FACTURACION_ASC') {
+      lista.sort((a,b) => _facturacionCliente(a).compareTo(_facturacionCliente(b)));
+    } else {
+      lista.sort((a,b) => _facturacionCliente(b).compareTo(_facturacionCliente(a)));
+    }
+    return lista;
+  }
+
+  List<Map<String, dynamic>> get _paginaClientes {
+    final lista = _clientesVisibles;
+    final inicio = _pagina * _porPagina;
+    if (inicio >= lista.length) return const [];
+    final fin = (inicio + _porPagina).clamp(0, lista.length);
+    return lista.sublist(inicio, fin);
   }
 
   List<String> _opcionesLocales(String campo) {
@@ -584,228 +480,114 @@ class _CrmClientesPageState extends State<CrmClientesPage> {
     return ['TODOS', ...list];
   }
 
+  List<String> get _vendedoresOpciones {
+    final values = <String>{..._vendedoresAutorizados};
+    for (final c in _clientes) {
+      final v = _s(c['vendedor']);
+      if (v.isNotEmpty) values.add(v);
+    }
+    if (Sesion.vendedor.trim().isNotEmpty) values.add(Sesion.vendedor.trim());
+    final list = values.toList()..sort();
+    return ['TODOS', ...list];
+  }
+
   List<String> get _ordenes => const [
-        'FACTURACION_DESC',
-        'FACTURACION_ASC',
-        'PESO_DESC',
-        'PESO_ASC',
-        'ULTIMA_COMPRA_DESC',
-        'ULTIMA_COMPRA_ASC',
-        'CLIENTE_ASC',
-        'CLIENTE_DESC',
-      ];
+    'FACTURACION_DESC',
+    'FACTURACION_ASC',
+    'ULTIMA_COMPRA_DESC',
+    'ULTIMA_COMPRA_ASC',
+    'CLIENTE_ASC',
+    'CLIENTE_DESC',
+  ];
 
   String _ordenLabel(String value) {
     switch (value) {
-      case 'FACTURACION_ASC':
-        return 'Menor facturación';
-      case 'PESO_DESC':
-        return 'Mayor peso';
-      case 'PESO_ASC':
-        return 'Menor peso';
-      case 'ULTIMA_COMPRA_DESC':
-        return 'Compra más reciente';
-      case 'ULTIMA_COMPRA_ASC':
-        return 'Compra más antigua';
-      case 'CLIENTE_ASC':
-        return 'Cliente A-Z';
-      case 'CLIENTE_DESC':
-        return 'Cliente Z-A';
-      default:
-        return 'Mayor facturación';
+      case 'FACTURACION_ASC': return 'Menor facturación';
+      case 'ULTIMA_COMPRA_DESC': return 'Compra más reciente';
+      case 'ULTIMA_COMPRA_ASC': return 'Compra más antigua';
+      case 'CLIENTE_ASC': return 'Cliente A-Z';
+      case 'CLIENTE_DESC': return 'Cliente Z-A';
+      default: return 'Mayor facturación';
     }
-  }
-
-  double _facturacionCliente(Map<String, dynamic> c) {
-    final id = _s(c['id']);
-    final codigo = _s(c['codigo']);
-
-    if (id.isNotEmpty) {
-      return _facturacionPorCliente['ID:$id'] ?? 0;
-    }
-    if (codigo.isNotEmpty) {
-      return _facturacionPorCliente['COD:$codigo'] ?? 0;
-    }
-    return 0;
-  }
-
-  double _pesoCliente(Map<String, dynamic> c) {
-    final id = _s(c['id']);
-    final codigo = _s(c['codigo']);
-
-    if (id.isNotEmpty) {
-      return _pesoPorCliente['ID:$id'] ?? 0;
-    }
-    if (codigo.isNotEmpty) {
-      return _pesoPorCliente['COD:$codigo'] ?? 0;
-    }
-    return 0;
-  }
-
-  DateTime? _ultimaCompra(Map<String, dynamic> c) {
-    final id = _s(c['id']);
-    final codigo = _s(c['codigo']);
-
-    if (id.isNotEmpty) {
-      return _ultimaCompraPorCliente['ID:$id'];
-    }
-    if (codigo.isNotEmpty) {
-      return _ultimaCompraPorCliente['COD:$codigo'];
-    }
-    return null;
-  }
-
-  List<Map<String, dynamic>> get _filtrados {
-    // La consulta ya viene filtrada desde Supabase.
-    // Se mantiene esta capa para conservar el comportamiento de la pantalla.
-    return _clientes;
   }
 
   Future<void> _cambiarPagina(int nueva) async {
-    if (nueva < 0) return;
-    if (nueva > _pagina && !_haySiguiente) return;
-
+    final totalPaginas = (_clientesVisibles.length / _porPagina).ceil();
+    if (nueva < 0 || (totalPaginas > 0 && nueva >= totalPaginas)) return;
     setState(() => _pagina = nueva);
-    await _cargar();
+  }
+
+  void _actualizarFiltro(VoidCallback fn) {
+    setState(() {
+      fn();
+      _pagina = 0;
+    });
+    _cargar();
   }
 
   Future<void> _exportarExcel() async {
-    if (_clientes.isEmpty && _totalClientes <= 0) {
-      _mensaje('No hay clientes para exportar.');
-      return;
-    }
+    if (_procesando) return;
 
     try {
       setState(() => _procesando = true);
-      _mensaje('Preparando todos los clientes para exportar...');
+      _mensaje('Consultando todos los clientes que coinciden con los filtros...');
 
-      // IMPORTANTE: _clientes solo contiene los 12 registros de la página
-      // actual. Para exportar, consultamos nuevamente Supabase sin paginar,
-      // respetando los mismos filtros de la pantalla.
-      final rol = Sesion.rol.trim().toLowerCase();
-      final vendedorSesion = await _vendedorRealSesion();
       final vendedoresPermitidos = await _vendedoresPermitidos();
+      final compraFiltroRpc = switch (_ultimaCompraFiltro) {
+        'SIN_VENTAS' => 'SIN VENTAS',
+        'CON_VENTAS' => 'CON VENTAS',
+        '0_30' => '0-30 DIAS',
+        '31_60' => '31-60 DIAS',
+        '61_90' => '61-90 DIAS',
+        'MAS_30' => 'MAS DE 30 DIAS',
+        'MAS_60' => 'MAS DE 60 DIAS',
+        'MAS_90' => 'MAS DE 90 DIAS',
+        _ => 'TODAS',
+      };
 
-      final vendedorEfectivo = vendedorSesion.isNotEmpty &&
-              rol != 'jefe lima' &&
-              rol != 'jefe provincia' &&
-              rol != 'gerencia'
-          ? vendedorSesion
-          : _vendedor;
-      final departamentoEfectivo = _esJefeLima ? 'LIMA' : _departamento;
-
-      // Jefe Lima queda limitado simultáneamente por área (LIMA) y por
-      // los vendedores asignados en usuario_permisos.
-
-      // IMPORTANTE: una jefatura puede tener miles de clientes (por ejemplo,
-      // 7,958 en el área de Lima). No debemos limitar la exportación a 5,000
-      // ni a los 12 visibles. Descargamos la cartera completa por bloques y
-      // respetamos exactamente los filtros actuales.
-      const int tamanoBloque = 1000;
+      // La pantalla carga solo 200 clientes para mantenerla ágil.
+      // La exportación, en cambio, recorre la RPC por páginas hasta obtenerlos todos.
+      const pageSize = 200;
+      var offset = 0;
       final todos = <Map<String, dynamic>>[];
-      var offsetExportacion = 0;
-      var totalEsperado = 0;
-
       while (true) {
-        final respuesta = await _db.rpc(
-          'crm_obtener_clientes_pagina_por_usuario_v2',
+        final result = await _db.rpc(
+          'crm_obtener_clientes_cartera_fast_v1',
           params: {
-            'p_usuario_id': Sesion.idUsuario,
             'p_busqueda': _busqueda.trim(),
-            'p_vendedor': vendedorEfectivo,
-            'p_vendedores_permitidos': vendedoresPermitidos,
+            'p_vendedor': _vendedor,
             'p_sector': _sector,
             'p_giro': _giro,
-            'p_departamento': departamentoEfectivo,
+            'p_departamento': _departamento,
+            'p_estado': _estado,
+            'p_segmento': 'TODOS',
             'p_solo_activos': _soloActivos,
-            'p_anio': _anio == 'TODOS' ? null : int.tryParse(_anio),
-            'p_compra_filtro': _compraFiltro,
-            'p_limit': tamanoBloque,
-            'p_offset': offsetExportacion,
+            'p_limit': pageSize,
+            'p_offset': offset,
             'p_orden': _orden,
+            'p_anio': _anio == 'TODOS' ? null : int.tryParse(_anio),
+            'p_vendedores_permitidos': vendedoresPermitidos,
+            'p_compra_filtro': compraFiltroRpc,
           },
         );
-
-        final bloque = List<Map<String, dynamic>>.from(
-          (respuesta as List).map((e) => Map<String, dynamic>.from(e as Map)),
+        final page = List<Map<String, dynamic>>.from(
+          (result as List).map((row) => Map<String, dynamic>.from(row as Map)),
         );
-
-        if (bloque.isEmpty) break;
-
-        todos.addAll(bloque);
-        totalEsperado = _n(bloque.first['total_clientes']).round();
-        offsetExportacion += bloque.length;
-
-        _mensaje('Preparando Excel: ${todos.length} de $totalEsperado clientes...');
-
-        if (bloque.length < tamanoBloque ||
-            (totalEsperado > 0 && todos.length >= totalEsperado)) {
-          break;
+        todos.addAll(page);
+        if (page.length < pageSize) break;
+        offset += page.length;
+        if (mounted) {
+          _mensaje('Preparando Excel: ${todos.length} clientes consultados...');
         }
       }
 
       if (todos.isEmpty) {
-        _mensaje('No hay clientes que coincidan con los filtros actuales.');
-        return;
-      }
-
-      // Si se está usando un segmento de gestión, cargamos sus flags para que
-      // la exportación también respete exactamente el segmento seleccionado.
-      var clientesExportar = todos;
-      if (_segmento != 'TODOS') {
-        try {
-          final codigos = todos
-              .map((c) => _s(c['codigo']))
-              .where((v) => v.isNotEmpty)
-              .toList();
-          if (codigos.isNotEmpty) {
-            final flags = await _db.rpc(
-              'crm_obtener_clientes_gestion_flags_v1',
-              params: {'p_codigos': codigos},
-            );
-            final porCodigo = <String, Map<String, dynamic>>{};
-            for (final row in List.from(flags as List)) {
-              final m = Map<String, dynamic>.from(row as Map);
-              porCodigo[_s(m['codigo'])] = m;
-            }
-            bool coincide(Map<String, dynamic> c) {
-              final f = porCodigo[_s(c['codigo'])] ?? const <String, dynamic>{};
-              final llamada = f['tiene_llamada'] == true;
-              final whatsapp = f['tiene_whatsapp'] == true;
-              final correo = f['tiene_correo'] == true;
-              final visita = f['tiene_visita'] == true;
-              final oportunidad = f['tiene_oportunidad'] == true;
-              final alerta = _s(f['alerta_contacto']).toUpperCase();
-              final activo = c['activo'] == true;
-              switch (_segmento) {
-                case 'SIN LLAMADA': return !llamada;
-                case 'SIN WHATSAPP': return !whatsapp;
-                case 'SIN CORREO': return !correo;
-                case 'SIN VISITA': return !visita;
-                case 'SIN OPORTUNIDAD': return !oportunidad;
-                case 'SIN CONTACTO': return alerta == 'NUNCA';
-                case 'EN RIESGO': return alerta == 'VENCIDO';
-                case 'CON OPORTUNIDAD': return oportunidad;
-                case 'ACTIVOS': return activo;
-                case 'INACTIVOS': return !activo;
-                default: return true;
-              }
-            }
-            clientesExportar = todos.where(coincide).toList();
-          }
-        } catch (_) {
-          // Si los flags no están disponibles, exportamos la cartera base.
-        }
-      }
-
-      if (clientesExportar.isEmpty) {
-        _mensaje('No hay clientes que coincidan con el segmento seleccionado.');
+        _mensaje('No hay clientes para exportar con los filtros actuales.');
         return;
       }
 
       final excel = Excel.createExcel();
       final sheet = excel['Clientes'];
-
       sheet.appendRow([
         TextCellValue('Código'),
         TextCellValue('RUC'),
@@ -817,16 +599,11 @@ class _CrmClientesPageState extends State<CrmClientesPage> {
         TextCellValue('Facturación'),
         TextCellValue('Peso (kg)'),
         TextCellValue('Última compra'),
-        TextCellValue('Días sin compra'),
         TextCellValue('Estado'),
       ]);
 
-      for (final c in clientesExportar) {
-        final fecha = _date(c['ultima_compra']);
-        final diasSinCompra = fecha == null
-            ? 'Nunca'
-            : '${DateTime.now().difference(DateTime(fecha.year, fecha.month, fecha.day)).inDays}';
-
+      for (final c in todos) {
+        final fecha = _ultimaCompra(c);
         sheet.appendRow([
           TextCellValue(_s(c['codigo'])),
           TextCellValue(_s(c['ruc'])),
@@ -835,33 +612,25 @@ class _CrmClientesPageState extends State<CrmClientesPage> {
           TextCellValue(_s(c['sector'])),
           TextCellValue(_s(c['giro'])),
           TextCellValue(_s(c['departamento'])),
-          DoubleCellValue(_n(c['facturacion'])),
-          DoubleCellValue(_n(c['peso_kg'])),
+          DoubleCellValue(_facturacionCliente(c)),
+          DoubleCellValue(_pesoCliente(c)),
           TextCellValue(fecha == null ? '' : DateFormat('dd/MM/yyyy').format(fecha)),
-          TextCellValue(diasSinCompra),
           TextCellValue(c['activo'] == true ? 'ACTIVO' : 'INACTIVO'),
         ]);
       }
 
-      _mensaje('Generando Excel con ${clientesExportar.length} clientes...');
       final bytes = excel.encode();
-      if (bytes == null) {
-        throw Exception('No se pudo generar el archivo Excel.');
-      }
-
+      if (bytes == null) throw Exception('No se pudo generar el archivo Excel.');
       final ruta = await FilePicker.platform.saveFile(
         dialogTitle: 'Guardar reporte de clientes',
         fileName: 'clientes_crm_${DateFormat('yyyyMMdd_HHmm').format(DateTime.now())}.xlsx',
         type: FileType.custom,
         allowedExtensions: ['xlsx'],
       );
-
       if (ruta == null) return;
-
       final path = ruta.toLowerCase().endsWith('.xlsx') ? ruta : '$ruta.xlsx';
       await File(path).writeAsBytes(bytes, flush: true);
-
-      _mensaje('Excel generado correctamente con ${clientesExportar.length} clientes.');
+      _mensaje('Excel generado correctamente: ${todos.length} clientes exportados.');
     } catch (e) {
       _mensaje('Error al exportar Excel: $e', error: true);
     } finally {
@@ -870,17 +639,37 @@ class _CrmClientesPageState extends State<CrmClientesPage> {
   }
 
   Future<void> _importarExcel() async {
+    // La importación de carteras está reservada al administrador.
     if (!_puedeImportarCartera) {
       _mensaje('Solo el administrador puede importar carteras.', error: true);
       return;
+    }
+
+    if (_procesando) return;
+
+    bool preparacionAbierta = false;
+    Future<void>? preparacionFuture;
+    StateSetter? actualizarPreparacion;
+    String etapaPreparacion = 'Abriendo el archivo...';
+
+    void cambiarEtapa(String etapa) {
+      etapaPreparacion = etapa;
+      actualizarPreparacion?.call(() {});
+    }
+
+    Future<void> cerrarPreparacion() async {
+      if (preparacionAbierta && mounted) {
+        Navigator.of(context, rootNavigator: true).pop();
+        preparacionAbierta = false;
+        final future = preparacionFuture;
+        if (future != null) await future;
+      }
     }
 
     try {
       final result = await FilePicker.platform.pickFiles(
         type: FileType.custom,
         allowedExtensions: ['xlsx', 'xls'],
-        // IMPORTANTE: no cargamos el archivo completo dentro de FilePicker.
-        // En Windows usamos la ruta y luego lo leemos una sola vez.
         withData: false,
       );
       if (result == null || result.files.isEmpty) return;
@@ -891,79 +680,397 @@ class _CrmClientesPageState extends State<CrmClientesPage> {
         return;
       }
 
-      if (!mounted) return;
       setState(() => _procesando = true);
-      _mensaje('Leyendo Excel en segundo plano...');
-
+      preparacionAbierta = true;
+      preparacionFuture = showDialog<void>(
+        context: context,
+        barrierDismissible: false,
+        builder: (dialogContext) => StatefulBuilder(
+          builder: (context, setDialogState) {
+            actualizarPreparacion = setDialogState;
+            return AlertDialog(
+              title: const Text('Preparando vista previa'),
+              content: SizedBox(
+                width: 380,
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(etapaPreparacion),
+                    const SizedBox(height: 14),
+                    const LinearProgressIndicator(),
+                    const SizedBox(height: 8),
+                    const Text(
+                      'Todavía no se ha guardado ni reemplazado ningún cliente.',
+                      style: TextStyle(fontSize: 12),
+                    ),
+                  ],
+                ),
+              ),
+            );
+          },
+        ),
+      );
+      cambiarEtapa('Leyendo el archivo Excel...');
       final bytes = await File(file.path!).readAsBytes();
-      if (bytes.isEmpty) {
-        throw Exception('El archivo Excel está vacío.');
+      if (bytes.isEmpty) throw Exception('El archivo Excel está vacío.');
+
+      cambiarEtapa('Analizando el Excel en segundo plano...');
+      // Excel.decodeBytes es síncrono y puede bloquear Windows con archivos grandes.
+      // compute lo ejecuta en otro isolate para mantener viva la interfaz.
+      final filas = await compute(_decodificarFilasExcel, bytes);
+      if (filas.length < 2) {
+        throw Exception('El Excel no contiene registros.');
       }
 
-      // Excel.decodeBytes es costoso. Lo ejecutamos en un isolate para que
-      // Windows no congele la pantalla mientras prepara los registros.
-      final registros = await compute(_parsearClientesExcel, bytes);
-
-      if (registros.isEmpty) {
-        _mensaje('No se encontraron clientes válidos en el Excel.', error: true);
-        return;
+      final headers = filas.first.map(_normalizar).toList();
+      int col(String name) => headers.indexOf(_normalizar(name));
+      int colAny(List<String> names) {
+        for (final name in names) {
+          final index = col(name);
+          if (index >= 0) return index;
+        }
+        return -1;
       }
 
+      final cCodigo = colAny(['codigo', 'codigo_cliente', 'cod_cliente']);
+      final cRuc = colAny(['ruc', 'dni', 'documento']);
+      final cNombre = colAny(['nombre', 'cliente']);
+      final cRazon = colAny(['razon_social', 'descripcion_del_cliente', 'descripcion_cliente', 'razon social']);
+      final cDireccion = colAny(['direccion', 'dirección']);
+      final cLocalidad = colAny(['localidad', 'distrito']);
+      final cDepartamento = colAny(['departamento', 'region']);
+      final cCanal = colAny(['canal']);
+      final cGiro = colAny(['giro']);
+      final cSector = colAny(['sector']);
+      final cCodigoVendedor = colAny(['codigo_vendedor', 'cod_vendedor']);
+      final cVendedor = colAny(['vendedor', 'asesor', 'nombre_vendedor']);
+      final cActivo = colAny(['activo', 'estado']);
+
+      if (cCodigo < 0 && cRuc < 0) {
+        throw Exception('El Excel debe contener por lo menos la columna Código Cliente o RUC/DNI.');
+      }
+
+      final registros = <Map<String, dynamic>>[];
+      for (int i = 1; i < filas.length; i++) {
+        final row = filas[i];
+        String cell(int index) => index < 0 || index >= row.length
+            ? '' : row[index].trim();
+        final codigo = cell(cCodigo);
+        final ruc = cell(cRuc);
+        final razon = cell(cRazon);
+        final nombre = cell(cNombre);
+        if (codigo.isEmpty && ruc.isEmpty) continue;
+        if (razon.isEmpty && nombre.isEmpty) continue;
+        // La columna public.clientes.nombre es NOT NULL.
+        // Algunos Excel de cartera solo traen 'Descripción del Cliente', que
+        // se interpreta como razon_social; en ese caso usarla también como nombre.
+        final nombreFinal = nombre.isNotEmpty ? nombre : razon;
+        final razonFinal = razon.isNotEmpty ? razon : nombre;
+        if (nombreFinal.trim().isEmpty) continue;
+        registros.add({
+          if (codigo.isNotEmpty) 'codigo': codigo,
+          if (ruc.isNotEmpty) 'ruc': ruc,
+          'nombre': nombreFinal,
+          'razon_social': razonFinal,
+          if (cell(cDireccion).isNotEmpty) 'direccion': cell(cDireccion),
+          if (cell(cLocalidad).isNotEmpty) 'localidad': cell(cLocalidad),
+          if (cell(cDepartamento).isNotEmpty) 'departamento': cell(cDepartamento),
+          if (cell(cCanal).isNotEmpty) 'canal': cell(cCanal),
+          if (cell(cGiro).isNotEmpty) 'giro': cell(cGiro),
+          if (cell(cSector).isNotEmpty) 'sector': cell(cSector),
+          if (cell(cCodigoVendedor).isNotEmpty) 'codigo_vendedor': cell(cCodigoVendedor),
+          if (cell(cVendedor).isNotEmpty) 'vendedor': cell(cVendedor),
+          if (cell(cActivo).isNotEmpty) 'activo': _textoBooleano(cell(cActivo)),
+        });
+      }
+      if (registros.isEmpty) throw Exception('No se encontraron clientes válidos en el Excel.');
+
+      // Consultar por lotes para mostrar una vista previa real antes de guardar.
+      cambiarEtapa('Comparando códigos y RUC/DNI con los clientes existentes...');
+      final codigos = registros.map((r) => _s(r['codigo'])).where((v) => v.isNotEmpty).toSet().toList();
+      final rucs = registros.map((r) => _s(r['ruc'])).where((v) => v.isNotEmpty).toSet().toList();
+      final existentesCodigos = <String>{};
+      final existentesRuc = <String>{};
+      final idPorCodigo = <String, dynamic>{};
+      final idPorRuc = <String, dynamic>{};
+      // Traer los IDs en consultas por lote. Antes se consultaba Supabase dos
+      // veces por cada fila durante el guardado, haciendo muy lenta la carga.
+      for (var i = 0; i < codigos.length; i += 100) {
+        final lote = codigos.skip(i).take(100).toList();
+        final rows = await _db.from('clientes').select('id,codigo,ruc').inFilter('codigo', lote);
+        for (final row in (rows as List)) {
+          final codigoExistente = _s(row['codigo']);
+          final rucExistente = _s(row['ruc']);
+          if (codigoExistente.isNotEmpty) {
+            existentesCodigos.add(codigoExistente);
+            idPorCodigo[codigoExistente] = row['id'];
+          }
+          if (rucExistente.isNotEmpty) {
+            existentesRuc.add(rucExistente);
+            idPorRuc[rucExistente] = row['id'];
+          }
+        }
+      }
+      for (var i = 0; i < rucs.length; i += 100) {
+        final lote = rucs.skip(i).take(100).toList();
+        final rows = await _db.from('clientes').select('id,codigo,ruc').inFilter('ruc', lote);
+        for (final row in (rows as List)) {
+          final codigoExistente = _s(row['codigo']);
+          final rucExistente = _s(row['ruc']);
+          if (codigoExistente.isNotEmpty) {
+            existentesCodigos.add(codigoExistente);
+            idPorCodigo[codigoExistente] = row['id'];
+          }
+          if (rucExistente.isNotEmpty) {
+            existentesRuc.add(rucExistente);
+            idPorRuc[rucExistente] = row['id'];
+          }
+        }
+      }
+
+      final nuevos = <Map<String, dynamic>>[];
+      final porActualizar = <Map<String, dynamic>>[];
+      final codigosEnExcel = <String>{};
+      final rucsEnExcel = <String>{};
+      for (final registro in registros) {
+        final codigo = _s(registro['codigo']);
+        final ruc = _s(registro['ruc']);
+        final repetidoEnExcel = (codigo.isNotEmpty && !codigosEnExcel.add(codigo)) ||
+            (ruc.isNotEmpty && !rucsEnExcel.add(ruc));
+        if (repetidoEnExcel ||
+            (codigo.isNotEmpty && existentesCodigos.contains(codigo)) ||
+            (ruc.isNotEmpty && existentesRuc.contains(ruc))) {
+          porActualizar.add(registro);
+        } else {
+          nuevos.add(registro);
+        }
+      }
+
+      // Cerrar el indicador de preparación para mostrar la vista previa real.
+      await cerrarPreparacion();
       if (!mounted) return;
       final confirmar = await showDialog<bool>(
         context: context,
-        builder: (_) => AlertDialog(
-          title: const Text('Importar clientes'),
-          content: Text(
-            'Se encontraron ${registros.length} registros válidos.\n\n'
-            'La importación se ejecutará en una sola operación optimizada en Supabase.\n'
-            'Código Cliente es la clave principal; RUC se usa como respaldo.\n\n'
-            '¿Deseas continuar?',
+        builder: (dialogContext) => AlertDialog(
+          title: const Text('Vista previa de importación'),
+          content: SizedBox(
+            width: 620,
+            child: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text('Archivo: ${file.name}', style: const TextStyle(fontWeight: FontWeight.w700)),
+                  const SizedBox(height: 12),
+                  Wrap(spacing: 8, runSpacing: 8, children: [
+                    Chip(avatar: const Icon(Icons.people_alt_outlined, size: 18), label: Text('Leídos: ${registros.length}')),
+                    Chip(avatar: const Icon(Icons.person_add_alt_1, size: 18, color: Colors.green), label: Text('Nuevos: ${nuevos.length}')),
+                    Chip(avatar: const Icon(Icons.sync, size: 18, color: Colors.orange), label: Text('Actualizar: ${porActualizar.length}')),
+                  ]),
+                  const SizedBox(height: 10),
+                  const Text(
+                    'CLIENTES NUEVOS (se agregarán)',
+                    style: TextStyle(fontWeight: FontWeight.w700, color: Colors.green),
+                  ),
+                  const SizedBox(height: 6),
+                  if (nuevos.isEmpty)
+                    const Padding(
+                      padding: EdgeInsets.symmetric(vertical: 8),
+                      child: Text('No hay clientes nuevos para agregar.'),
+                    ),
+                  if (nuevos.isNotEmpty)
+                    Container(
+                      constraints: const BoxConstraints(maxHeight: 190),
+                      decoration: BoxDecoration(
+                        border: Border.all(color: Theme.of(dialogContext).dividerColor),
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: ListView.separated(
+                        shrinkWrap: true,
+                        itemCount: nuevos.length,
+                        separatorBuilder: (_, __) => const Divider(height: 1),
+                        itemBuilder: (_, index) {
+                          final cliente = nuevos[index];
+                          final nombre = _s(cliente['razon_social']).isNotEmpty
+                              ? _s(cliente['razon_social'])
+                              : _s(cliente['nombre']);
+                          return Material(
+                            color: Theme.of(dialogContext).colorScheme.surface,
+                            child: ListTile(
+                            dense: true,
+                            tileColor: Theme.of(dialogContext).colorScheme.surface,
+                            leading: const Icon(Icons.person_add_alt_1, color: Colors.green),
+                            title: Text(
+                              nombre.isEmpty ? '(Sin nombre)' : nombre,
+                              maxLines: 2,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                            subtitle: Text(
+                              'Código: ${_s(cliente['codigo']).isEmpty ? '—' : _s(cliente['codigo'])} · RUC/DNI: ${_s(cliente['ruc']).isEmpty ? '—' : _s(cliente['ruc'])}',
+                            ),
+                          ),
+                          );
+                        },
+                      ),
+                    ),
+                  const SizedBox(height: 14),
+                  const Text(
+                    'CLIENTES EXISTENTES (se actualizarán)',
+                    style: TextStyle(fontWeight: FontWeight.w700, color: Colors.orange),
+                  ),
+                  const SizedBox(height: 6),
+                  if (porActualizar.isEmpty)
+                    const Padding(
+                      padding: EdgeInsets.symmetric(vertical: 8),
+                      child: Text('No hay clientes existentes para actualizar.'),
+                    ),
+                  if (porActualizar.isNotEmpty)
+                    Container(
+                      constraints: const BoxConstraints(maxHeight: 210),
+                      decoration: BoxDecoration(
+                        border: Border.all(color: Theme.of(dialogContext).dividerColor),
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: ListView.separated(
+                        shrinkWrap: true,
+                        itemCount: porActualizar.length,
+                        separatorBuilder: (_, __) => const Divider(height: 1),
+                        itemBuilder: (_, index) {
+                          final cliente = porActualizar[index];
+                          final nombre = _s(cliente['razon_social']).isNotEmpty
+                              ? _s(cliente['razon_social'])
+                              : _s(cliente['nombre']);
+                          return Material(
+                            color: Theme.of(dialogContext).colorScheme.surface,
+                            child: ListTile(
+                            dense: true,
+                            tileColor: Theme.of(dialogContext).colorScheme.surface,
+                            leading: const Icon(Icons.sync, color: Colors.orange),
+                            title: Text(
+                              nombre.isEmpty ? '(Sin nombre)' : nombre,
+                              maxLines: 2,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                            subtitle: Text(
+                              'Código: ${_s(cliente['codigo']).isEmpty ? '—' : _s(cliente['codigo'])} · RUC/DNI: ${_s(cliente['ruc']).isEmpty ? '—' : _s(cliente['ruc'])}',
+                            ),
+                          ),
+                          );
+                        },
+                      ),
+                    ),
+                  const SizedBox(height: 10),
+                  const Text('Al confirmar, los clientes existentes se actualizarán con los campos incluidos en el Excel; los campos que no estén en el archivo se conservarán. Revisa ambas listas antes de continuar.', style: TextStyle(fontSize: 12)),
+                ],
+              ),
+            ),
           ),
           actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(context, false),
-              child: const Text('Cancelar'),
-            ),
-            FilledButton.icon(
-              onPressed: () => Navigator.pop(context, true),
-              icon: const Icon(Icons.upload),
-              label: const Text('Importar'),
-            ),
+            TextButton(onPressed: () => Navigator.pop(dialogContext, false), child: const Text('Cancelar')),
+            FilledButton.icon(onPressed: () => Navigator.pop(dialogContext, true), icon: const Icon(Icons.upload), label: const Text('Confirmar importación')),
           ],
         ),
       );
+      if (confirmar != true || !mounted) return;
 
-      if (confirmar != true) return;
-      if (!mounted) return;
-      _mensaje('Importando ${registros.length} clientes a Supabase...');
-
-      final respuesta = await _db.rpc(
-        'crm_importar_clientes_masivo_v3',
-        params: {'p_registros': registros},
+      // Diálogo de progreso persistente: evita que parezca que la aplicación se congeló.
+      var progreso = 0;
+      var estado = 'Preparando registros...';
+      StateSetter? actualizarDialogo;
+      final progresoFuture = showDialog<void>(
+        context: context,
+        barrierDismissible: false,
+        builder: (dialogContext) => StatefulBuilder(
+          builder: (context, setDialogState) {
+            actualizarDialogo = setDialogState;
+            return AlertDialog(
+              title: const Text('Importando cartera de clientes'),
+              content: SizedBox(
+                width: 420,
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(estado),
+                    const SizedBox(height: 14),
+                    LinearProgressIndicator(value: registros.isEmpty ? null : progreso / registros.length),
+                    const SizedBox(height: 8),
+                    Text('$progreso de ${registros.length} registros procesados'),
+                    const SizedBox(height: 4),
+                    Text('Nuevos previstos: ${nuevos.length} · Actualizaciones previstas: ${porActualizar.length}', style: const TextStyle(fontSize: 12)),
+                  ],
+                ),
+              ),
+            );
+          },
+        ),
       );
 
-      final data = (respuesta as List).isNotEmpty
-          ? Map<String, dynamic>.from((respuesta as List).first)
-          : <String, dynamic>{};
+      setState(() => _procesando = true);
+      int actualizados = 0;
+      int creados = 0;
+      try {
+        for (var i = 0; i < registros.length; i++) {
+          final registro = registros[i];
+          final codigo = _s(registro['codigo']);
+          final ruc = _s(registro['ruc']);
+          final idExistente = (codigo.isNotEmpty ? idPorCodigo[codigo] : null) ??
+              (ruc.isNotEmpty ? idPorRuc[ruc] : null);
+          if (idExistente != null) {
+            await _db.from('clientes').update(registro).eq('id', idExistente);
+            actualizados++;
+          } else {
+            registro['activo'] ??= true;
+            // Devuelve el ID creado para que filas repetidas en el mismo Excel
+            // actualicen el registro recién insertado y no intenten duplicarlo.
+            final insertado = await _db.from('clientes')
+                .insert(registro).select('id,codigo,ruc').single();
+            final idNuevo = insertado['id'];
+            if (codigo.isNotEmpty) {
+              idPorCodigo[codigo] = idNuevo;
+              existentesCodigos.add(codigo);
+            }
+            if (ruc.isNotEmpty) {
+              idPorRuc[ruc] = idNuevo;
+              existentesRuc.add(ruc);
+            }
+            creados++;
+          }
+          progreso = i + 1;
+          estado = 'Procesando: ${_s(registro['razon_social']).isNotEmpty ? _s(registro['razon_social']) : _s(registro['nombre'])}';
+          // Actualizar el diálogo en intervalos y ceder el hilo para que Windows
+          // pueda pintar el progreso mientras siguen las operaciones de red.
+          if (progreso % 5 == 0 || progreso == registros.length) {
+            actualizarDialogo?.call(() {});
+            await Future<void>.delayed(const Duration(milliseconds: 1));
+          }
+        }
+      } finally {
+        if (mounted) {
+          // Cierra específicamente el diálogo de progreso que abrimos arriba.
+          Navigator.of(context, rootNavigator: true).pop();
+        }
+        await progresoFuture;
+      }
 
-      final creados = int.tryParse(data['creados']?.toString() ?? '') ?? 0;
-      final actualizados =
-          int.tryParse(data['actualizados']?.toString() ?? '') ?? 0;
-      final omitidos = int.tryParse(data['omitidos']?.toString() ?? '') ?? 0;
-
-      _mensaje(
-        'Importación terminada: $creados creados, $actualizados actualizados'
-        '${omitidos > 0 ? ', $omitidos omitidos' : ''}.',
-      );
-
+      _mensaje('Importación terminada: $creados clientes nuevos y $actualizados actualizados.');
       _pagina = 0;
       await _cargar();
     } catch (e) {
+      await cerrarPreparacion();
       _mensaje('Error al importar Excel: $e', error: true);
     } finally {
+      await cerrarPreparacion();
       if (mounted) setState(() => _procesando = false);
     }
+  }
+
+  bool _b(dynamic value) {
+    if (value is bool) return value;
+    if (value is num) return value != 0;
+    final v = value?.toString().trim().toLowerCase() ?? '';
+    return v == 'true' || v == '1' || v == 'si' || v == 'sí' || v == 'yes' || v == 'activo';
   }
 
   bool _textoBooleano(String value) {
@@ -1190,281 +1297,474 @@ class _CrmClientesPageState extends State<CrmClientesPage> {
     );
   }
 
-  Widget _encabezado(bool mobile) {
-    return Row(children: [
-      Container(width: 48,height: 48,decoration:BoxDecoration(color:const Color(0xFFEAF2FB),borderRadius:BorderRadius.circular(12)),child:const Icon(Icons.people_alt_outlined,color:_azul,size:28)),
-      const SizedBox(width:12),
-      const Expanded(child:Column(crossAxisAlignment:CrossAxisAlignment.start,children:[Text('Clientes',style:TextStyle(fontSize:28,fontWeight:FontWeight.w900,color:_azul,letterSpacing:-.4)),SizedBox(height:2),Text('Gestiona tu cartera de clientes y realiza seguimiento comercial.',style:TextStyle(color:Colors.black54))])),
-    ]);
-  }
-
-  List<String> get _segmentos => const [
-    'TODOS','SIN LLAMADA','SIN WHATSAPP','SIN CORREO','SIN VISITA',
-    'SIN OPORTUNIDAD','ACTIVOS','INACTIVOS',
-  ];
-
-  String _segmentoLabel(String value) {
-    switch (value) {
-      case 'SIN CONTACTO':
-        return 'Sin contacto';
-      case 'SIN LLAMADA':
-        return 'Sin llamada';
-      case 'SIN WHATSAPP':
-        return 'Sin WhatsApp';
-      case 'SIN CORREO':
-        return 'Sin correo';
-      case 'SIN VISITA':
-        return 'Sin visita';
-      case 'EN RIESGO':
-        return 'En riesgo';
-      case 'SIN OPORTUNIDAD':
-        return 'Sin oportunidad';
-      case 'CON OPORTUNIDAD':
-        return 'Con oportunidad';
-      case 'ACTIVOS':
-        return 'Clientes activos';
-      case 'INACTIVOS':
-        return 'Clientes inactivos';
-      default:
-        return 'Todos';
-    }
-  }
-
-  IconData _segmentoIcon(String value) {
-    switch (value) {
-      case 'SIN CONTACTO':
-        return Icons.notifications_active_outlined;
-      case 'SIN LLAMADA':
-        return Icons.phone_disabled_outlined;
-      case 'SIN WHATSAPP':
-        return Icons.chat_bubble_outline;
-      case 'SIN CORREO':
-        return Icons.mail_outline;
-      case 'SIN VISITA':
-        return Icons.event_busy_outlined;
-      case 'EN RIESGO':
-        return Icons.warning_amber_rounded;
-      case 'SIN OPORTUNIDAD':
-        return Icons.star_border_rounded;
-      case 'CON OPORTUNIDAD':
-        return Icons.star_rounded;
-      case 'ACTIVOS':
-        return Icons.check_circle_outline;
-      case 'INACTIVOS':
-        return Icons.pause_circle_outline;
-      default:
-        return Icons.people_alt_outlined;
-    }
-  }
-
-  Color _segmentoColor(String value) {
-    switch (value) {
-      case 'SIN CONTACTO':
-      case 'EN RIESGO':
-        return Colors.red.shade600;
-      case 'SIN LLAMADA':
-        return Colors.red.shade500;
-      case 'SIN WHATSAPP':
-        return Colors.green.shade600;
-      case 'SIN CORREO':
-        return Colors.deepPurple.shade500;
-      case 'SIN VISITA':
-        return Colors.indigo.shade500;
-      case 'SIN OPORTUNIDAD':
-        return Colors.orange.shade700;
-      case 'CON OPORTUNIDAD':
-        return Colors.amber.shade800;
-      case 'ACTIVOS':
-        return _verde;
-      case 'INACTIVOS':
-        return Colors.grey.shade700;
-      default:
-        return _azul;
-    }
-  }
-
-  Widget _gestionTabs(bool mobile) {
-    final visible = _segmentos;
-    return Card(
-      elevation: 0,
-      color: Colors.white,
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(14),
-        side: const BorderSide(color: _borde),
+  Widget _topHeader() {
+    return Container(
+      height: 64,
+      padding: const EdgeInsets.symmetric(horizontal: 18),
+      decoration: const BoxDecoration(
+        gradient: LinearGradient(
+          colors: [Color(0xFF063B63), Color(0xFF0A527F)],
+        ),
       ),
-      child: Padding(
-        padding: const EdgeInsets.all(8),
-        child: SingleChildScrollView(
-          scrollDirection: Axis.horizontal,
-          child: Row(
-            children: visible.map((segmento) {
-              final selected = _segmento == segmento;
-              final color = _segmentoColor(segmento);
-              final count = _carteraStats[segmento] ?? 0;
-              return Padding(
-                padding: const EdgeInsets.only(right: 8),
-                child: ChoiceChip(
-                  selected: selected,
-                  onSelected: (_) {
+      child: Row(
+        children: [
+          const Icon(Icons.arrow_back_rounded, color: Colors.white, size: 25),
+          const SizedBox(width: 14),
+          const Text('ELCOPE',
+              style: TextStyle(color: Colors.white, fontSize: 25, fontWeight: FontWeight.w900, fontStyle: FontStyle.italic)),
+          const SizedBox(width: 9),
+          const Text('CRM', style: TextStyle(color: Colors.white, fontSize: 18)),
+          const SizedBox(width: 35),
+          Expanded(
+            child: Container(
+              height: 40,
+              constraints: const BoxConstraints(maxWidth: 620),
+              decoration: BoxDecoration(
+                color: Colors.white.withValues(alpha: .10),
+                borderRadius: BorderRadius.circular(22),
+                border: Border.all(color: Colors.white24),
+              ),
+              child: const Row(
+                children: [
+                  SizedBox(width: 15),
+                  Icon(Icons.search, color: Colors.white, size: 21),
+                  SizedBox(width: 10),
+                  Text('Buscar clientes, oportunidades, actividades, facturas, RUC...',
+                      style: TextStyle(color: Colors.white70, fontSize: 13)),
+                ],
+              ),
+            ),
+          ),
+          const Spacer(),
+          IconButton(onPressed: _cargar, icon: const Icon(Icons.refresh, color: Colors.white)),
+          const Icon(Icons.notifications_none_rounded, color: Colors.white, size: 26),
+          const SizedBox(width: 12),
+          const CircleAvatar(radius: 19, backgroundColor: Colors.white, child: Text('MR', style: TextStyle(color: _azul, fontWeight: FontWeight.w900))),
+          const SizedBox(width: 8),
+          const Text('Michael Roque', style: TextStyle(color: Colors.white, fontWeight: FontWeight.w700)),
+        ],
+      ),
+    );
+  }
+
+  Widget _sidebar() {
+    final items = [
+      (Icons.home_outlined, 'Inicio'),
+      (Icons.people_alt_outlined, 'Clientes'),
+      (Icons.person_search_outlined, 'Oportunidades'),
+      (Icons.checklist_rtl_outlined, 'Actividades'),
+      (Icons.receipt_long_outlined, 'Facturación'),
+      (Icons.track_changes_outlined, 'Cobranza'),
+      (Icons.bar_chart_outlined, 'Reportes'),
+      (Icons.percent_outlined, 'Comisiones'),
+      (Icons.settings_outlined, 'Configuración'),
+    ];
+    return Container(
+      width: 78,
+      color: const Color(0xFF062E4D),
+      child: Column(
+        children: [
+          const SizedBox(height: 8),
+          for (final item in items)
+            Padding(
+              padding: const EdgeInsets.symmetric(vertical: 3),
+              child: Tooltip(
+                message: item.$2,
+                child: Container(
+                  width: 66,
+                  height: 55,
+                  decoration: item.$2 == 'Clientes'
+                      ? BoxDecoration(color: const Color(0xFF087BCB), borderRadius: BorderRadius.circular(13))
+                      : null,
+                  child: Icon(item.$1, color: Colors.white, size: 23),
+                ),
+              ),
+            ),
+          const Spacer(),
+          const Icon(Icons.logout_rounded, color: Colors.white70),
+          const SizedBox(height: 20),
+        ],
+      ),
+    );
+  }
+
+  Widget _pageTitle() {
+    return SizedBox(
+      height: 58,
+      child: Row(
+        children: [
+          Container(
+            width: 40,
+            height: 40,
+            decoration: BoxDecoration(
+              color: const Color(0xFF0877E6).withValues(alpha: .18),
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: const Icon(Icons.people_alt_outlined, color: Color(0xFF39A9FF), size: 23),
+          ),
+          const SizedBox(width: 11),
+          const Expanded(
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text('Clientes', style: TextStyle(color: Colors.white, fontSize: 21, fontWeight: FontWeight.w900)),
+                SizedBox(height: 1),
+                Text('Gestiona tu cartera y realiza seguimiento comercial.',
+                    style: TextStyle(color: Colors.white70, fontSize: 11)),
+              ],
+            ),
+          ),
+          FilledButton.icon(
+            onPressed: () {},
+            style: ButtonStyle(
+              padding: const WidgetStatePropertyAll(EdgeInsets.symmetric(horizontal: 14, vertical: 10)),
+              minimumSize: const WidgetStatePropertyAll(Size(0, 38)),
+            ),
+            icon: const Icon(Icons.add, size: 18),
+            label: const Text('Nuevo cliente', style: TextStyle(fontSize: 12)),
+          ),
+          const SizedBox(width: 8),
+          if (_puedeImportarCartera) ...[
+            OutlinedButton.icon(
+              onPressed: _procesando ? null : _importarExcel,
+              style: ButtonStyle(
+                foregroundColor: const WidgetStatePropertyAll(Colors.white),
+                side: const WidgetStatePropertyAll(BorderSide(color: Color(0xFF4A88B5))),
+                padding: const WidgetStatePropertyAll(EdgeInsets.symmetric(horizontal: 13, vertical: 9)),
+                minimumSize: const WidgetStatePropertyAll(Size(0, 38)),
+              ),
+              icon: const Icon(Icons.upload_file_outlined, size: 17),
+              label: const Text('Importar Excel', style: TextStyle(fontSize: 12)),
+            ),
+            const SizedBox(width: 8),
+          ],
+          OutlinedButton.icon(
+            onPressed: _procesando ? null : _exportarExcel,
+            style: ButtonStyle(
+              foregroundColor: const WidgetStatePropertyAll(Colors.white),
+              side: const WidgetStatePropertyAll(BorderSide(color: Color(0xFF4A88B5))),
+              padding: const WidgetStatePropertyAll(EdgeInsets.symmetric(horizontal: 13, vertical: 9)),
+              minimumSize: const WidgetStatePropertyAll(Size(0, 38)),
+            ),
+            icon: const Icon(Icons.download_outlined, size: 17),
+            label: const Text('Exportar Excel', style: TextStyle(fontSize: 12)),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _filtrosNuevo() {
+    String _ultimaCompraLabel(String value) {
+      switch (value) {
+        case 'TODAS': return 'Todas las compras';
+        case 'SIN_VENTAS': return 'Sin ventas';
+        case 'CON_VENTAS': return 'Con ventas';
+        case '0_30': return 'Compra 0-30 días';
+        case '31_60': return 'Compra 31-60 días';
+        case '61_90': return 'Compra 61-90 días';
+        case 'MAS_30': return 'Sin compra > 30 días';
+        case 'MAS_60': return 'Sin compra > 60 días';
+        case 'MAS_90': return 'Sin compra > 90 días';
+        default: return value;
+      }
+    }
+
+    Widget field(String label, String value, List<String> options, ValueChanged<String> cb) {
+      return SizedBox(
+        width: 145,
+        height: 54,
+        child: DropdownButtonFormField<String>(
+          initialValue: options.contains(value) ? value : 'TODOS',
+          isExpanded: true,
+          iconSize: 18,
+          dropdownColor: const Color(0xFF0A3A59),
+          menuMaxHeight: 420,
+          style: const TextStyle(fontSize: 11.5, color: Colors.white, fontWeight: FontWeight.w600),
+          decoration: InputDecoration(
+            labelText: label,
+            labelStyle: const TextStyle(fontSize: 10, color: Color(0xFF9FB4C8)),
+            contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+            filled: true,
+            fillColor: const Color(0xFF0A3A59),
+            border: OutlineInputBorder(borderRadius: BorderRadius.circular(9), borderSide: const BorderSide(color: Color(0xFF155B7F))),
+            enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(9), borderSide: const BorderSide(color: Color(0xFF155B7F))),
+            focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(9), borderSide: const BorderSide(color: Color(0xFF35D39A))),
+          ),
+          items: options.map((v) => DropdownMenuItem<String>(
+            value: v,
+            child: Container(
+              width: double.infinity,
+              padding: const EdgeInsets.symmetric(horizontal: 2, vertical: 2),
+              color: const Color(0xFF0A3A59),
+              child: Text(
+                label == 'Última compra' ? _ultimaCompraLabel(v) : v,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(fontSize: 11.5, color: Colors.white, fontWeight: FontWeight.w600),
+              ),
+            ),
+          )).toList(),
+          onChanged: (v) { if (v != null) cb(v); },
+        ),
+      );
+    }
+
+    return Container(
+      padding: const EdgeInsets.fromLTRB(11, 9, 11, 7),
+      decoration: BoxDecoration(
+        color: const Color(0xFF062F4D),
+        borderRadius: BorderRadius.circular(13),
+        border: Border.all(color: const Color(0xFF0B5B88)),
+        boxShadow: const [BoxShadow(color: Color(0x33000000), blurRadius: 10, offset: Offset(0, 4))],
+      ),
+      child: Column(
+        children: [
+          SizedBox(
+            height: 38,
+            child: TextField(
+              onSubmitted: (_) => _actualizarFiltro(() {}),
+              decoration: InputDecoration(
+                hintText: 'Buscar por cliente, RUC, código o vendedor...',
+                hintStyle: const TextStyle(fontSize: 12, color: Color(0xFF9FB4C8)),
+                prefixIcon: const Icon(Icons.search, size: 19, color: Color(0xFFB9CAD8)),
+                contentPadding: const EdgeInsets.symmetric(vertical: 6),
+                filled: true,
+                fillColor: const Color(0xFF0A3A59),
+                border: OutlineInputBorder(borderRadius: BorderRadius.circular(9), borderSide: BorderSide.none),
+                enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(9), borderSide: const BorderSide(color: Color(0xFF155B7F))),
+                focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(9), borderSide: const BorderSide(color: Color(0xFF35D39A))),
+              ),
+              onChanged: (v) {
+                _busqueda = v;
+                _busquedaDebounce?.cancel();
+                _busquedaDebounce = Timer(const Duration(milliseconds: 350), () {
+                  if (mounted) _actualizarFiltro(() {});
+                });
+              },
+            ),
+          ),
+          const SizedBox(height: 7),
+          Wrap(
+            alignment: WrapAlignment.center,
+            spacing: 6,
+            runSpacing: 6,
+            children: [
+              field('Vendedor', _vendedor, _vendedoresOpciones, (v) => _actualizarFiltro(() => _vendedor = v)),
+              field('Sector', _sector, _opcionesLocales('sector'), (v) => _actualizarFiltro(() => _sector = v)),
+              field('Giro', _giro, _opcionesLocales('giro'), (v) => _actualizarFiltro(() => _giro = v)),
+              field('Departamento', _departamento, _opcionesLocales('departamento'), (v) => _actualizarFiltro(() => _departamento = v)),
+              field('Estado', _estado, const ['TODOS', 'ACTIVO', 'INACTIVO'], (v) => _actualizarFiltro(() { _estado = v; if (v == 'INACTIVO') _soloActivos = false; })),
+              field('Última compra', _ultimaCompraFiltro, const ['TODAS', 'SIN_VENTAS', 'CON_VENTAS', '0_30', '31_60', '61_90', 'MAS_30', 'MAS_60', 'MAS_90'], (v) => _actualizarFiltro(() => _ultimaCompraFiltro = v)),
+            ],
+          ),
+          const SizedBox(height: 3),
+          SizedBox(
+            height: 30,
+            child: Row(
+              children: [
+                Switch.adaptive(value: _soloActivos, onChanged: (v) => _actualizarFiltro(() => _soloActivos = v)),
+                const Text('Solo clientes activos', style: TextStyle(fontSize: 11.5, color: Colors.white70, fontWeight: FontWeight.w600)),
+                const Spacer(),
+                TextButton.icon(
+                  style: TextButton.styleFrom(padding: const EdgeInsets.symmetric(horizontal: 7), foregroundColor: const Color(0xFF9EDBFF)),
+                  onPressed: () {
                     setState(() {
-                      _segmento = segmento;
+                      _busqueda = '';
+                      _vendedor = Sesion.vendedor.trim().isEmpty ? 'TODOS' : Sesion.vendedor.trim();
+                      _sector = _giro = _departamento = _estado = 'TODOS';
+                      _ultimaCompraFiltro = 'TODAS';
+                      _soloActivos = true;
                       _pagina = 0;
                     });
                     _cargar();
                   },
-                  avatar: Icon(
-                    _segmentoIcon(segmento),
-                    size: 18,
-                    color: selected ? Colors.white : color,
-                  ),
-                  label: Text('$count  ${_segmentoLabel(segmento)}'),
-                  selectedColor: _azul,
-                  backgroundColor: const Color(0xFFF5F8FB),
-                  labelStyle: TextStyle(
-                    color: selected ? Colors.white : const Color(0xFF173B5C),
-                    fontWeight: FontWeight.w800,
-                  ),
-                  side: BorderSide(
-                    color: selected ? _azul : _borde,
-                  ),
-                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+                  icon: const Icon(Icons.filter_alt_off_outlined, size: 17),
+                  label: const Text('Limpiar filtros', style: TextStyle(fontSize: 11.5)),
                 ),
-              );
-            }).toList(),
+              ],
+            ),
           ),
+        ],
+      ),
+    );
+  }
+
+  Widget _kpi(String title, String value, IconData icon, Color color, {String? footer}) {
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(color: const Color(0xFF062F4D), borderRadius: BorderRadius.circular(15), border: Border.all(color: const Color(0xFF0B5B88))),
+      child: Row(
+        children: [
+          Container(width: 42, height: 42, decoration: BoxDecoration(color: color.withValues(alpha: .18), borderRadius: BorderRadius.circular(13)), child: Icon(icon, color: color, size: 27)),
+          const SizedBox(width: 12),
+          Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            Text(title, style: const TextStyle(color: Colors.white70, fontSize: 13)),
+            Text(value, style: const TextStyle(color: Colors.white, fontSize: 19, fontWeight: FontWeight.w900)),
+            if (footer != null) Text(footer, style: const TextStyle(color: Colors.white54, fontSize: 11)),
+          ])),
+        ],
+      ),
+    );
+  }
+
+  Widget _kpisNuevo() {
+    // Los KPI representan TODA la cartera filtrada, no solo los 12/200
+    // registros cargados para la tabla.
+    final total = int.tryParse(_s(_gestionStats['total'])) ?? 0;
+    final activos = int.tryParse(_s(_gestionStats['activos'])) ?? 0;
+    final sinContacto = int.tryParse(_s(_gestionStats['sin_contacto'])) ?? 0;
+    final sinLlamada = int.tryParse(_s(_gestionStats['sin_llamada'])) ?? 0;
+    final sinVisita = int.tryParse(_s(_gestionStats['sin_visita'])) ?? 0;
+    final oportunidades = int.tryParse(_s(_gestionStats['con_oportunidad'])) ?? 0;
+
+    final cards = [
+      _kpi('Total clientes', '$total', Icons.people_alt_outlined, const Color(0xFF39A9FF)),
+      _kpi('Clientes activos', '$activos', Icons.check_circle_outline, const Color(0xFF35D39A)),
+      _kpi('Sin contacto', '$sinContacto', Icons.access_time_rounded, const Color(0xFFFFA726)),
+      _kpi('Sin llamada', '$sinLlamada', Icons.phone_outlined, const Color(0xFFFF5252)),
+      _kpi('Sin visita', '$sinVisita', Icons.calendar_month_outlined, const Color(0xFFB56CFF)),
+      _kpi('Con oportunidad', '$oportunidades', Icons.star_outline, const Color(0xFFFFC107)),
+    ];
+    return GridView.builder(
+      shrinkWrap: true,
+      physics: const NeverScrollableScrollPhysics(),
+      gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
+        maxCrossAxisExtent: 255,
+        mainAxisExtent: 92,
+        crossAxisSpacing: 10,
+        mainAxisSpacing: 10,
+      ),
+      itemCount: cards.length,
+      itemBuilder: (_, i) => cards[i],
+    );
+  }
+
+  Widget _facturacionMensualPanel() {
+    final valores = List<double>.generate(12, (i) => _facturacionMensual[i + 1] ?? 0);
+    final total = valores.fold<double>(0, (a, b) => a + b);
+    final maximo = valores.fold<double>(0, (a, b) => math.max(a, b));
+    const nombres = ['Ene','Feb','Mar','Abr','May','Jun','Jul','Ago','Sep','Oct','Nov','Dic'];
+
+    return _darkPanel(
+      title: 'Facturación por mes - ${DateTime.now().year}',
+      icon: Icons.bar_chart_rounded,
+      child: SizedBox(
+        height: 235,
+        child: Row(
+          children: [
+            Expanded(
+              child: LayoutBuilder(
+                builder: (context, c) {
+                  return CustomPaint(
+                    painter: _MonthlyBillingPainter(valores: valores, labels: nombres),
+                    child: const SizedBox.expand(),
+                  );
+                },
+              ),
+            ),
+            Container(
+              width: 150,
+              margin: const EdgeInsets.only(left: 10),
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: const Color(0xFF05263E),
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: const Color(0xFF0B5B88)),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text('Total del año', style: TextStyle(color: Colors.white60, fontSize: 10)),
+                  const SizedBox(height: 4),
+                  Text('US\$ ${_money.format(total)}', style: const TextStyle(color: Colors.white, fontSize: 15, fontWeight: FontWeight.w900)),
+                  const SizedBox(height: 18),
+                  const Text('Meses con venta', style: TextStyle(color: Colors.white60, fontSize: 10)),
+                  const SizedBox(height: 4),
+                  Text('${valores.where((v) => v > 0).length}', style: const TextStyle(color: Colors.white, fontSize: 15, fontWeight: FontWeight.w900)),
+                ],
+              ),
+            ),
+          ],
         ),
       ),
     );
   }
 
-  DateTime? _ultimoContactoGestion(Map<String, dynamic> c) => _date(c['ultimo_contacto']);
+  Widget _tablaOLista(bool mobile) {
+    final lista = _paginaClientes;
+    if (lista.isEmpty) {
+      return const Padding(
+        padding: EdgeInsets.all(35),
+        child: Center(child: Text('No hay clientes que coincidan con los filtros.', style: TextStyle(color: Colors.white70))),
+      );
+    }
+    if (mobile) return Column(children: lista.map(_clienteCard).toList());
 
-  bool _gestionBool(Map<String, dynamic> c, String key) => c[key] == true;
-
-  Widget _contactoIcon(Map<String, dynamic> c, String key, IconData icon) {
-    final ok = _gestionBool(c, key);
-    return Tooltip(
-      message: ok ? 'Registrado' : 'Sin registro',
-      child: Icon(
-        ok ? Icons.check_circle : Icons.cancel,
-        size: 20,
-        color: ok ? _verde : Colors.red.shade500,
-      ),
-    );
-  }
-
-  Widget _campanita(Map<String, dynamic> c) {
-    final alerta = _s(c['alerta_contacto']).toUpperCase();
-    final dias = int.tryParse(c['dias_sin_contacto']?.toString() ?? '') ?? 0;
-    final color = alerta == 'NUNCA'
-        ? Colors.red.shade600
-        : alerta == 'VENCIDO'
-            ? Colors.orange.shade700
-            : _verde;
-    final texto = alerta == 'NUNCA'
-        ? 'Nunca se ha registrado contacto'
-        : alerta == 'VENCIDO'
-            ? 'Sin contacto hace $dias días'
-            : 'Contacto al día';
-
-    return Tooltip(
-      message: texto,
-      child: Stack(
-        clipBehavior: Clip.none,
-        children: [
-          Icon(Icons.notifications_active_rounded, color: color, size: 21),
-          if (alerta != 'OK')
-            Positioned(
-              right: -2,
-              top: -3,
-              child: Container(
-                width: 7,
-                height: 7,
-                decoration: BoxDecoration(
-                  color: color,
-                  shape: BoxShape.circle,
-                  border: Border.all(color: Colors.white, width: 1),
+    return SingleChildScrollView(
+      scrollDirection: Axis.horizontal,
+      child: DataTable(
+        headingRowColor: const WidgetStatePropertyAll(Color(0xFF0A4166)),
+        dataRowColor: const WidgetStatePropertyAll(Color(0xFF062F4D)),
+        headingRowHeight: 36,
+        dataRowMinHeight: 38,
+        dataRowMaxHeight: 40,
+        horizontalMargin: 7,
+        columnSpacing: 10,
+        dividerThickness: .7,
+        columns: const [
+          DataColumn(label: Text('Cliente', style: TextStyle(color: Colors.white, fontSize: 11.5, fontWeight: FontWeight.w800))),
+          DataColumn(label: Text('RUC', style: TextStyle(color: Colors.white, fontSize: 11.5, fontWeight: FontWeight.w800))),
+          DataColumn(label: Text('Vendedor', style: TextStyle(color: Colors.white, fontSize: 11.5, fontWeight: FontWeight.w800))),
+          DataColumn(label: Text('Sector', style: TextStyle(color: Colors.white, fontSize: 11.5, fontWeight: FontWeight.w800))),
+          DataColumn(label: Text('Departamento', style: TextStyle(color: Colors.white, fontSize: 11.5, fontWeight: FontWeight.w800))),
+          DataColumn(label: Text('Facturación', style: TextStyle(color: Colors.white, fontSize: 11.5, fontWeight: FontWeight.w800))),
+          DataColumn(label: Text('Días', style: TextStyle(color: Colors.white, fontSize: 11.5, fontWeight: FontWeight.w800))),
+          DataColumn(label: Text('Últ. contacto', style: TextStyle(color: Colors.white, fontSize: 11.5, fontWeight: FontWeight.w800))),
+          DataColumn(label: Text('Estado', style: TextStyle(color: Colors.white, fontSize: 11.5, fontWeight: FontWeight.w800))),
+        ],
+        rows: lista.map((c) {
+          final fecha = _ultimaCompra(c);
+          final dias = fecha == null ? null : DateTime.now().difference(fecha).inDays;
+          return DataRow(
+            onSelectChanged: (_) => _abrirCliente360(c),
+            cells: [
+            DataCell(
+              SizedBox(
+                width: 132,
+                child: Tooltip(
+                  message: _nombreCliente(c),
+                  child: Text(
+                    _nombreCliente(c),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontWeight: FontWeight.w800,
+                      fontSize: 10.5,
+                    ),
+                  ),
                 ),
               ),
             ),
-        ],
+            DataCell(Text(_s(c['ruc']).isEmpty ? '-' : _s(c['ruc']), style: const TextStyle(color: Colors.white70, fontSize: 11.5), overflow: TextOverflow.ellipsis)),
+            DataCell(SizedBox(width: 100, child: Text(_s(c['vendedor']), style: const TextStyle(color: Colors.white70, fontSize: 11.5), overflow: TextOverflow.ellipsis))),
+            DataCell(SizedBox(width: 90, child: Text(_s(c['sector']), style: const TextStyle(color: Colors.white70, fontSize: 11.5), overflow: TextOverflow.ellipsis))),
+            DataCell(SizedBox(width: 78, child: Text(_s(c['departamento']), style: const TextStyle(color: Colors.white70, fontSize: 11.5), overflow: TextOverflow.ellipsis))),
+            DataCell(SizedBox(width: 98, child: Text('US\$ ${_money.format(_facturacionCliente(c))}', style: const TextStyle(color: Color(0xFF35D39A), fontWeight: FontWeight.w900, fontSize: 11.5), overflow: TextOverflow.ellipsis))),
+            DataCell(SizedBox(width: 62, child: Text(dias == null ? 'Sin compra' : '$dias d', style: TextStyle(color: dias != null && dias > 30 ? const Color(0xFFFFA726) : const Color(0xFF35D39A), fontWeight: FontWeight.w700, fontSize: 11)))),
+            DataCell(SizedBox(width: 82, child: Text(fecha == null ? 'Nunca' : DateFormat('dd/MM/yyyy').format(fecha), style: TextStyle(color: fecha == null ? const Color(0xFFFF5252) : Colors.white70, fontSize: 11), overflow: TextOverflow.ellipsis))),
+            DataCell(_estadoDark(c['activo'] == true)),
+          ]);
+        }).toList(),
       ),
     );
   }
 
-  Widget _ultimoContactoWidget(Map<String, dynamic> c) {
-    final fecha = _ultimoContactoGestion(c);
-    final alerta = _s(c['alerta_contacto']).toUpperCase();
-    if (fecha == null) {
-      return Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          _campanita(c),
-          const SizedBox(width: 6),
-          Text(
-            'Nunca',
-            style: TextStyle(
-              color: Colors.red.shade600,
-              fontWeight: FontWeight.w800,
-            ),
-          ),
-        ],
-      );
-    }
-    return Row(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        _campanita(c),
-        const SizedBox(width: 6),
-        Text(
-          DateFormat('dd/MM/yyyy').format(fecha),
-          style: TextStyle(
-            color: alerta == 'VENCIDO' ? Colors.orange.shade800 : Colors.black87,
-            fontWeight: FontWeight.w700,
-          ),
-        ),
-      ],
-    );
-  }
-
-  static const List<String> _compraOpciones = [
-    'TODOS',
-    'SIN VENTAS',
-    'CON VENTAS',
-    '0-30 DIAS',
-    '31-60 DIAS',
-    '61-90 DIAS',
-    'MAS DE 30 DIAS',
-    'MAS DE 60 DIAS',
-    'MAS DE 90 DIAS',
-  ];
-
-  String _compraFiltroLabel(String value) {
-    switch (value) {
-      case 'SIN VENTAS': return 'Sin ventas';
-      case 'CON VENTAS': return 'Con ventas';
-      case '0-30 DIAS': return 'Compra 0-30 días';
-      case '31-60 DIAS': return 'Compra 31-60 días';
-      case '61-90 DIAS': return 'Compra 61-90 días';
-      case 'MAS DE 30 DIAS': return 'Sin compra > 30 días';
-      case 'MAS DE 60 DIAS': return 'Sin compra > 60 días';
-      case 'MAS DE 90 DIAS': return 'Sin compra > 90 días';
-      default: return 'Todas las compras';
-    }
-  }
-
-  int? _diasSinCompra(Map<String, dynamic> c) {
-    final fecha = _ultimaCompra(c);
-    if (fecha == null) return null;
-    final hoy = DateTime.now();
-    final d = DateTime(fecha.year, fecha.month, fecha.day);
-    return hoy.difference(d).inDays;
-  }
-
-  void _abrir360(Map<String, dynamic> c) {
-    final codigo = _s(c['codigo']);
+  void _abrirCliente360(Map<String, dynamic> c) {
+    final codigo = _s(c['codigo']).isNotEmpty ? _s(c['codigo']) : _s(c['ruc']);
     if (codigo.isEmpty) {
-      _mensaje('Este cliente no tiene Código Cliente para abrir Cliente 360°.');
+      _mensaje('Este cliente no tiene código/RUC para abrir Cliente 360°.', error: true);
       return;
     }
     Navigator.push(
@@ -1473,633 +1773,450 @@ class _CrmClientesPageState extends State<CrmClientesPage> {
     );
   }
 
-  Widget _filtros(bool mobile) {
-    final vendedorOptions = _esJefeLima || Sesion.esAdministrador || Sesion.rol.trim().toLowerCase() == 'gerencia'
-        ? _opcionesLocales('vendedor')
-        : <String>[Sesion.vendedor.trim().isEmpty ? _vendedor : Sesion.vendedor.trim()];
-    final campos = [
-      _filtro('Vendedor', _vendedor, vendedorOptions.isEmpty ? ['TODOS'] : vendedorOptions, (v) {
-        setState(() { _vendedor = v; _pagina = 0; }); _cargar();
-      }),
-      _filtro('Sector', _sector, _opcionesLocales('sector'), (v) { setState(() { _sector = v; _pagina = 0; }); _cargar(); }),
-      _filtro('Giro', _giro, _opcionesLocales('giro'), (v) { setState(() { _giro = v; _pagina = 0; }); _cargar(); }),
-      _filtro(
-        'Departamento',
-        _esJefeLima ? 'LIMA' : _departamento,
-        _esJefeLima ? const ['LIMA'] : _opcionesLocales('departamento'),
-        (v) {
-          if (_esJefeLima) return;
-          setState(() { _departamento = v; _pagina = 0; });
-          _cargar();
-        },
-        enabled: !_esJefeLima,
+  Widget _clienteCard(Map<String, dynamic> c) {
+    final fecha = _ultimaCompra(c);
+    return InkWell(
+      borderRadius: BorderRadius.circular(14),
+      onTap: () => _abrirCliente360(c),
+      child: Container(
+        margin: const EdgeInsets.only(bottom: 10),
+      padding: const EdgeInsets.all(15),
+      decoration: BoxDecoration(color: const Color(0xFF062F4D), borderRadius: BorderRadius.circular(14), border: Border.all(color: const Color(0xFF0B5B88))),
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Row(children: [
+          const Icon(Icons.business_outlined, color: Color(0xFF24D6A1)),
+          const SizedBox(width: 9),
+          Expanded(child: Text(_nombreCliente(c), style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w900))),
+          _estadoDark(c['activo'] == true),
+        ]),
+        const SizedBox(height: 9),
+        Text('RUC: ${_s(c['ruc']).isEmpty ? '-' : _s(c['ruc'])}', style: const TextStyle(color: Colors.white70)),
+        Text('Vendedor: ${_s(c['vendedor'])}', style: const TextStyle(color: Colors.white70)),
+        Text('Facturación: US\$ ${_money.format(_facturacionCliente(c))}', style: const TextStyle(color: Color(0xFF35D39A), fontWeight: FontWeight.w900)),
+        Text('Última compra: ${fecha == null ? 'Sin compra' : DateFormat('dd/MM/yyyy').format(fecha)}', style: const TextStyle(color: Colors.white70)),
+        const SizedBox(height: 9),
+        Align(alignment: Alignment.centerRight, child: FilledButton.icon(
+          onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (_) => CrmCliente360Page(codigoInicial: _s(c['codigo'])))),
+          icon: const Icon(Icons.person_search_outlined), label: const Text('Cliente 360°'),
+        )),
+      ]),
+    ),
+    );
+  }
+
+
+  Widget _darkPanel({required String title, required IconData icon, required Widget child}) {
+    return Container(
+      decoration: BoxDecoration(
+        color: const Color(0xFF062F4D),
+        borderRadius: BorderRadius.circular(15),
+        border: Border.all(color: const Color(0xFF0B5B88)),
       ),
-      _filtro('Estado', _segmento == 'ACTIVOS' ? 'ACTIVO' : _segmento == 'INACTIVOS' ? 'INACTIVO' : 'TODOS', const ['TODOS','ACTIVO','INACTIVO'], (v) {
-        setState(() { _segmento = v == 'ACTIVO' ? 'ACTIVOS' : v == 'INACTIVO' ? 'INACTIVOS' : 'TODOS'; _pagina = 0; }); _cargar();
-      }),
-      _filtro('Última compra', _compraFiltro, _compraOpciones, (v) {
-        setState(() { _compraFiltro = v; _pagina = 0; });
-        _cargar();
-      }, labels: true),
-    ];
-    return Card(
-      elevation: 0, color: Colors.white,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14), side: const BorderSide(color: _borde)),
       child: Padding(
-        padding: const EdgeInsets.all(14),
-        child: Column(children: [
-          TextField(
-            controller: TextEditingController(text: _busqueda)..selection = TextSelection.collapsed(offset: _busqueda.length),
-            onChanged: (v) => _busqueda = v,
-            onSubmitted: (_) { _pagina = 0; _cargar(); },
-            decoration: InputDecoration(
-              hintText: 'Buscar por cliente, RUC, código o vendedor...', prefixIcon: const Icon(Icons.search),
-              filled: true, fillColor: _fondo, border: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: BorderSide.none),
-            ),
-          ),
+        padding: const EdgeInsets.all(11),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(children: [
+              Icon(icon, color: const Color(0xFF35D39A), size: 22),
+              const SizedBox(width: 9),
+              Text(title, style: const TextStyle(color: Colors.white, fontSize: 17, fontWeight: FontWeight.w900)),
+            ]),
+            const SizedBox(height: 8),
+            child,
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _paginacionNuevo() {
+    final total = _clientesVisibles.length;
+    final paginas = total == 0 ? 1 : (total / _porPagina).ceil();
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(4, 8, 4, 2),
+      child: Row(children: [
+        Text('Página ${_pagina + 1} de $paginas  ·  $total clientes', style: const TextStyle(color: Colors.white70, fontSize: 12)),
+        const Spacer(),
+        IconButton(
+          tooltip: 'Anterior',
+          onPressed: _pagina == 0 ? null : () => _cambiarPagina(_pagina - 1),
+          icon: const Icon(Icons.chevron_left, color: Colors.white),
+        ),
+        IconButton(
+          tooltip: 'Siguiente',
+          onPressed: _pagina + 1 >= paginas ? null : () => _cambiarPagina(_pagina + 1),
+          icon: const Icon(Icons.chevron_right, color: Colors.white),
+        ),
+      ]),
+    );
+  }
+
+  Widget _clientesRecientes() {
+    final lista = List<Map<String, dynamic>>.from(_clientes)..sort((a, b) {
+      final da = _ultimaCompra(a) ?? DateTime(1900);
+      final db = _ultimaCompra(b) ?? DateTime(1900);
+      return db.compareTo(da);
+    });
+    final recientes = lista.take(5).toList();
+    return _darkPanel(
+      title: 'Clientes recientes',
+      icon: Icons.groups_outlined,
+      child: Column(
+        children: recientes.isEmpty
+            ? [const Padding(padding: EdgeInsets.all(12), child: Text('Sin clientes recientes', style: TextStyle(color: Colors.white70)))]
+            : recientes.map((c) => Container(
+                padding: const EdgeInsets.symmetric(vertical: 10),
+                decoration: const BoxDecoration(border: Border(bottom: BorderSide(color: Color(0xFF0B466B)))),
+                child: Row(children: [
+                  const Icon(Icons.business_outlined, color: Color(0xFF24D6A1), size: 19),
+                  const SizedBox(width: 9),
+                  Expanded(child: Text(_nombreCliente(c), maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w800, fontSize: 12))),
+                  Text(_s(c['ruc']), style: const TextStyle(color: Colors.white54, fontSize: 10)),
+                ]),
+              )).toList(),
+      ),
+    );
+  }
+
+  Widget _estadoCartera() {
+    final total = (int.tryParse(_s(_gestionStats['total'])) ?? _clientes.length).toDouble();
+    final activos = (int.tryParse(_s(_gestionStats['activos'])) ??
+        _clientes.where((c) => c['activo'] == true).length).toDouble();
+    final inactivos = (int.tryParse(_s(_gestionStats['inactivos'])) ??
+        math.max(0, total.toInt() - activos.toInt())).toDouble();
+    final sinContacto = (int.tryParse(_s(_gestionStats['sin_contacto'])) ?? 0).toDouble();
+    final oportunidades = (int.tryParse(_s(_gestionStats['con_oportunidad'])) ?? 0).toDouble();
+
+    Widget leyenda(Color color, String titulo, double cantidad) {
+      final pct = total <= 0 ? 0.0 : cantidad / total * 100;
+      return Padding(
+        padding: const EdgeInsets.symmetric(vertical: 6),
+        child: Row(children: [
+          Container(width: 10, height: 10, decoration: BoxDecoration(
+            color: color, shape: BoxShape.circle,
+            boxShadow: [BoxShadow(color: color.withValues(alpha: .65), blurRadius: 8, spreadRadius: 1)],
+          )),
+          const SizedBox(width: 9),
+          Expanded(child: Text(titulo, style: const TextStyle(color: Colors.white70, fontSize: 12))),
+          Text('${cantidad.toInt()}  ·  ${pct.toStringAsFixed(1)}%',
+            style: TextStyle(color: color, fontWeight: FontWeight.w900, fontSize: 12)),
+        ]),
+      );
+    }
+
+    return _darkPanel(
+      title: 'Estado de tu cartera',
+      icon: Icons.pie_chart_outline,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(vertical: 8),
+        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Text('${total.toInt()} clientes en la cartera filtrada',
+            style: const TextStyle(color: Colors.white70, fontSize: 11)),
           const SizedBox(height: 12),
-          mobile ? Column(children: [for (final f in campos) Padding(padding: const EdgeInsets.only(bottom: 8), child: f)]) : Wrap(spacing: 10, runSpacing: 10, children: campos),
-          Row(children: [
-            Switch(value: _soloActivos, onChanged: (v) { setState(() { _soloActivos = v; _pagina = 0; }); _cargar(); }),
-            const Text('Solo clientes activos', style: TextStyle(fontWeight: FontWeight.w600)),
-            const Spacer(),
-            TextButton.icon(onPressed: () {
-              final rol = Sesion.rol.trim().toLowerCase();
-              final vendedorSesion = Sesion.vendedor.trim();
-              setState(() {
-                _busqueda=''; _sector='TODOS'; _giro='TODOS'; _departamento='TODOS'; _pagina=0; _segmento='TODOS'; _compraFiltro='TODOS'; _soloActivos=true;
-                _vendedor = (rol == 'jefe lima' || rol == 'jefe provincia' || rol == 'gerencia')
-                    ? 'TODOS'
-                    : (vendedorSesion.isNotEmpty ? vendedorSesion : 'TODOS');
-              }); _cargar();
-            }, icon: const Icon(Icons.filter_alt_off_outlined), label: const Text('Limpiar filtros')),
-          ]),
+          LayoutBuilder(builder: (context, constraints) {
+            final donut = SizedBox(
+              width: 142, height: 142,
+              child: Stack(alignment: Alignment.center, children: [
+                CustomPaint(size: const Size(142, 142), painter: _DonutPainter(activos, inactivos, 0)),
+                Column(mainAxisSize: MainAxisSize.min, children: [
+                  Text('${total.toInt()}', style: const TextStyle(color: Colors.white, fontSize: 27, fontWeight: FontWeight.w900)),
+                  const Text('Clientes', style: TextStyle(color: Color(0xFF9FB4C8), fontSize: 11)),
+                ]),
+              ]),
+            );
+            final legend = Expanded(child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [
+              leyenda(const Color(0xFF35FFB0), 'Activos', activos),
+              leyenda(const Color(0xFFFF4D6D), 'Inactivos', inactivos),
+              leyenda(const Color(0xFFFFD60A), 'Con oportunidad', oportunidades),
+              leyenda(const Color(0xFF7DD3FC), 'Sin contacto', sinContacto),
+            ]));
+            if (constraints.maxWidth < 360) {
+              return Column(children: [donut, const SizedBox(height: 10),
+                Column(children: [
+                  leyenda(const Color(0xFF35FFB0), 'Activos', activos),
+                  leyenda(const Color(0xFFFF4D6D), 'Inactivos', inactivos),
+                  leyenda(const Color(0xFFFFD60A), 'Con oportunidad', oportunidades),
+                  leyenda(const Color(0xFF7DD3FC), 'Sin contacto', sinContacto),
+                ])]);
+            }
+            return Row(children: [donut, const SizedBox(width: 12), legend]);
+          }),
+          const SizedBox(height: 6),
+          const Text('“Con oportunidad” y “Sin contacto” pueden coincidir con clientes activos o inactivos.',
+            style: TextStyle(color: Colors.white54, fontSize: 10)),
         ]),
       ),
     );
   }
 
-  Widget _filtro(
-    String label,
-    String value,
-    List<String> options,
-    ValueChanged<String> onChanged, {
-    bool labels = false,
-    bool enabled = true,
-  }) {
-    return SizedBox(
-      width: 210,
-      child: DropdownButtonFormField<String>(
-        initialValue: options.contains(value) ? value : 'TODOS',
-        isExpanded: true,
-        decoration: InputDecoration(
-          labelText: label,
-          filled: true,
-          fillColor: _fondo,
-          border: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(10),
-            borderSide: BorderSide.none,
-          ),
-        ),
-        items: options
-            .map(
-              (v) => DropdownMenuItem(
-                value: v,
-                child: Text(
-                  labels ? (label == 'Última compra' ? _compraFiltroLabel(v) : _ordenLabel(v)) : v,
-                  overflow: TextOverflow.ellipsis,
-                ),
-              ),
-            )
-            .toList(),
-        onChanged: enabled ? (v) {
-          if (v != null) onChanged(v);
-        } : null,
-      ),
-    );
-  }
-
-  Widget _acciones(bool mobile) {
-    final botones = <Widget>[
-      FilledButton.icon(onPressed: () => _mensaje('Nuevo cliente: próximamente disponible.'), icon: const Icon(Icons.add), label: const Text('Nuevo cliente')),
-      if (_puedeImportarCartera) OutlinedButton.icon(onPressed: _procesando ? null : _importarExcel, icon: const Icon(Icons.upload_file_outlined), label: const Text('Importar Excel')),
-      OutlinedButton.icon(onPressed: _procesando ? null : _exportarExcel, icon: const Icon(Icons.download_outlined), label: const Text('Exportar Excel')),
-      OutlinedButton.icon(onPressed: _procesando ? null : _imprimir, icon: const Icon(Icons.print_outlined), label: const Text('Imprimir')),
-    ];
-    return Align(alignment: Alignment.centerRight, child: Wrap(spacing: 10, runSpacing: 8, children: botones));
-  }
-
-  Widget _resumen(bool mobile) {
-    final cards = [
-      _miniKpi('Total clientes', '${_totalClientes}', Icons.people_alt_outlined),
-      _miniKpi('Sin llamada', '${_carteraStats['SIN LLAMADA'] ?? 0}', Icons.phone_outlined, color: Colors.red.shade600),
-      _miniKpi('Sin WhatsApp', '${_carteraStats['SIN WHATSAPP'] ?? 0}', Icons.chat_outlined, color: Colors.green.shade600),
-      _miniKpi('Sin correo', '${_carteraStats['SIN CORREO'] ?? 0}', Icons.mail_outline, color: Colors.deepOrange.shade500),
-      _miniKpi('Sin visita', '${_carteraStats['SIN VISITA'] ?? 0}', Icons.event_outlined, color: Colors.deepPurple.shade500),
-      _miniKpi('Con oportunidad', '${_carteraStats['CON OPORTUNIDAD'] ?? 0}', Icons.star_rounded, color: Colors.amber.shade700),
-    ];
-    return LayoutBuilder(builder: (context, c) {
-      final columns = c.maxWidth >= 1250 ? 6 : c.maxWidth >= 900 ? 3 : c.maxWidth >= 600 ? 2 : 1;
-      return GridView.count(crossAxisCount: columns, shrinkWrap: true, physics: const NeverScrollableScrollPhysics(), crossAxisSpacing: 10, mainAxisSpacing: 10, childAspectRatio: mobile ? 2.8 : 2.35, children: cards);
-    });
-  }
-
-  Widget _miniKpi(
-    String title,
-    String value,
-    IconData icon, {
-    Color color = _azul,
-  }) {
-    return Container(
-      padding: const EdgeInsets.all(14),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(13),
-        border: Border.all(color: _borde),
-      ),
-      child: Row(
+  Widget _barraEstadoCartera(Color color, String label, double value, double total) {
+    final porcentaje = total <= 0 ? 0.0 : (value / total).clamp(0.0, 1.0);
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 6),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Container(
-            width: 43,
-            height: 43,
-            decoration: BoxDecoration(
-              color: color.withValues(alpha: .10),
-              borderRadius: BorderRadius.circular(11),
-            ),
-            child: Icon(icon, color: color),
-          ),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  title,
-                  style: const TextStyle(color: Colors.black54),
-                ),
-                Text(
-                  value,
-                  overflow: TextOverflow.ellipsis,
-                  style: TextStyle(
-                    color: color,
-                    fontWeight: FontWeight.w900,
-                    fontSize: 17,
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _paginacion() {
-    return Card(
-      elevation: 0,
-      color: Colors.white,
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(14),
-        side: const BorderSide(color: _borde),
-      ),
-      child: Padding(
-        padding: const EdgeInsets.symmetric(
-          horizontal: 14,
-          vertical: 8,
-        ),
-        child: Row(
-          children: [
-            Text(
-              'Página ${_pagina + 1} · ${_totalClientes} clientes',
-              style: const TextStyle(fontWeight: FontWeight.w700),
-            ),
-            const Spacer(),
-            IconButton(
-              tooltip: 'Anterior',
-              onPressed: _pagina == 0 || _cargando
-                  ? null
-                  : () => _cambiarPagina(_pagina - 1),
-              icon: const Icon(Icons.chevron_left),
-            ),
-            IconButton(
-              tooltip: 'Siguiente',
-              onPressed: !_haySiguiente || _cargando
-                  ? null
-                  : () => _cambiarPagina(_pagina + 1),
-              icon: const Icon(Icons.chevron_right),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _panelCartera() {
-    final total = _contactoResumen['total_clientes'] ?? (_carteraStats['TODOS'] ?? 0);
-    final sin = _contactoResumen['sin_contacto'] ?? (_carteraStats['SIN CONTACTO'] ?? 0);
-    final con = _contactoResumen['con_contacto'] ?? (total - sin);
-    final opp = _contactoResumen['con_oportunidad'] ?? (_carteraStats['CON OPORTUNIDAD'] ?? 0);
-    final ina = _contactoResumen['inactivos'] ?? (_carteraStats['INACTIVOS'] ?? 0);
-    final otros = (total - sin - con - ina).clamp(0, total);
-    return _sideCard('Estado de tu cartera', Column(children: [
-      SizedBox(height: 125, child: Stack(alignment: Alignment.center, children: [
-        SizedBox(width: 120, height: 120, child: CircularProgressIndicator(value: total == 0 ? 0 : sin / total, strokeWidth: 18, backgroundColor: Colors.green.shade100, color: Colors.red.shade500)),
-        Column(mainAxisSize: MainAxisSize.min, children: [Text('$total', style: const TextStyle(fontSize: 22, fontWeight: FontWeight.w900, color: _azul)), const Text('Clientes')]),
-      ])),
-      _legend('Sin contacto', sin, Colors.red.shade500, total),
-      _legend('Con contacto', con, _verde, total),
-      _legend('Con oportunidad', opp, Colors.indigo.shade500, total),
-      _legend('Inactivos', ina, Colors.grey, total),
-      _legend('Otros', otros, Colors.orange.shade400, total),
-    ]));
-  }
-
-  Widget _panelContacto() {
-    final vals = [
-      ('Hace 0-7 días', _contactoResumen['hace_0_7'] ?? 0, _verde),
-      ('Hace 8-30 días', _contactoResumen['hace_8_30'] ?? 0, Colors.blue),
-      ('Hace 31-90 días', _contactoResumen['hace_31_90'] ?? 0, Colors.orange),
-      ('Más de 90 días', _contactoResumen['mas_90'] ?? 0, Colors.red),
-      ('Nunca', _contactoResumen['sin_contacto'] ?? 0, Colors.grey),
-    ];
-    final max = vals.fold<int>(1, (m, x) => x.$2 > m ? x.$2 : m);
-    return _sideCard('Último contacto', Column(children: [for (final x in vals) Padding(padding: const EdgeInsets.symmetric(vertical: 5), child: Row(children: [SizedBox(width: 90, child: Text(x.$1, style: const TextStyle(fontSize: 11))), Expanded(child: ClipRRect(borderRadius: BorderRadius.circular(8), child: LinearProgressIndicator(minHeight: 9, value: x.$2 / max, color: x.$3, backgroundColor: const Color(0xFFE7ECF2)))), const SizedBox(width: 8), SizedBox(width: 22, child: Text('${x.$2}', textAlign: TextAlign.right, style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w800)))]))]));
-  }
-
-  Widget _panelTop5() {
-    final top = _clientes.take(5).toList();
-    return _sideCard('Top 5 clientes por facturación', Column(children: [for (var i=0;i<top.length;i++) Padding(padding: const EdgeInsets.symmetric(vertical: 6), child: Row(children: [Container(width: 24,height:24,alignment:Alignment.center,decoration:BoxDecoration(color:const Color(0xFFF2F4F7),shape:BoxShape.circle),child:Text('${i+1}',style:const TextStyle(fontWeight:FontWeight.w800))),const SizedBox(width:8),Expanded(child:Text(_nombreCliente(top[i]),maxLines:1,overflow:TextOverflow.ellipsis,style:const TextStyle(fontSize:12,fontWeight:FontWeight.w700))),Text('US\$ ${_money.format(_facturacionCliente(top[i]))}',style:const TextStyle(fontSize:11,fontWeight:FontWeight.w800,color:_azul))]))]));
-  }
-
-  Widget _sideCard(String title, Widget child) => Card(elevation:0,color:Colors.white,shape:RoundedRectangleBorder(borderRadius:BorderRadius.circular(14),side:const BorderSide(color:_borde)),child:Padding(padding:const EdgeInsets.all(14),child:Column(crossAxisAlignment:CrossAxisAlignment.start,children:[Text(title,style:const TextStyle(fontSize:15,fontWeight:FontWeight.w900,color:_azul)),const SizedBox(height:10),child])));
-  Widget _legend(String label,int value,Color color,int total) => Padding(padding:const EdgeInsets.symmetric(vertical:3),child:Row(children:[Container(width:9,height:9,decoration:BoxDecoration(color:color,shape:BoxShape.circle)),const SizedBox(width:6),Expanded(child:Text(label,style:const TextStyle(fontSize:11))),Text('$value',style:const TextStyle(fontSize:11,fontWeight:FontWeight.w800)),if(total>0) Text(' (${(value*100/total).round()}%)',style:const TextStyle(fontSize:10,color:Colors.grey))]));
-
-  Widget _tablaOLista(bool mobile) {
-    final lista = _filtrados;
-
-    if (lista.isEmpty) {
-      return Card(
-        child: Padding(
-          padding: const EdgeInsets.all(40),
-          child: Center(
-            child: Column(
-              children: [
-                Icon(Icons.search_off_rounded, size: 44, color: Colors.grey.shade400),
-                const SizedBox(height: 10),
-                Text(
-                  'No hay clientes que coincidan con el filtro.',
-                  style: TextStyle(color: Colors.grey.shade600, fontWeight: FontWeight.w600),
-                ),
-              ],
-            ),
-          ),
-        ),
-      );
-    }
-
-    if (mobile) {
-      return Column(children: lista.map(_clienteCard).toList());
-    }
-
-    return Card(
-      elevation: 0,
-      color: Colors.white,
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(14),
-        side: const BorderSide(color: _borde),
-      ),
-      clipBehavior: Clip.antiAlias,
-      child: SingleChildScrollView(
-        scrollDirection: Axis.horizontal,
-        child: DataTable(
-          columnSpacing: 18,
-          horizontalMargin: 14,
-          headingRowHeight: 48,
-          dataRowMinHeight: 46,
-          dataRowMaxHeight: 54,
-          headingRowColor: const WidgetStatePropertyAll(Color(0xFFF0F5FA)),
-          columns: const [
-            DataColumn(label: Text('Cliente')),
-            DataColumn(label: Text('RUC')),
-            DataColumn(label: Text('Vendedor')),
-            DataColumn(label: Text('Sector')),
-            DataColumn(label: Text('Departamento')),
-            DataColumn(label: Text('Monto / Facturación')),
-            DataColumn(label: Text('Días sin compra')),
-            DataColumn(label: Text('Último contacto')),
-            DataColumn(label: Text('Llamada')),
-            DataColumn(label: Text('WhatsApp')),
-            DataColumn(label: Text('Correo')),
-            DataColumn(label: Text('Visita')),
-            DataColumn(label: Text('Oportunidad')),
-            DataColumn(label: Text('Estado')),
-            DataColumn(label: Text('')),
-          ],
-          rows: lista.map(_fila).toList(),
-        ),
-      ),
-    );
-  }
-
-  Widget _diasSinCompraWidget(Map<String, dynamic> c) {
-    final dias = _diasSinCompra(c);
-    if (dias == null) {
-      return const Text('Nunca', style: TextStyle(color: Colors.red, fontWeight: FontWeight.w800));
-    }
-    final color = dias > 90 ? Colors.red.shade600 : dias > 30 ? Colors.orange.shade700 : _verde;
-    return Text('$dias días', style: TextStyle(color: color, fontWeight: FontWeight.w800));
-  }
-
-  DataRow _fila(Map<String, dynamic> c) {
-    final oportunidad = _gestionBool(c, 'tiene_oportunidad');
-    final montoOportunidad = _n(c['monto_oportunidad']);
-
-    return DataRow(
-      cells: [
-        DataCell(
-          InkWell(
-            onTap: () => _abrir360(c),
+          Row(children: [
+            Container(width: 8, height: 8, decoration: BoxDecoration(color: color, shape: BoxShape.circle)),
+            const SizedBox(width: 7),
+            Expanded(child: Text(label, style: const TextStyle(color: Colors.white70, fontSize: 11))),
+            Text('${value.toInt()}  ·  ${(porcentaje * 100).toStringAsFixed(1)}%',
+                style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w800, fontSize: 11)),
+          ]),
+          const SizedBox(height: 5),
+          ClipRRect(
             borderRadius: BorderRadius.circular(6),
-            child: SizedBox(
-              width: 225,
-              child: Row(
-              children: [
-                _campanita(c),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: Text(
-                    _nombreCliente(c),
-                    overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(fontWeight: FontWeight.w800, color: _azul),
-                  ),
-                ),
-              ],
+            child: LinearProgressIndicator(
+              value: porcentaje,
+              minHeight: 8,
+              backgroundColor: const Color(0xFF153F5C),
+              valueColor: AlwaysStoppedAnimation<Color>(color),
             ),
           ),
-        ),
-      ),
-        DataCell(Text(_s(c['ruc']).isEmpty ? '-' : _s(c['ruc']))),
-        DataCell(Text(_s(c['vendedor']).isEmpty ? '-' : _s(c['vendedor']))),
-        DataCell(Text(_s(c['sector']).isEmpty ? '-' : _s(c['sector']))),
-        DataCell(Text(_s(c['departamento']).isEmpty ? '-' : _s(c['departamento']))),
-        DataCell(
-          Text(
-            'US\$ ${_money.format(_facturacionCliente(c))}',
-            style: const TextStyle(fontWeight: FontWeight.w800, color: _verde),
-          ),
-        ),
-        DataCell(_diasSinCompraWidget(c)),
-        DataCell(_ultimoContactoWidget(c)),
-        DataCell(_contactoIcon(c, 'tiene_llamada', Icons.phone_outlined)),
-        DataCell(_contactoIcon(c, 'tiene_whatsapp', Icons.chat_outlined)),
-        DataCell(_contactoIcon(c, 'tiene_correo', Icons.mail_outline)),
-        DataCell(_contactoIcon(c, 'tiene_visita', Icons.event_outlined)),
-        DataCell(
-          oportunidad
-              ? Text(
-                  montoOportunidad > 0 ? 'US\$ ${_money.format(montoOportunidad)}' : 'ACTIVA',
-                  style: const TextStyle(color: Colors.amber, fontWeight: FontWeight.w900),
-                )
-              : const Text('-', style: TextStyle(color: Colors.grey)),
-        ),
-        DataCell(_estado(c['activo'] == true)),
-        DataCell(
-          PopupMenuButton<String>(
-            tooltip: 'Acciones',
-            onSelected: (value) {
-              if (value == '360') {
-                _abrir360(c);
-              }
-            },
-            itemBuilder: (_) => const [
-              PopupMenuItem(value: '360', child: Text('Ver Cliente 360°')),
-            ],
-          ),
-        ),
-      ],
-    );
-  }
-
-  Widget _clienteCard(Map<String, dynamic> c) {
-    final fecha = _ultimaCompra(c);
-    final oportunidad = _gestionBool(c, 'tiene_oportunidad');
-
-    return Card(
-      margin: const EdgeInsets.only(bottom: 10),
-      elevation: 0,
-      color: Colors.white,
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(14),
-        side: const BorderSide(color: _borde),
-      ),
-      child: Padding(
-        padding: const EdgeInsets.all(14),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              children: [
-                _campanita(c),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: Text(_nombreCliente(c), style: const TextStyle(fontWeight: FontWeight.w800)),
-                ),
-                _estado(c['activo'] == true),
-              ],
-            ),
-            const SizedBox(height: 10),
-            _ultimoContactoWidget(c),
-            const SizedBox(height: 6),
-            Text('RUC: ${_s(c['ruc']).isEmpty ? '-' : _s(c['ruc'])}'),
-            Text('Vendedor: ${_s(c['vendedor']).isEmpty ? '-' : _s(c['vendedor'])}'),
-            Text('Sector: ${_s(c['sector']).isEmpty ? '-' : _s(c['sector'])}'),
-            const SizedBox(height: 6),
-            Wrap(
-              spacing: 8,
-              runSpacing: 8,
-              children: [
-                _estadoGestion('Llamada', _gestionBool(c, 'tiene_llamada'), Icons.phone_outlined),
-                _estadoGestion('WhatsApp', _gestionBool(c, 'tiene_whatsapp'), Icons.chat_outlined),
-                _estadoGestion('Correo', _gestionBool(c, 'tiene_correo'), Icons.mail_outline),
-                _estadoGestion('Visita', _gestionBool(c, 'tiene_visita'), Icons.event_outlined),
-              ],
-            ),
-            const SizedBox(height: 8),
-            Text('Monto / Facturación: US\$ ${_money.format(_facturacionCliente(c))}', style: const TextStyle(color: _verde, fontWeight: FontWeight.w800)),
-            _diasSinCompraWidget(c),
-            Text('Última compra: ${fecha == null ? 'Sin compra registrada' : DateFormat('dd/MM/yyyy').format(fecha)}'),
-            if (oportunidad) ...[
-              const SizedBox(height: 4),
-              const Text('⭐ Oportunidad comercial activa', style: TextStyle(color: Colors.amber, fontWeight: FontWeight.w800)),
-            ],
-            const SizedBox(height: 10),
-            Align(
-              alignment: Alignment.centerRight,
-              child: FilledButton.icon(
-                onPressed: () => Navigator.push(
-                  context,
-                  MaterialPageRoute(builder: (_) => CrmCliente360Page(codigoInicial: _s(c['codigo']))),
-                ),
-                icon: const Icon(Icons.person_search_outlined),
-                label: const Text('Ver Cliente 360°'),
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _estadoGestion(String label, bool activo, IconData icon) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
-      decoration: BoxDecoration(
-        color: activo ? const Color(0xFFE8F7EF) : const Color(0xFFFFEEEE),
-        borderRadius: BorderRadius.circular(20),
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(activo ? Icons.check_circle : Icons.cancel, size: 15, color: activo ? _verde : Colors.red.shade500),
-          const SizedBox(width: 4),
-          Text(label, style: TextStyle(fontSize: 11, fontWeight: FontWeight.w800, color: activo ? _verde : Colors.red.shade600)),
         ],
       ),
     );
-  }
-
-  Widget _estado(bool activo) {
-    return Container(
-      padding: const EdgeInsets.symmetric(
-        horizontal: 9,
-        vertical: 5,
-      ),
-      decoration: BoxDecoration(
-        color: activo
-            ? const Color(0xFFE6F7EF)
-            : const Color(0xFFF1F1F1),
-        borderRadius: BorderRadius.circular(20),
-      ),
-      child: Text(
-        activo ? 'ACTIVO' : 'INACTIVO',
-        style: TextStyle(
-          color: activo ? _verde : Colors.grey.shade700,
-          fontSize: 11,
-          fontWeight: FontWeight.w800,
-        ),
-      ),
-    );
-  }
-
-  void _proximamente(String cliente) {
-    _mensaje('Cliente 360°: $cliente');
   }
 
   @override
   Widget build(BuildContext context) {
     final width = MediaQuery.sizeOf(context).width;
-    final mobile = width < 750;
+    final mobile = width < 900;
 
-    return Theme(
-      data: Theme.of(context).copyWith(
-        scaffoldBackgroundColor: _fondo,
-        textTheme: Theme.of(context).textTheme.apply(fontFamily: 'Inter', bodyColor: const Color(0xFF19344D), displayColor: const Color(0xFF19344D)),
-        colorScheme: Theme.of(context).colorScheme.copyWith(primary: _azul, secondary: _azulClaro),
-      ),
-      child: Scaffold(
-      backgroundColor: _fondo,
-      appBar: AppBar(
-        backgroundColor: Colors.white,
-        foregroundColor: _azul,
-        elevation: 0,
-        title: const Text(
-          'Clientes',
-          style: TextStyle(fontWeight: FontWeight.w800),
-        ),
-        leading: IconButton(
-          tooltip: 'Volver',
-          icon: const Icon(Icons.arrow_back_rounded),
-          onPressed: () => Navigator.of(context).pop(),
-        ),
-        actions: [
-          IconButton(
-            tooltip: 'Actualizar',
-            onPressed: _cargar,
-            icon: const Icon(Icons.refresh),
-          ),
-          const SizedBox(width: 8),
-        ],
-      ),
+    return Scaffold(
+      backgroundColor: const Color(0xFF041E33),
       body: _cargando
           ? const Center(child: CircularProgressIndicator())
           : _error != null
               ? _errorView()
-              : Stack(
-                  children: [
-                    RefreshIndicator(
-                      onRefresh: _cargar,
-                      child: SingleChildScrollView(
-                        physics: const AlwaysScrollableScrollPhysics(),
-                        padding: EdgeInsets.symmetric(horizontal: mobile ? 12 : 16, vertical: mobile ? 12 : 12),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            _encabezado(mobile),
-                            const SizedBox(height: 10),
-                            _gestionTabs(mobile),
-                            const SizedBox(height: 10),
-                            _filtros(mobile),
-                            const SizedBox(height: 10),
-                            _acciones(mobile),
-                            const SizedBox(height: 10),
-                            _resumen(mobile),
-                            const SizedBox(height: 10),
-                            if (mobile) ...[
-                              _tablaOLista(mobile),
-                              const SizedBox(height: 12),
-                              _panelCartera(), const SizedBox(height: 12),
-                              _panelContacto(), const SizedBox(height: 12),
-                              _panelTop5(),
-                            ] else
-                              Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                                Expanded(flex: 4, child: Column(children: [_tablaOLista(mobile), const SizedBox(height: 10), _paginacion()])),
-                                const SizedBox(width: 12),
-                                SizedBox(width: 285, child: Column(children: [_panelCartera(), const SizedBox(height: 10), _panelContacto(), const SizedBox(height: 10), _panelTop5()])),
-                              ]),
-                          ],
-                        ),
-                      ),
-                    ),
-                    if (_procesando)
-                      Positioned.fill(
-                        child: ColoredBox(
-                          color: Colors.black.withValues(alpha: .12),
-                          child: const Center(
-                            child: Card(
-                              child: Padding(
-                                padding: EdgeInsets.all(20),
+              : Container(
+                  color: const Color(0xFF05263E),
+                  child: RefreshIndicator(
+                                onRefresh: _cargar,
+                                child: SingleChildScrollView(
+                                  physics: const AlwaysScrollableScrollPhysics(),
+                                  padding: EdgeInsets.all(mobile ? 12 : 18),
                                 child: Column(
-                                  mainAxisSize: MainAxisSize.min,
+                                  crossAxisAlignment: CrossAxisAlignment.start,
                                   children: [
-                                    CircularProgressIndicator(),
-                                    SizedBox(height: 12),
-                                    Text(
-                                      'Procesando...',
-                                      style: TextStyle(
-                                        fontWeight: FontWeight.w700,
+                                      _pageTitle(),
+                                      const SizedBox(height: 10),
+                                      _kpisNuevo(),
+                                      const SizedBox(height: 12),
+                                      LayoutBuilder(
+                                        builder: (context, c) => c.maxWidth < 900
+                                            ? _facturacionMensualPanel()
+                                            : _facturacionMensualPanel(),
                                       ),
-                                    ),
+                                      const SizedBox(height: 12),
+                                      _filtrosNuevo(),
+                                      const SizedBox(height: 16),
+                                      LayoutBuilder(
+                                        builder: (context, c) {
+                                          if (c.maxWidth < 1100) {
+                                            return Column(children: [
+                                              _darkPanel(
+                                                title: 'Lista de clientes',
+                                                icon: Icons.list_alt_outlined,
+                                                child: Column(children: [
+                                                  _tablaOLista(true),
+                                                  const SizedBox(height: 8),
+                                                  _paginacionNuevo(),
+                                                ]),
+                                              ),
+                                              const SizedBox(height: 14),
+                                              _clientesRecientes(),
+                                              const SizedBox(height: 14),
+                                              _estadoCartera(),
+                                            ]);
+                                          }
+                                          return Column(children: [
+                                            Row(
+                                              crossAxisAlignment: CrossAxisAlignment.start,
+                                              children: [
+                                                Expanded(
+                                                  flex: 7,
+                                                  child: _darkPanel(
+                                                    title: 'Lista de clientes',
+                                                    icon: Icons.list_alt_outlined,
+                                                    child: Column(children: [
+                                                      _tablaOLista(false),
+                                                      const SizedBox(height: 8),
+                                                      _paginacionNuevo(),
+                                                    ]),
+                                                  ),
+                                                ),
+                                                const SizedBox(width: 14),
+                                                Expanded(flex: 3, child: Column(children: [
+                                                  _clientesRecientes(),
+                                                  const SizedBox(height: 14),
+                                                  _estadoCartera(),
+                                                ])),
+                                              ],
+                                            ),
+                                          ]);
+                                        },
+                                      ),
                                   ],
                                 ),
                               ),
                             ),
                           ),
-                        ),
-                      ),
-                  ],
-                ),
-      ),
     );
   }
+}
+
+class _MonthlyBillingPainter extends CustomPainter {
+  final List<double> valores;
+  final List<String> labels;
+
+  _MonthlyBillingPainter({required this.valores, required this.labels});
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final left = 38.0;
+    final right = 8.0;
+    final top = 24.0;
+    final bottom = 30.0;
+    final chartW = math.max(10, size.width - left - right);
+    final chartH = math.max(10, size.height - top - bottom);
+    final maxValue = valores.fold<double>(0, (a, b) => math.max(a, b));
+    final maxY = maxValue <= 0 ? 1.0 : maxValue * 1.15;
+
+    final gridPaint = Paint()..color = const Color(0xFF174D70)..strokeWidth = 1;
+    final barPaint = Paint()..color = const Color(0xFF1597E5);
+    final linePaint = Paint()
+      ..color = const Color(0xFF8ED8FF)
+      ..strokeWidth = 2
+      ..style = PaintingStyle.stroke;
+    final pointPaint = Paint()..color = Colors.white;
+
+    for (var i = 0; i <= 4; i++) {
+      final y = (top + chartH - chartH * i / 4).toDouble();
+      canvas.drawLine(Offset(left, y), Offset(size.width - right, y), gridPaint);
+      final value = (maxY * i / 4).toDouble();
+      final label = value >= 1000000
+          ? 'US\$ ${(value / 1000000).toStringAsFixed(1)}M'
+          : value >= 1000
+              ? 'US\$ ${(value / 1000).toStringAsFixed(0)}K'
+              : '0';
+      final tp = TextPainter(
+        text: TextSpan(text: label, style: const TextStyle(color: Colors.white54, fontSize: 9)),
+        textDirection: ui.TextDirection.ltr,
+      )..layout(maxWidth: left - 4);
+      tp.paint(canvas, Offset(0, y - tp.height / 2));
+    }
+
+    final points = <Offset>[];
+    final slot = (chartW / 12).toDouble();
+    final barW = math.min(28.0, slot * .52).toDouble();
+    for (var i = 0; i < 12; i++) {
+      final x = left + slot * i + slot / 2;
+      final value = valores[i];
+      final h = (chartH * value / maxY).toDouble();
+      final y = (top + chartH - h).toDouble();
+      canvas.drawRect(Rect.fromLTWH(x - barW / 2, y, barW, h), barPaint);
+      points.add(Offset(x, y));
+
+      final label = labels[i];
+      final tp = TextPainter(
+        text: TextSpan(text: label, style: const TextStyle(color: Colors.white70, fontSize: 9, fontWeight: FontWeight.w600)),
+        textDirection: ui.TextDirection.ltr,
+      )..layout();
+      tp.paint(canvas, Offset(x - tp.width / 2, size.height - bottom + 7));
+
+      if (value > 0) {
+        final monto = value >= 1000000
+            ? 'US\$ ${(value / 1000000).toStringAsFixed(2)} M'
+            : value >= 1000
+                ? 'US\$ ${(value / 1000).toStringAsFixed(0)} K'
+                : 'US\$ ${value.toStringAsFixed(0)}';
+        final mt = TextPainter(
+          text: TextSpan(text: monto, style: const TextStyle(color: Colors.white, fontSize: 8, fontWeight: FontWeight.w800)),
+          textDirection: ui.TextDirection.ltr,
+        )..layout(maxWidth: slot + 14);
+        mt.paint(canvas, Offset(x - mt.width / 2, math.max(1.0, y - mt.height - 2.0)));
+      }
+    }
+
+    final path = Path();
+    for (var i = 0; i < points.length; i++) {
+      if (i == 0) {
+        path.moveTo(points[i].dx, points[i].dy);
+      } else {
+        path.lineTo(points[i].dx, points[i].dy);
+      }
+    }
+    canvas.drawPath(path, linePaint);
+    for (final p in points) {
+      canvas.drawCircle(p, 3.5, pointPaint);
+      canvas.drawCircle(p, 2.2, Paint()..color = const Color(0xFF1597E5));
+    }
+  }
+
+  @override
+  bool shouldRepaint(covariant _MonthlyBillingPainter oldDelegate) =>
+      oldDelegate.valores != valores;
+}
+
+// Debe estar fuera de la clase para que compute pueda ejecutarlo en un isolate.
+// Devuelve solo tipos simples, compatibles con el paso de mensajes entre isolates.
+List<List<String>> _decodificarFilasExcel(Uint8List bytes) {
+  final libro = Excel.decodeBytes(bytes);
+  if (libro.tables.isEmpty) return <List<String>>[];
+  final hoja = libro.tables[libro.tables.keys.first];
+  if (hoja == null) return <List<String>>[];
+  return hoja.rows
+      .map((fila) => fila
+          .map((celda) => celda?.value?.toString().trim() ?? '')
+          .toList(growable: false))
+      .toList(growable: false);
+}
+
+class _DonutPainter extends CustomPainter {
+  final double activos;
+  final double inactivos;
+  final double oportunidades;
+  _DonutPainter(this.activos, this.inactivos, this.oportunidades);
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final total = activos + inactivos;
+    final center = Offset(size.width / 2, size.height / 2);
+    final radius = size.shortestSide * .34;
+    final stroke = size.shortestSide * .12;
+    final rect = Rect.fromCircle(center: center, radius: radius);
+    final track = Paint()
+      ..color = const Color(0xFF173D56)
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = stroke;
+    canvas.drawCircle(center, radius, track);
+    if (total <= 0) return;
+    final values = [activos, inactivos];
+    final colors = [const Color(0xFF35FFB0), const Color(0xFFFF4D6D)];
+    var start = -math.pi / 2;
+    for (var i = 0; i < values.length; i++) {
+      if (values[i] <= 0) continue;
+      final sweep = values[i] / total * math.pi * 2;
+      final glow = Paint()
+        ..color = colors[i].withValues(alpha: .42)
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = stroke + 5
+        ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 7);
+      canvas.drawArc(rect, start, sweep, false, glow);
+      final paint = Paint()
+        ..color = colors[i]
+        ..style = PaintingStyle.stroke
+        ..strokeCap = StrokeCap.round
+        ..strokeWidth = stroke;
+      canvas.drawArc(rect, start, sweep, false, paint);
+      start += sweep;
+    }
+  }
+
+  @override
+  bool shouldRepaint(covariant _DonutPainter oldDelegate) =>
+      oldDelegate.activos != activos || oldDelegate.inactivos != inactivos ||
+      oldDelegate.oportunidades != oportunidades;
 }

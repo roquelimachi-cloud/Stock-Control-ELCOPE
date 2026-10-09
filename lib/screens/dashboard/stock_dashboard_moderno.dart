@@ -20,8 +20,8 @@ import '../../services/supabase/supabase_service.dart';
 import '../../services/pdf/stock_dashboard_pdf_service.dart';
 import '../produccion/produccion_gerencial_dashboard.dart';
 import '../cotizaciones/cotizaciones_page.dart';
-import '../../features/crm/dashboard/crm_dashboard_page.dart';
-
+//import '../../features/crm/dashboard/crm_dashboard_page.dart';
+import '../../features/crm/shell/crm_shell_page.dart';
 class DashboardPage extends StatefulWidget {
   const DashboardPage({super.key});
 
@@ -1629,7 +1629,7 @@ if (_puedeVer('crm'))
       Navigator.push(
         context,
         MaterialPageRoute(
-          builder: (_) => const CrmDashboardPage(),
+          builder: (_) => const CrmShellPage(),
         ),
       );
     },

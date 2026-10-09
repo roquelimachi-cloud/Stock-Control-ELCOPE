@@ -3,37 +3,730 @@ import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import '../../../services/supabase/supabase_service.dart';
 import '../../../services/sesion.dart';
-import '../facturacion/facturacion_importacion_page.dart';
-import '../cliente_360/crm_cliente_360_page.dart';
 import '../clientes/crm_clientes_page.dart';
-import '../actividades/crm_actividades_page.dart';
-import '../cobranza/crm_cobranza_page.dart';
-import '../comisiones/crm_comisiones_page.dart';
-import '../reportes/crm_reportes_page.dart';
-import '../seguimientos/crm_seguimientos_page.dart';
-import '../oportunidades/crm_oportunidades_page.dart';
-import '../tareas/crm_tareas_page.dart';
-import '../catalogos/crm_catalogos_page.dart';
+import '../cliente_360/crm_cliente_360_page.dart';
 import '../visitas/crm_visitas_page.dart';
-
-// Colores compartidos por el dashboard y sus CustomPainter/widgets auxiliares.
-const Color _azul = Color(0xFF0B3B63);
-const Color _azulClaro = Color(0xFF1468A8);
-const Color _verde = Color(0xFF0A9B61);
-const Color _fondo = Color(0xFFF4F7FA);
+import '../seguimientos/crm_seguimientos_page.dart';
+import '../facturacion/facturacion_importacion_page.dart';
+import '../oportunidades/crm_oportunidades_page.dart';
 
 class CrmDashboardPage extends StatefulWidget {
-  const CrmDashboardPage({super.key});
+  const CrmDashboardPage({Key? key, this.embebido = false}) : super(key: key);
+
+  final bool embebido;
 
   @override
   State<CrmDashboardPage> createState() => _CrmDashboardPageState();
 }
 
 class _CrmDashboardPageState extends State<CrmDashboardPage> {
-  static const _azul = Color(0xFF0B3B63);
-  static const _azulClaro = Color(0xFF1468A8);
-  static const _verde = Color(0xFF0A9B61);
+  static const _azul = Color(0xFF063B63);
+  static const _azulClaro = Color(0xFF0D6EAA);
+  static const _azulFondo = Color(0xFF071F35);
+  static const _verde = Color(0xFF19C979);
+  static const _borde = Color(0xFF234764);
+  final _db = SupabaseService.client;
+  final _money = NumberFormat('#,##0.00', 'en_US');
+  final _fecha = DateFormat('dd/MM/yyyy');
+
+  bool _cargando = true;
+  String? _error;
+  Map<String, dynamic> _dashboard = {};
+  List<Map<String, dynamic>> _oportunidades = [];
+  List<Map<String, dynamic>> _agenda = [];
+  List<Map<String, dynamic>> _seguimientos = [];
+  List<Map<String, dynamic>> _clientesRecientes = [];
+  Map<String, dynamic> _cartera = {};
+
+  String get _nombreUsuario {
+    final n = Sesion.nombre.trim();
+    if (n.isNotEmpty) return n;
+    final v = Sesion.vendedor.trim();
+    return v.isEmpty ? 'Usuario' : v;
+  }
+
+  String get _nombreCorto => _nombreUsuario.split(RegExp(r'\s+')).first;
+
+  String get _saludo {
+    final hora = DateTime.now().hour;
+    if (hora >= 5 && hora < 12) return 'Buenos días';
+    if (hora >= 12 && hora < 19) return 'Buenas tardes';
+    return 'Buenas noches';
+  }
+
+  String get _periodoActualLabel {
+    final ahora = DateTime.now();
+    const meses = [
+      'Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio',
+      'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre',
+    ];
+    return '${meses[ahora.month - 1]} ${ahora.year}';
+  }
+
+  String get _vendedorDashboard {
+    final vendedor = Sesion.vendedor.trim();
+    final rol = Sesion.rol.trim().toLowerCase();
+
+    // Un usuario que además es vendedor debe entrar al dashboard
+    // con su cartera comercial. Las jefaturas y Gerencia mantienen
+    // su alcance especial.
+    if (rol == 'jefe lima' ||
+        rol == 'jefe provincia' ||
+        rol == 'gerencia' ||
+        rol == 'gerencia comercial') {
+      return 'TODOS';
+    }
+
+    return vendedor.isEmpty ? 'TODOS' : vendedor;
+  }
+
+  String get _alcanceFacturacionLabel {
+    final rol = (_s(_dashboard['rol']).toLowerCase());
+    if (Sesion.vendedor.trim().toLowerCase() == 'michael roque') {
+      return 'Michael Roque · Asesor Comercial';
+    }
+    final canal = _s(_dashboard['canal']).toUpperCase();
+    if (rol == 'administrador' || rol == 'administrator' || rol == 'gerencia' || rol == 'gerencia comercial') {
+      return 'Total empresa';
+    }
+    if (rol == 'jefe lima') {
+      final n = (_dashboard['vendedores_permitidos'] is List) ? (_dashboard['vendedores_permitidos'] as List).length : 0;
+      return 'LIMA · ${n == 1 ? '1 vendedor' : '$n vendedores'}';
+    }
+    if (rol == 'jefe provincia') {
+      final n = (_dashboard['vendedores_permitidos'] is List) ? (_dashboard['vendedores_permitidos'] as List).length : 0;
+      return 'PROVINCIAS · ${n == 1 ? '1 vendedor' : '$n vendedores'}';
+    }
+    if (canal.isNotEmpty && canal != 'TODOS') return canal;
+    return _nombreUsuario;
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    _cargar();
+  }
+
+  double _num(dynamic v) {
+    if (v is num) return v.toDouble();
+    return double.tryParse(v?.toString().replaceAll(',', '').trim() ?? '') ?? 0;
+  }
+
+  String _s(dynamic v) => v?.toString().trim() ?? '';
+
+  DateTime? _date(dynamic v) => v == null ? null : DateTime.tryParse(v.toString());
+
+  Future<void> _cargar() async {
+    if (!mounted) return;
+    setState(() { _cargando = true; _error = null; });
+
+    Object? ultimoError;
+
+    // Alcance comercial:
+    // Michael Roque es Administrador a nivel de sistema, pero también es
+    // Asesor Comercial. Su dashboard debe mostrar únicamente su vendedor.
+    // El dashboard hace varias agregaciones en Supabase. Si la conexión
+    // tiene un timeout transitorio, reintentamos silenciosamente antes de
+    // mostrar el aviso al usuario. La función SQL también está optimizada
+    // para evitar el 57014 que aparecía al abrir el CRM.
+    for (int intento = 1; intento <= 2; intento++) {
+      try {
+        final result = await _db.rpc('crm_obtener_dashboard_resumen', params: {
+          'p_periodo': '${DateTime.now().year}-${DateTime.now().month.toString().padLeft(2, '0')}',
+          'p_vendedor': _vendedorDashboard,
+          'p_busqueda': '',
+          'p_usuario_id': Sesion.idUsuario,
+        });
+
+        final data = result is Map
+            ? Map<String, dynamic>.from(result)
+            : <String, dynamic>{};
+
+        if (!mounted) return;
+        setState(() {
+          _dashboard = data;
+          _oportunidades = _lista(data['oportunidades']);
+          _agenda = _lista(data['agenda']);
+          _seguimientos = _lista(data['seguimientos']);
+          _clientesRecientes = _lista(data['clientes_recientes']);
+          _cartera = data['cartera'] is Map
+              ? Map<String, dynamic>.from(data['cartera'])
+              : <String, dynamic>{};
+          _cargando = false;
+          _error = null;
+        });
+        return;
+      } catch (e) {
+        ultimoError = e;
+        if (intento < 2) {
+          await Future<void>.delayed(const Duration(milliseconds: 350));
+        }
+      }
+    }
+
+    if (!mounted) return;
+    setState(() {
+      _cargando = false;
+      _error = ultimoError?.toString() ?? 'No se pudo cargar la información.';
+    });
+  }
+
+  List<Map<String, dynamic>> _lista(dynamic value) {
+    if (value is! List) return [];
+    return value.whereType<Map>().map((e) => Map<String, dynamic>.from(e)).toList();
+  }
+
+  Map<String, dynamic> get _kpi => _dashboard['kpis'] is Map ? Map<String, dynamic>.from(_dashboard['kpis']) : {};
+  List<Map<String, dynamic>> get _facturas => _lista(_dashboard['recientes']);
+  List<Map<String, dynamic>> get _facturacionMensual => _lista(_dashboard['mensual']);
+
+  List<Map<String, dynamic>> get _facturacionEsteAnio {
+    final anio = DateTime.now().year;
+    final porMes = <int, double>{for (int i = 1; i <= 12; i++) i: 0};
+    for (final row in _facturacionMensual) {
+      final periodo = _s(row['periodo']);
+      final partes = periodo.split('-');
+      if (partes.length != 2 || int.tryParse(partes[0]) != anio) continue;
+      final mes = int.tryParse(partes[1]);
+      if (mes != null && mes >= 1 && mes <= 12) {
+        porMes[mes] = _num(row['monto']);
+      }
+    }
+    return [
+      for (int mes = 1; mes <= 12; mes++)
+        {'mes': mes, 'monto': porMes[mes] ?? 0.0},
+    ];
+  }
+  double get _facturacion => _num(_kpi['facturacion']);
+  int _carteraInt(String key) => (_cartera[key] as num?)?.toInt() ?? 0;
+  int get _carteraTotal => _carteraInt('total');
+  int get _sinContacto => _carteraInt('sin_contacto');
+  int get _conContacto => (_carteraTotal - _sinContacto).clamp(0, _carteraTotal);
+  int get _conOportunidad => _carteraInt('con_oportunidad');
+
+  String _hora(String value) {
+    if (value.isEmpty) return '--:--';
+    return value.length >= 5 ? value.substring(0, 5) : value;
+  }
+  int get _clientes => (_kpi['clientes'] as num?)?.toInt() ?? 0;
+  int get _oportunidadesCount => (_kpi['oportunidades'] as num?)?.toInt() ?? _oportunidades.length;
+  int get _facturasCount => (_kpi['facturas'] as num?)?.toInt() ?? _facturas.length;
+  int get _actividadesHoy => (_kpi['actividades_hoy'] as num?)?.toInt() ?? 0;
+
+  void _abrir(Widget pagina) {
+    Navigator.of(context).push(MaterialPageRoute(builder: (_) => pagina));
+  }
+
+  void _abrirClientes() => _abrir(const CrmClientesPage());
+  void _abrirVisitas() => _abrir(const CrmVisitasPage());
+  void _abrirSeguimientos() => _abrir(const CrmSeguimientosPage());
+  void _abrirFacturacion() => _abrir(const FacturacionImportacionPage());
+
+  void _abrirFacturaEnCliente360(Map<String, dynamic> f) {
+    final codigoCliente = _s(f['codigo_cliente']).trim();
+    final numeroFactura = _s(f['numero_factura']).trim();
+
+    if (codigoCliente.isEmpty || numeroFactura.isEmpty) {
+      _abrirFacturacion();
+      return;
+    }
+
+    _abrir(
+      CrmCliente360FacturaPage(
+        codigoCliente: codigoCliente,
+        numeroFactura: numeroFactura,
+        nombreCliente: _s(f['cliente']),
+      ),
+    );
+  }
+  void _abrirOportunidades() => _abrir(const CrmOportunidadesPage());
+
+  @override
+  Widget build(BuildContext context) {
+    final body = _cargando
+        ? const Center(child: CircularProgressIndicator(color: _verde))
+        : _error != null
+            ? _errorView()
+            : _contenido();
+    if (widget.embebido) return ColoredBox(color: _azulFondo, child: body);
+    return Scaffold(backgroundColor: _azulFondo, body: body);
+  }
+
+  Widget _errorView() => Center(child: Container(margin: const EdgeInsets.all(30), padding: const EdgeInsets.all(24), decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(16)), child: Column(mainAxisSize: MainAxisSize.min, children: [const Icon(Icons.error_outline, color: Colors.red, size: 45), const SizedBox(height: 10), const Text('No se pudo cargar el dashboard CRM', style: TextStyle(fontWeight: FontWeight.w900)), const SizedBox(height: 8), Text(_error!, textAlign: TextAlign.center), const SizedBox(height: 14), FilledButton.icon(onPressed: _cargar, icon: const Icon(Icons.refresh), label: const Text('Reintentar'))])));
+
+  Widget _contenido() {
+    final w = MediaQuery.sizeOf(context).width;
+    final mobile = w < 900;
+    return RefreshIndicator(
+      onRefresh: _cargar,
+      color: _verde,
+      child: SingleChildScrollView(
+        physics: const AlwaysScrollableScrollPhysics(),
+        padding: EdgeInsets.fromLTRB(mobile ? 14 : 18, 16, mobile ? 14 : 18, 28),
+        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          _bienvenida(mobile),
+          const SizedBox(height: 14),
+          _kpis(mobile),
+          const SizedBox(height: 14),
+          _panelFacturacionAnual(mobile),
+          const SizedBox(height: 14),
+          _principal(mobile),
+          const SizedBox(height: 14),
+          _inferior(mobile),
+        ]),
+      ),
+    );
+  }
+
+  Widget _bienvenida(bool mobile) {
+    return Container(
+      height: mobile ? 155 : 170,
+      clipBehavior: Clip.antiAlias,
+      decoration: BoxDecoration(borderRadius: BorderRadius.circular(18), gradient: const LinearGradient(colors: [Color(0xFF07365B), Color(0xFF0A6799), Color(0xFF063B63)])),
+      child: Stack(children: [
+        Positioned(right: -15, bottom: -55, child: Icon(Icons.landscape_rounded, size: 280, color: Colors.white.withValues(alpha: .10))),
+        Positioned(right: 25, top: 25, child: Icon(Icons.wb_sunny_outlined, size: 90, color: Colors.white.withValues(alpha: .10))),
+        Padding(padding: const EdgeInsets.fromLTRB(28, 25, 300, 20), child: Column(crossAxisAlignment: CrossAxisAlignment.start, mainAxisAlignment: MainAxisAlignment.center, children: [
+          Text('$_saludo, $_nombreCorto', style: TextStyle(color: Colors.white, fontSize: mobile ? 27 : 32, fontWeight: FontWeight.w900)),
+          const SizedBox(height: 5),
+          const Text('Aquí tienes el resumen de tu actividad comercial de hoy.', style: TextStyle(color: Colors.white, fontSize: 15)),
+          const SizedBox(height: 14),
+          Row(children: [
+            _pill(Icons.trending_up_rounded, 'Más ventas'),
+            const SizedBox(width: 8),
+            _pill(Icons.groups_rounded, 'Mejores clientes'),
+            const SizedBox(width: 8),
+            _pill(Icons.track_changes_rounded, 'Nuevas oportunidades'),
+          ]),
+        ])),
+        Positioned(right: 24, top: 20, child: Container(padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10), decoration: BoxDecoration(color: _verde, borderRadius: BorderRadius.circular(10)), child: const Text('ELCOPE', style: TextStyle(color: Colors.white, fontSize: 20, fontWeight: FontWeight.w900)))),
+      ]),
+    );
+  }
+
+  Widget _pill(IconData icon, String text) => Container(padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 6), decoration: BoxDecoration(color: Colors.black.withValues(alpha: .14), border: Border.all(color: _verde.withValues(alpha: .55)), borderRadius: BorderRadius.circular(20)), child: Row(mainAxisSize: MainAxisSize.min, children: [Icon(icon, color: _verde, size: 15), const SizedBox(width: 5), Text(text, style: const TextStyle(color: Colors.white, fontSize: 10, fontWeight: FontWeight.w800))]));
+
+  Widget _kpis(bool mobile) {
+    final data = [
+      ['Facturación $_alcanceFacturacionLabel / $_periodoActualLabel', 'US\$ ${_money.format(_facturacion)}', Icons.bar_chart_rounded, const Color(0xFF1475D1)],
+      ['Clientes activos', '$_clientes', Icons.groups_rounded, const Color(0xFF198CE0)],
+      ['Oportunidades', '$_oportunidadesCount', Icons.track_changes_rounded, const Color(0xFFF5A623)],
+      ['Cotizaciones', '${_kpi['cotizaciones'] ?? 0}', Icons.description_rounded, const Color(0xFF8758E9)],
+      ['Facturas emitidas', '$_facturasCount', Icons.receipt_long_rounded, const Color(0xFF19B879)],
+    ];
+    return LayoutBuilder(builder: (_, c) {
+      final cols = c.maxWidth >= 1250 ? 5 : c.maxWidth >= 800 ? 3 : 1;
+      return GridView.count(crossAxisCount: cols, shrinkWrap: true, physics: const NeverScrollableScrollPhysics(), crossAxisSpacing: 10, mainAxisSpacing: 10, childAspectRatio: mobile ? 3.8 : 2.15, children: [for (final x in data) _kpiCard(x[0] as String, x[1] as String, x[2] as IconData, x[3] as Color)]);
+    });
+  }
+
+  Widget _kpiCard(String title, String value, IconData icon, Color color) => Container(padding: const EdgeInsets.all(12), decoration: BoxDecoration(color: const Color(0xFF0C2B46), border: Border.all(color: _borde), borderRadius: BorderRadius.circular(12)), child: Row(children: [Container(width: 48, height: 48, decoration: BoxDecoration(color: color.withValues(alpha: .16), borderRadius: BorderRadius.circular(12)), child: Icon(icon, color: color, size: 25)), const SizedBox(width: 10), Expanded(child: Column(mainAxisAlignment: MainAxisAlignment.center, crossAxisAlignment: CrossAxisAlignment.start, children: [Text(title, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(color: Colors.white70, fontSize: 11)), const SizedBox(height: 2), Text(value, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.w900))]))]));
+
+  Widget _panelFacturacionAnual(bool mobile) {
+    final datos = _facturacionEsteAnio;
+    final total = datos.fold<double>(0, (sum, e) => sum + _num(e['monto']));
+    final mesesConFacturacion = datos.where((e) => _num(e['monto']) > 0).length;
+    return Container(
+      width: double.infinity,
+      decoration: BoxDecoration(
+        color: const Color(0xFF0A2943),
+        border: Border.all(color: _borde),
+        borderRadius: BorderRadius.circular(14),
+      ),
+      padding: const EdgeInsets.fromLTRB(16, 14, 16, 16),
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Row(children: [
+          const Icon(Icons.bar_chart_rounded, color: _verde, size: 22),
+          const SizedBox(width: 8),
+          const Expanded(child: Text('Facturación por mes', style: TextStyle(color: Colors.white, fontSize: 17, fontWeight: FontWeight.w900))),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 11, vertical: 7),
+            decoration: BoxDecoration(
+              color: Colors.white.withValues(alpha: .08),
+              border: Border.all(color: Colors.white24),
+              borderRadius: BorderRadius.circular(9),
+            ),
+            child: Row(mainAxisSize: MainAxisSize.min, children: [
+              _miniDato('Año', '${DateTime.now().year}'),
+              const SizedBox(width: 14),
+              _miniDato('Total', 'US\$ ${_money.format(total)}'),
+              const SizedBox(width: 14),
+              _miniDato('Meses', '$mesesConFacturacion'),
+            ]),
+          ),
+        ]),
+        const SizedBox(height: 4),
+        const Text('Facturación acumulada por mes del año actual', style: TextStyle(color: Colors.white60, fontSize: 10, fontWeight: FontWeight.w600)),
+        const SizedBox(height: 8),
+        SizedBox(
+          height: mobile ? 285 : 275,
+          child: CustomPaint(
+            painter: _FacturacionAnualPainter(
+              values: [for (final e in datos) _num(e['monto'])],
+              labels: [for (final e in datos) _mesCorto(_num(e['mes']).toInt())],
+            ),
+            child: const SizedBox.expand(),
+          ),
+        ),
+      ]),
+    );
+  }
+
+  Widget _miniDato(String titulo, String valor) => Column(
+    crossAxisAlignment: CrossAxisAlignment.end,
+    children: [
+      Text(titulo, style: const TextStyle(color: Colors.white54, fontSize: 8)),
+      const SizedBox(height: 1),
+      Text(valor, style: const TextStyle(color: Colors.white, fontSize: 10.5, fontWeight: FontWeight.w900)),
+    ],
+  );
+
+  String _mesCorto(int mes) {
+    const nombres = ['ENE', 'FEB', 'MAR', 'ABR', 'MAY', 'JUN', 'JUL', 'AGO', 'SEP', 'OCT', 'NOV', 'DIC'];
+    return mes >= 1 && mes <= 12 ? nombres[mes - 1] : '';
+  }
+
+  Widget _principal(bool mobile) {
+    if (mobile) return Column(children: [_pipeline(), const SizedBox(height: 12), _agendaPanel(), const SizedBox(height: 12), _seguimientosPanel()]);
+    return Row(crossAxisAlignment: CrossAxisAlignment.start, children: [Expanded(flex: 7, child: _pipeline()), const SizedBox(width: 12), Expanded(flex: 3, child: Column(children: [_agendaPanel(), const SizedBox(height: 12), _seguimientosPanel()]))]);
+  }
+
+  Widget _panel(String title, IconData icon, Widget child, {String? action, VoidCallback? onAction}) => Container(decoration: BoxDecoration(color: const Color(0xFF0A2943), border: Border.all(color: _borde), borderRadius: BorderRadius.circular(14)), padding: const EdgeInsets.fromLTRB(14, 13, 14, 14), child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [Row(children: [Icon(icon, color: Colors.white, size: 21), const SizedBox(width: 8), Expanded(child: Text(title, style: const TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.w900))), if (action != null) InkWell(onTap: onAction, borderRadius: BorderRadius.circular(6), child: Padding(padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 3), child: Text(action, style: const TextStyle(color: _verde, fontSize: 11, fontWeight: FontWeight.w800))))]), const SizedBox(height: 11), child]));
+
+  Widget _pipeline() {
+    final etapas = ['NUEVA', 'COTIZACIÓN', 'NEGOCIACIÓN', 'FACTURA'];
+    final colores = [const Color(0xFF69A8FF), const Color(0xFF72B7F2), const Color(0xFFFFC94D), const Color(0xFF42D89A)];
+    return _panel('Pipeline de oportunidades', Icons.track_changes_rounded, SizedBox(height: 360, child: LayoutBuilder(builder: (_, c) {
+      final cols = c.maxWidth >= 850 ? 4 : 2;
+      return GridView.builder(shrinkWrap: true, physics: const NeverScrollableScrollPhysics(), gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(crossAxisCount: cols, crossAxisSpacing: 7, mainAxisSpacing: 7, childAspectRatio: cols == 4 ? .70 : 1.1), itemCount: etapas.length, itemBuilder: (_, i) => _pipelineCol(etapas[i], colores[i]));
+    })), action: 'Ver oportunidades', onAction: _abrirOportunidades);
+  }
+
+  Widget _pipelineCol(String etapa, Color color) {
+    // FACTURA se alimenta directamente de las facturas reales del mes.
+    // Las demás columnas se alimentan de crm_oportunidades.
+    if (etapa == 'FACTURA') {
+      final facturas = _facturas.take(4).toList();
+      return Container(
+        decoration: BoxDecoration(
+          color: color.withValues(alpha: .12),
+          border: Border.all(color: color.withValues(alpha: .40)),
+          borderRadius: BorderRadius.circular(9),
+        ),
+        padding: const EdgeInsets.all(7),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(etapa, style: TextStyle(color: color, fontSize: 12, fontWeight: FontWeight.w900)),
+            const SizedBox(height: 6),
+            if (facturas.isEmpty)
+              const Expanded(child: Center(child: Text('Sin facturas del mes', style: TextStyle(color: Colors.white54, fontSize: 10))))
+            else
+              Expanded(child: ListView(children: [for (final f in facturas) _facturaPipelineCard(f, color)])),
+          ],
+        ),
+      );
+    }
+
+    final lista = _oportunidades.where((o) => _etapaPipeline(o['etapa']) == etapa).take(4).toList();
+    return Container(
+      decoration: BoxDecoration(color: color.withValues(alpha: .12), border: Border.all(color: color.withValues(alpha: .40)), borderRadius: BorderRadius.circular(9)),
+      padding: const EdgeInsets.all(7),
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Text(etapa, style: TextStyle(color: color, fontSize: 12, fontWeight: FontWeight.w900)),
+        const SizedBox(height: 6),
+        if (lista.isEmpty)
+          const Expanded(child: Center(child: Text('Sin oportunidades', style: TextStyle(color: Colors.white54, fontSize: 10))))
+        else
+          Expanded(child: ListView(children: [for (final o in lista) _oppCard(o, color)])),
+      ]),
+    );
+  }
+
+  Widget _facturaPipelineCard(Map<String, dynamic> f, Color color) {
+    final fecha = _date(f['fecha_factura']);
+    final cliente = _s(f['cliente']).isEmpty ? _s(f['codigo_cliente']) : _s(f['cliente']);
+    final numero = _s(f['numero_factura']).isEmpty ? 'Factura emitida' : _s(f['numero_factura']);
+    final monto = _num(f['monto']);
+    return InkWell(
+      onTap: () => _abrirFacturaEnCliente360(f),
+      borderRadius: BorderRadius.circular(8),
+      child: Container(
+        margin: const EdgeInsets.only(bottom: 6),
+        padding: const EdgeInsets.all(8),
+        decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(8)),
+        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Row(children: [
+            Expanded(child: Text(cliente.isEmpty ? 'Cliente' : cliente, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(color: _azul, fontSize: 10, fontWeight: FontWeight.w900))),
+            const Icon(Icons.receipt_long_rounded, color: _verde, size: 13),
+          ]),
+          const SizedBox(height: 2),
+          Text(numero, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(color: Colors.black54, fontSize: 9)),
+          const SizedBox(height: 3),
+          Text('US\$ ${_money.format(monto)}', style: const TextStyle(color: _azul, fontSize: 11, fontWeight: FontWeight.w900)),
+          const SizedBox(height: 3),
+          Row(children: [
+            Expanded(child: Text(fecha == null ? _nombreUsuario : _fecha.format(fecha), style: const TextStyle(color: Colors.black54, fontSize: 8))),
+            Container(padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 2), decoration: BoxDecoration(color: color.withValues(alpha: .16), borderRadius: BorderRadius.circular(5)), child: const Text('FACTURADA', style: TextStyle(color: _verde, fontSize: 7.5, fontWeight: FontWeight.w900))),
+          ]),
+        ]),
+      ),
+    );
+  }
+
+  String _etapaPipeline(dynamic value) {
+    final etapa = _s(value).toUpperCase();
+    if (etapa.contains('FACTURA') || etapa.contains('GANAD')) return 'FACTURA';
+    if (etapa.contains('NEGOCI')) return 'NEGOCIACIÓN';
+    if (etapa.contains('COTIZ') || etapa.contains('PROPUESTA')) return 'COTIZACIÓN';
+    return 'NUEVA';
+  }
+
+  Widget _oppCard(Map<String, dynamic> o, Color color) {
+    final monto = _num(o['monto_estimado']);
+    final cliente = _s(o['cliente']).isEmpty ? (_s(o['codigo_cliente']).isEmpty ? 'Cliente' : _s(o['codigo_cliente'])) : _s(o['cliente']);
+    return InkWell(
+      onTap: _abrirOportunidades,
+      borderRadius: BorderRadius.circular(8),
+      child: Container(
+        margin: const EdgeInsets.only(bottom: 6),
+        padding: const EdgeInsets.all(8),
+        decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(8)),
+        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Row(children: [
+            Expanded(child: Text(_s(o['titulo']).isEmpty ? 'Oportunidad' : _s(o['titulo']), maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(color: _azul, fontSize: 10, fontWeight: FontWeight.w900))),
+            const Icon(Icons.open_in_new_rounded, color: _azul, size: 13),
+          ]),
+          Text(cliente, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(color: Colors.black54, fontSize: 9)),
+          const SizedBox(height: 3),
+          Text('US\$ ${_money.format(monto)}', style: TextStyle(color: _azul, fontSize: 11, fontWeight: FontWeight.w900)),
+          const SizedBox(height: 3),
+          Row(children: [
+            Expanded(child: Text(_s(o['vendedor']).isEmpty ? _nombreUsuario : _s(o['vendedor']), maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(color: Colors.black54, fontSize: 8))),
+            Container(padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 2), decoration: BoxDecoration(color: color.withValues(alpha: .16), borderRadius: BorderRadius.circular(5)), child: Text('${_num(o['probabilidad']).toInt()}%', style: TextStyle(color: color, fontSize: 8, fontWeight: FontWeight.w900)))
+          ]),
+        ]),
+      ),
+    );
+  }
+
+  Widget _agendaPanel() {
+    final hoy = DateTime.now();
+    final lista = _agenda.where((v) { final d = _date(v['fecha_visita']); return d == null || (d.year == hoy.year && d.month == hoy.month && d.day == hoy.day); }).take(5).toList();
+    return _panel('Mi agenda de hoy', Icons.calendar_month_rounded, lista.isEmpty ? const SizedBox(height: 130, child: Center(child: Text('No hay visitas programadas para hoy.', style: TextStyle(color: Colors.white54, fontSize: 11)))) : Column(children: [for (final v in lista) _agendaRow(v)]), action: 'Ver calendario', onAction: _abrirVisitas);
+  }
+
+  Widget _agendaRow(Map<String, dynamic> v) => Container(margin: const EdgeInsets.only(bottom: 7), padding: const EdgeInsets.symmetric(vertical: 5), child: Row(children: [SizedBox(width: 43, child: Text(_s(v['hora_programada']).isEmpty ? '--:--' : _hora(_s(v['hora_programada'])), style: const TextStyle(color: Colors.white, fontSize: 11, fontWeight: FontWeight.w900))), const Icon(Icons.circle, color: _verde, size: 8), const SizedBox(width: 9), Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [Text(_s(v['cliente_nombre']).isEmpty ? _s(v['codigo_cliente']) : _s(v['cliente_nombre']), maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(color: Colors.white, fontSize: 11, fontWeight: FontWeight.w800)), Text(_s(v['motivo']).isEmpty ? 'Visita comercial' : _s(v['motivo']), maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(color: Colors.white60, fontSize: 9))]))]));
+
+  Widget _seguimientosPanel() {
+    final lista = _seguimientos.take(5).toList();
+    return _panel('Seguimientos pendientes', Icons.notifications_active_outlined, lista.isEmpty ? const SizedBox(height: 100, child: Center(child: Text('Sin seguimientos pendientes.', style: TextStyle(color: Colors.white54, fontSize: 11)))) : Column(children: [for (final a in lista) _seguimientoRow(a)]), action: 'Ver todos', onAction: _abrirSeguimientos);
+  }
+
+  Widget _seguimientoRow(Map<String, dynamic> a) { final d = _date(a['fecha_proxima_accion']); final vencido = d != null && DateTime(d.year, d.month, d.day).isBefore(DateTime(DateTime.now().year, DateTime.now().month, DateTime.now().day)); return Container(margin: const EdgeInsets.only(bottom: 6), padding: const EdgeInsets.all(8), decoration: BoxDecoration(color: Colors.white.withValues(alpha: .05), borderRadius: BorderRadius.circular(8)), child: Row(children: [CircleAvatar(radius: 15, backgroundColor: vencido ? Colors.red.withValues(alpha: .18) : _azulClaro.withValues(alpha: .25), child: Icon(vencido ? Icons.warning_amber_rounded : Icons.notifications_none_rounded, color: vencido ? Colors.redAccent : Colors.white, size: 16)), const SizedBox(width: 8), Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [Text(_s(a['asunto']).isEmpty ? 'Seguimiento' : _s(a['asunto']), maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(color: Colors.white, fontSize: 10, fontWeight: FontWeight.w800)), Text(_s(a['proxima_accion']).isEmpty ? _s(a['codigo_cliente']) : _s(a['proxima_accion']), maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(color: Colors.white60, fontSize: 9))])), Container(padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3), decoration: BoxDecoration(color: vencido ? Colors.red.withValues(alpha: .20) : Colors.amber.withValues(alpha: .18), borderRadius: BorderRadius.circular(5)), child: Text(vencido ? 'Vencido' : (d == null ? 'Pendiente' : _fecha.format(d)), style: TextStyle(color: vencido ? Colors.redAccent : Colors.amberAccent, fontSize: 8, fontWeight: FontWeight.w900))) ])); }
+
+  Widget _inferior(bool mobile) {
+    if (mobile) return Column(children: [_clientesPanel(), const SizedBox(height: 12), _facturasPanel(), const SizedBox(height: 12), _carteraPanel()]);
+    return Row(crossAxisAlignment: CrossAxisAlignment.start, children: [Expanded(flex: 4, child: _clientesPanel()), const SizedBox(width: 12), Expanded(flex: 4, child: _facturasPanel()), const SizedBox(width: 12), Expanded(flex: 2, child: _carteraPanel())]);
+  }
+
+  Widget _clientesPanel() => _panel('Clientes recientes', Icons.groups_rounded, _clientesRecientes.isEmpty ? const SizedBox(height: 150, child: Center(child: Text('Sin clientes recientes.', style: TextStyle(color: Colors.white54)))) : Column(children: [for (final c in _clientesRecientes.take(5)) _clienteRow(c)]), action: 'Ver todos', onAction: _abrirClientes);
+
+  Widget _clienteRow(Map<String, dynamic> c) => Container(padding: const EdgeInsets.symmetric(vertical: 7), decoration: const BoxDecoration(border: Border(bottom: BorderSide(color: _borde))), child: Row(children: [const Icon(Icons.business_rounded, color: _verde, size: 18), const SizedBox(width: 8), Expanded(child: Text(_s(c['cliente']).isEmpty ? _s(c['codigo_cliente']) : _s(c['cliente']), maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(color: Colors.white, fontSize: 10, fontWeight: FontWeight.w800))), Text(_s(c['codigo_cliente']), style: const TextStyle(color: Colors.white54, fontSize: 8))]));
+
+  Widget _facturasPanel() => _panel('Últimas facturas', Icons.receipt_long_rounded, _facturas.isEmpty ? const SizedBox(height: 150, child: Center(child: Text('Sin facturas recientes.', style: TextStyle(color: Colors.white54)))) : Column(children: [for (final f in _facturas.take(5)) _facturaRow(f)]), action: 'Ver todas', onAction: _abrirFacturacion);
+
+  Widget _facturaRow(Map<String, dynamic> f) { final monto = _num(f['monto'] ?? f['importe'] ?? f['total']); return Container(padding: const EdgeInsets.symmetric(vertical: 7), decoration: const BoxDecoration(border: Border(bottom: BorderSide(color: _borde))), child: Row(children: [SizedBox(width: 70, child: Text(_date(f['fecha_factura'] ?? f['fecha']) == null ? '-' : _fecha.format(_date(f['fecha_factura'] ?? f['fecha'])!), style: const TextStyle(color: Colors.white70, fontSize: 8))), Expanded(child: Text(_s(f['cliente']).isEmpty ? _s(f['codigo_cliente']) : _s(f['cliente']), maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(color: Colors.white, fontSize: 9, fontWeight: FontWeight.w800))), Text('US\$ ${_money.format(monto)}', style: const TextStyle(color: Colors.white, fontSize: 9, fontWeight: FontWeight.w900)), const SizedBox(width: 5), const Icon(Icons.check_circle, color: _verde, size: 14)])); }
+
+  Widget _carteraPanel() {
+    final total = _carteraTotal == 0 ? _clientes : _carteraTotal;
+    final sin = _sinContacto.clamp(0, total);
+    final opp = _conOportunidad.clamp(0, total);
+    final contacto = (total - sin - opp).clamp(0, total);
+    return _panel(
+      'Estado de tu cartera',
+      Icons.pie_chart_rounded,
+      SizedBox(
+        height: 220,
+        child: Column(
+          children: [
+            const SizedBox(height: 2),
+            SizedBox(
+              width: 145,
+              height: 145,
+              child: Stack(
+                alignment: Alignment.center,
+                children: [
+                  CustomPaint(size: const Size(145, 145), painter: _CarteraDonutPainter(sin: sin.toDouble(), contacto: contacto.toDouble(), oportunidad: opp.toDouble(), total: total.toDouble())),
+                  Column(mainAxisSize: MainAxisSize.min, children: [
+                    Text('$total', style: const TextStyle(color: Colors.white, fontSize: 27, fontWeight: FontWeight.w900)),
+                    const Text('Clientes', style: TextStyle(color: Colors.white70, fontSize: 10)),
+                  ]),
+                ],
+              ),
+            ),
+            const SizedBox(height: 8),
+            Wrap(alignment: WrapAlignment.center, spacing: 10, runSpacing: 5, children: [
+              _legend('Sin contacto', sin, const Color(0xFFFF5B6E)),
+              _legend('Con contacto', contacto, const Color(0xFF2D9CFF)),
+              _legend('Oportunidad', opp, const Color(0xFFFFC94D)),
+            ]),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _legend(String label, int value, Color color) => Row(mainAxisSize: MainAxisSize.min, children: [Container(width: 8, height: 8, decoration: BoxDecoration(color: color, shape: BoxShape.circle)), const SizedBox(width: 4), Text('$label: $value', style: const TextStyle(color: Colors.white70, fontSize: 9, fontWeight: FontWeight.w700))]);
+}
+
+
+class _FacturacionAnualPainter extends CustomPainter {
+  final List<double> values;
+  final List<String> labels;
+
+  const _FacturacionAnualPainter({required this.values, required this.labels});
+
+  String _monto(double value) {
+    if (value.abs() >= 1000000) return 'US\$ ${(value / 1000000).toStringAsFixed(2)} M';
+    if (value.abs() >= 1000) return 'US\$ ${(value / 1000).toStringAsFixed(2)} K';
+    return 'US\$ ${value.toStringAsFixed(0)}';
+  }
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    if (values.isEmpty || size.width <= 0 || size.height <= 0) return;
+
+    const left = 10.0;
+    const right = 10.0;
+    const top = 28.0;
+    const bottom = 35.0;
+    final chartW = size.width - left - right;
+    final chartH = size.height - top - bottom;
+    final baseY = top + chartH;
+
+    double maxValue = values.fold<double>(0, (m, v) => v > m ? v : m);
+    if (maxValue <= 0) maxValue = 1;
+
+    final grid = Paint()..color = Colors.white.withValues(alpha: .13)..strokeWidth = 1;
+    for (int i = 0; i < 4; i++) {
+      final y = top + chartH * i / 3;
+      canvas.drawLine(Offset(left, y), Offset(size.width - right, y), grid);
+    }
+
+    final count = values.length;
+    final slot = chartW / count;
+    final barWidth = (slot * .52).clamp(12.0, 54.0).toDouble();
+    final barPaint = Paint()..color = const Color(0xFF4EA3D8);
+    final topPaint = Paint()..color = const Color(0xFF63B7EA);
+    final linePaint = Paint()..color = const Color(0xFF39D98A)..strokeWidth = 2.5..style = PaintingStyle.stroke;
+    final pointPaint = Paint()..color = const Color(0xFF39D98A);
+    final line = Path();
+
+    for (int i = 0; i < count; i++) {
+      final value = values[i];
+      final x = left + slot * i + slot / 2;
+      final barH = chartH * (value / maxValue);
+      final y = baseY - barH;
+
+      if (value > 0) {
+        canvas.drawRRect(
+          RRect.fromRectAndCorners(
+            Rect.fromLTWH(x - barWidth / 2, y, barWidth, barH),
+            topLeft: const Radius.circular(5),
+            topRight: const Radius.circular(5),
+          ),
+          barPaint,
+        );
+        canvas.drawRect(Rect.fromLTWH(x - barWidth / 2, y, barWidth, 3), topPaint);
+      }
+
+      final label = _monto(value);
+      final tp = TextPainter(
+        text: TextSpan(text: label, style: const TextStyle(color: Colors.white, fontSize: 8.5, fontWeight: FontWeight.w900)),
+        textDirection: ui.TextDirection.ltr,
+      )..layout(maxWidth: slot + 18);
+      tp.paint(canvas, Offset((x - tp.width / 2).clamp(left, size.width - right - tp.width), (y - tp.height - 5).clamp(0.0, baseY - tp.height - 4)));
+
+      if (value > 0) {
+        if (i == 0) {
+          line.moveTo(x, y);
+        } else {
+          line.lineTo(x, y);
+        }
+        canvas.drawCircle(Offset(x, y), 3.5, pointPaint);
+      }
+
+      final month = labels.length > i ? labels[i] : '';
+      final mt = TextPainter(
+        text: TextSpan(text: month, style: const TextStyle(color: Colors.white70, fontSize: 9, fontWeight: FontWeight.w900)),
+        textDirection: ui.TextDirection.ltr,
+      )..layout();
+      mt.paint(canvas, Offset(x - mt.width / 2, baseY + 10));
+    }
+
+    canvas.drawPath(line, linePaint);
+  }
+
+  @override
+  bool shouldRepaint(covariant _FacturacionAnualPainter oldDelegate) => oldDelegate.values != values || oldDelegate.labels != labels;
+}
+
+class _CarteraDonutPainter extends CustomPainter {
+  final double sin;
+  final double contacto;
+  final double oportunidad;
+  final double total;
+  const _CarteraDonutPainter({required this.sin, required this.contacto, required this.oportunidad, required this.total});
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final center = Offset(size.width / 2, size.height / 2);
+    final radius = size.shortestSide / 2 - 9;
+    final rect = Rect.fromCircle(center: center, radius: radius);
+    final base = Paint()..style = PaintingStyle.stroke..strokeWidth = 18..strokeCap = StrokeCap.round..color = Colors.white12;
+    canvas.drawArc(rect, 0, 2 * 3.141592653589793, false, base);
+    if (total <= 0) return;
+    final colors = [const Color(0xFFFF5B6E), const Color(0xFF2D9CFF), const Color(0xFFFFC94D)];
+    final values = [sin, contacto, oportunidad];
+    double start = -3.141592653589793 / 2;
+    for (var i = 0; i < values.length; i++) {
+      if (values[i] <= 0) continue;
+      final sweep = (values[i] / total) * 2 * 3.141592653589793;
+      final paint = Paint()..style = PaintingStyle.stroke..strokeWidth = 18..strokeCap = StrokeCap.round..color = colors[i];
+      canvas.drawArc(rect, start, sweep, false, paint);
+      start += sweep;
+    }
+  }
+
+  @override
+  bool shouldRepaint(covariant _CarteraDonutPainter oldDelegate) => oldDelegate.sin != sin || oldDelegate.contacto != contacto || oldDelegate.oportunidad != oportunidad || oldDelegate.total != total;
+}
+
+
+/// Cliente 360° enfocado exclusivamente en una factura seleccionada.
+class CrmCliente360FacturaPage extends StatefulWidget {
+  const CrmCliente360FacturaPage({
+    super.key,
+    required this.codigoCliente,
+    required this.numeroFactura,
+    this.nombreCliente = '',
+  });
+
+  final String codigoCliente;
+  final String numeroFactura;
+  final String nombreCliente;
+
+  @override
+  State<CrmCliente360FacturaPage> createState() => _CrmCliente360FacturaPageState();
+}
+
+class _CrmCliente360FacturaPageState extends State<CrmCliente360FacturaPage> {
+  static const _azul = Color(0xFF063B63);
+  static const _azulClaro = Color(0xFF0D6EAA);
+  static const _verde = Color(0xFF19C979);
   static const _fondo = Color(0xFFF4F7FA);
+  static const _borde = Color(0xFFDCE5EC);
 
   final _db = SupabaseService.client;
   final _money = NumberFormat('#,##0.00', 'en_US');
@@ -41,1181 +734,281 @@ class _CrmDashboardPageState extends State<CrmDashboardPage> {
 
   bool _cargando = true;
   String? _error;
+  Map<String, dynamic>? _factura;
+  Map<String, dynamic>? _cliente;
+  List<Map<String, dynamic>> _productosFactura = [];
 
-  List<Map<String, dynamic>> _facturas = [];
-  Map<String, dynamic> _dashboard = {};
-  String _periodo =
-      '${DateTime.now().year}-${DateTime.now().month.toString().padLeft(2, '0')}';
-  String _vendedor = 'TODOS';
-  String _busqueda = '';
-  int _versionBusqueda = 0;
+  String _s(dynamic value) => value?.toString().trim() ?? '';
 
-  final Map<String, bool> _permisosCrm = {};
-  bool _cargandoPermisosCrm = true;
-
-  bool _puedeVerCrm(String codigo) {
-    final rol = Sesion.rol.trim().toLowerCase();
-    if (rol == 'administrador' || Sesion.esAdministrador || _esGerencia) return true;
-    if (codigo == 'crm_dashboard') return true;
-    return _permisosCrm[codigo] == true;
+  double _n(dynamic value) {
+    if (value is num) return value.toDouble();
+    return double.tryParse(_s(value).replaceAll(',', '')) ?? 0;
   }
 
-  Future<void> _cargarPermisosCrm() async {
-    if (Sesion.idUsuario <= 0 || Sesion.esAdministrador || _esGerencia) {
-      if (mounted) setState(() => _cargandoPermisosCrm = false);
-      return;
-    }
-    try {
-      final data = await _db
-          .from('accesos_usuario')
-          .select('puede_ver, accesos_modulos!inner(codigo)')
-          .eq('usuario_id', Sesion.idUsuario);
-      final permisos = <String, bool>{};
-      for (final item in data as List) {
-        final row = Map<String, dynamic>.from(item as Map);
-        final modulo = row['accesos_modulos'];
-        if (modulo is Map) {
-          final codigo = modulo['codigo']?.toString().trim().toLowerCase();
-          if (codigo != null && codigo.startsWith('crm_')) {
-            permisos[codigo] = row['puede_ver'] == true || row['puede_ver']?.toString() == '1';
-          }
-        }
-      }
-      if (!mounted) return;
-      setState(() { _permisosCrm..clear()..addAll(permisos); _cargandoPermisosCrm = false; });
-    } catch (_) {
-      if (!mounted) return;
-      setState(() { _permisosCrm.clear(); _cargandoPermisosCrm = false; });
-    }
+  DateTime? _date(dynamic value) {
+    if (value == null) return null;
+    return DateTime.tryParse(value.toString());
   }
 
-  String get _rolSesion => Sesion.rol.trim().toLowerCase();
-
-  bool get _esGerencia =>
-      _rolSesion == 'gerencia' || _rolSesion == 'gerencia comercial';
-
-  bool get _esJefatura =>
-      _rolSesion == 'jefe lima' || _rolSesion == 'jefe provincia';
-
-  String get _alcanceTexto {
-    if (_esGerencia) return 'Vista global · Todos los canales';
-    if (_rolSesion == 'jefe lima') return 'Equipo de Lima · Canal LIMA';
-    if (_rolSesion == 'jefe provincia') {
-      return 'Equipo de Provincias · Canal PROVINCIAS';
-    }
-    return 'Cartera propia · Canal LIMA';
-  }
-
-  // Identidad del usuario conectado: no depende del vendedor del filtro.
-  String get _nombreUsuario {
-    final nombre = Sesion.nombre.trim();
+  String get _nombreCliente {
+    final directo = _s(_factura?['cliente']);
+    if (directo.isNotEmpty) return directo;
+    final razon = _s(_cliente?['razon_social']);
+    if (razon.isNotEmpty) return razon;
+    final nombre = _s(_cliente?['nombre']);
     if (nombre.isNotEmpty) return nombre;
-    final vendedor = Sesion.vendedor.trim();
-    if (vendedor.isNotEmpty) return vendedor;
-    return 'Usuario';
+    return widget.codigoCliente;
   }
 
-  String get _nombreCorto {
-    final partes = _nombreUsuario
-        .split(RegExp(r'\s+'))
-        .where((e) => e.isNotEmpty)
-        .toList();
-    return partes.isEmpty ? 'Usuario' : partes.first;
-  }
-
-  String get _iniciales {
-    final partes = _nombreUsuario
-        .split(RegExp(r'\s+'))
-        .where((e) => e.isNotEmpty)
-        .toList();
-    if (partes.isEmpty) return 'US';
-    if (partes.length == 1) {
-      final p = partes.first.toUpperCase();
-      return p.substring(0, p.length >= 2 ? 2 : 1);
-    }
-    return (partes.first[0] + partes.last[0]).toUpperCase();
-  }
-
-  @override
-  void initState() {
-    super.initState();
-    _cargarPermisosCrm();
-    _cargarDatos();
-  }
-
-  double _num(dynamic v) {
-    if (v is num) return v.toDouble();
-    return double.tryParse(
-          v?.toString().replaceAll(',', '').trim() ?? '',
-        ) ??
-        0;
-  }
-
-  String _texto(dynamic v) => v?.toString().trim() ?? '';
-
-  DateTime? _date(dynamic v) {
-    if (v == null) return null;
-    return DateTime.tryParse(v.toString());
-  }
-
-  Future<void> _cargarDatos() async {
+  Future<void> _cargar() async {
     if (!mounted) return;
-
-    setState(() {
-      _cargando = true;
-      _error = null;
-    });
-
+    setState(() { _cargando = true; _error = null; });
     try {
-      final result = await _db.rpc(
-        'crm_obtener_dashboard_resumen',
+      // No consultamos crm_facturas directamente: esa tabla está protegida
+      // por RLS. El RPC de Cliente 360 ya aplica los permisos comerciales.
+      final rpcResult = await _db.rpc(
+        'crm_obtener_cliente_360_facturas',
         params: {
-          'p_periodo': _periodo,
-          'p_vendedor': 'TODOS',
-          'p_busqueda': _busqueda,
-          'p_usuario_id': Sesion.idUsuario,
+          'p_codigo_cliente': widget.codigoCliente,
+          'p_vendedores_permitidos': null,
+          'p_departamento': 'TODOS',
+          'p_anio': DateTime.now().year,
         },
       );
 
-      if (!mounted) return;
+      final facturas = rpcResult is List
+          ? rpcResult.whereType<Map>().map((e) => Map<String, dynamic>.from(e)).toList()
+          : <Map<String, dynamic>>[];
 
+      Map<String, dynamic>? fila;
+      for (final f in facturas) {
+        if (_s(f['numero_factura']) == widget.numeroFactura) {
+          fila = f;
+          break;
+        }
+      }
+
+      if (fila == null) {
+        throw Exception(
+          'No se encontró la factura ${widget.numeroFactura} para el cliente ${widget.codigoCliente}.',
+        );
+      }
+
+      final facturaId = fila['id'];
+      final fechaFactura = _s(fila['fecha_factura']);
+      final vendedorFactura = _s(fila['vendedor']);
+
+      // No consultamos crm_factura_detalles directamente porque está protegido
+      // por RLS. Reutilizamos el RPC existente de comisiones, que ya expone
+      // el detalle de artículos asociado al ID exacto de la factura.
+      final detalleRpc = await _db.rpc(
+        'crm_obtener_comisiones_detalle',
+        params: {
+          'p_vendedores_permitidos': null,
+          'p_vendedor': vendedorFactura.isEmpty ? 'TODOS' : vendedorFactura,
+          'p_desde': fechaFactura,
+          'p_hasta': fechaFactura,
+          'p_limit': 1000,
+        },
+      );
+
+      final detalleData = detalleRpc is List
+          ? detalleRpc
+              .whereType<Map>()
+              .map((e) => Map<String, dynamic>.from(e))
+              .where((e) => _s(e['factura_id']) == _s(facturaId))
+              .toList()
+          : <Map<String, dynamic>>[];
+
+      final factura = <String, dynamic>{
+        'id': fila['id'],
+        'numero_factura': fila['numero_factura'],
+        'fecha_factura': fila['fecha_factura'],
+        'codigo_cliente': widget.codigoCliente,
+        'cliente': widget.nombreCliente,
+        'monto_factura': fila['monto_calculado'],
+        'vendedor': fila['vendedor'],
+        'estado': fila['estado'],
+        'departamento_cliente': fila['departamento_cliente'],
+        'peso_calculado': fila['peso_calculado'],
+      };
+
+      if (!mounted) return;
       setState(() {
-        _dashboard = result is Map
-            ? Map<String, dynamic>.from(result)
-            : <String, dynamic>{};
-        _facturas = const <Map<String, dynamic>>[];
+        _factura = factura;
+        _cliente = null;
+        _productosFactura = detalleData.map((e) {
+          return <String, dynamic>{
+            ...e,
+            'cantidad': e['cantidad'] ?? 1,
+            'cantidad_metros': e['cantidad_metros'] ?? null,
+            'unidad_medida': e['unidad_medida'] ?? '',
+            'monto_factura': e['monto_factura'] ?? e['base_comision'],
+          };
+        }).toList();
         _cargando = false;
       });
     } catch (e) {
       if (!mounted) return;
-      setState(() {
-        _cargando = false;
-        _error = e.toString();
-      });
+      setState(() { _cargando = false; _error = e.toString(); });
     }
-  }
-
-  Map<String, dynamic> get _kpiData =>
-      _dashboard['kpis'] is Map
-          ? Map<String, dynamic>.from(_dashboard['kpis'])
-          : <String, dynamic>{};
-
-  double _dashboardAmount(dynamic value) => _num(value);
-
-  List<Map<String, dynamic>> _jsonList(dynamic value) {
-    if (value is! List) return <Map<String, dynamic>>[];
-    return value
-        .whereType<Map>()
-        .map((e) => Map<String, dynamic>.from(e))
-        .toList();
-  }
-
-  List<Map<String, dynamic>> get _dashboardTopClientes =>
-      _jsonList(_dashboard['top_clientes']);
-
-  List<Map<String, dynamic>> get _dashboardVendedores =>
-      _jsonList(_dashboard['por_vendedor']);
-
-  List<Map<String, dynamic>> get _dashboardMeses =>
-      _jsonList(_dashboard['mensual']);
-
-  List<Map<String, dynamic>> get _dashboardRecientes =>
-      _jsonList(_dashboard['recientes']);
-
-  List<Map<String, dynamic>> get _dashboardActividades =>
-      _jsonList(_dashboard['actividades_recientes']);
-
-  List<String> get _periodos {
-    final set = <String>{};
-    for (final r in _facturas) {
-      final d = _date(r['fecha_factura']);
-      if (d != null) {
-        set.add('${d.year}-${d.month.toString().padLeft(2, '0')}');
-      }
-    }
-    final result = set.toList()..sort((a, b) => b.compareTo(a));
-    return ['TODOS', ...result];
-  }
-
-  List<String> get _vendedores {
-    final set = <String>{};
-    for (final r in _facturas) {
-      final v = _texto(r['vendedor']);
-      if (v.isNotEmpty) set.add(v);
-    }
-    final result = set.toList()..sort();
-    return ['TODOS', ...result];
-  }
-
-  List<Map<String, dynamic>> get _filtradas {
-    final q = _busqueda.trim().toLowerCase();
-
-    return _facturas.where((r) {
-      final d = _date(r['fecha_factura']);
-      final periodo = d == null
-          ? ''
-          : '${d.year}-${d.month.toString().padLeft(2, '0')}';
-
-      final coincidePeriodo = _periodo == 'TODOS' || periodo == _periodo;
-      final coincideVendedor =
-          _vendedor == 'TODOS' || _texto(r['vendedor']) == _vendedor;
-
-      final texto = [
-        _texto(r['cliente']),
-        _texto(r['codigo_cliente']),
-        _texto(r['numero_factura']),
-        _texto(r['vendedor']),
-      ].join(' ').toLowerCase();
-
-      return coincidePeriodo &&
-          coincideVendedor &&
-          (q.isEmpty || texto.contains(q));
-    }).toList();
-  }
-
-  double get _facturacion => _num(_kpiData['facturacion']);
-
-  int get _facturasCount =>
-      (_kpiData['facturas'] as num?)?.toInt() ?? 0;
-
-  int get _clientesCount =>
-      (_kpiData['clientes'] as num?)?.toInt() ?? 0;
-
-  Map<String, double> get _porCliente {
-    final map = <String, double>{};
-    for (final r in _dashboardTopClientes) {
-      final name =
-          _texto(r['cliente']).isEmpty ? 'SIN CLIENTE' : _texto(r['cliente']);
-      map[name] = _dashboardAmount(r['monto']);
-    }
-    return map;
-  }
-
-  Map<String, double> get _porVendedor {
-    final map = <String, double>{};
-    for (final r in _dashboardVendedores) {
-      final name =
-          _texto(r['vendedor']).isEmpty ? 'SIN VENDEDOR' : _texto(r['vendedor']);
-      map[name] = _dashboardAmount(r['monto']);
-    }
-    return map;
-  }
-
-  List<Map<String, dynamic>> get _recientes => _dashboardRecientes;
-
-  List<Map<String, dynamic>> get _meses => _dashboardMeses;
-
-  String _periodoLabel(String p) {
-    if (p == 'TODOS') return 'Todos los períodos';
-    final partes = p.split('-');
-    if (partes.length != 2) return p;
-
-    const meses = [
-      'Enero',
-      'Febrero',
-      'Marzo',
-      'Abril',
-      'Mayo',
-      'Junio',
-      'Julio',
-      'Agosto',
-      'Septiembre',
-      'Octubre',
-      'Noviembre',
-      'Diciembre',
-    ];
-
-    final mes = int.tryParse(partes[1]);
-    if (mes == null || mes < 1 || mes > 12) return p;
-    return '${meses[mes - 1]} ${partes[0]}';
   }
 
   @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: _fondo,
-      drawer: MediaQuery.sizeOf(context).width < 1100
-          ? Drawer(child: _sidebar(context))
-          : null,
-      appBar: MediaQuery.sizeOf(context).width < 1100
-          ? AppBar(
-              backgroundColor: _azul,
-              foregroundColor: Colors.white,
-              title: const Text('CRM Comercial ELCOPE'),
-            )
-          : null,
-      body: _cargando
-          ? const Center(child: CircularProgressIndicator())
-          : _error != null
-              ? _errorView()
-              : Row(
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [
-                    if (MediaQuery.sizeOf(context).width >= 1100)
-                      _sidebar(context),
-                    Expanded(child: _contenido(context)),
-                  ],
-                ),
-    );
-  }
+  void initState() { super.initState(); _cargar(); }
 
-  Widget _errorView() {
-    return Center(
-      child: ConstrainedBox(
-        constraints: const BoxConstraints(maxWidth: 700),
-        child: Padding(
-          padding: const EdgeInsets.all(24),
-          child: Card(
-            child: Padding(
-              padding: const EdgeInsets.all(24),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  const Icon(Icons.error_outline, size: 48, color: Colors.red),
-                  const SizedBox(height: 12),
-                  const Text(
-                    'No se pudo cargar la información del CRM',
-                    style: TextStyle(
-                      fontSize: 18,
-                      fontWeight: FontWeight.bold,
-                    ),
-                  ),
-                  const SizedBox(height: 8),
-                  Text(
-                    _error!,
-                    textAlign: TextAlign.center,
-                    style: const TextStyle(color: Colors.black54),
-                  ),
-                  const SizedBox(height: 16),
-                  FilledButton.icon(
-                    onPressed: _cargarDatos,
-                    icon: const Icon(Icons.refresh),
-                    label: const Text('Reintentar'),
-                  ),
-                ],
-              ),
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-
-  Widget _sidebar(BuildContext context) {
-    return Container(
-      width: 270,
-      decoration: const BoxDecoration(
-        gradient: LinearGradient(
-          begin: Alignment.topCenter,
-          end: Alignment.bottomCenter,
-          colors: [Color(0xFF063B63), Color(0xFF052C4B)],
-        ),
-      ),
-      child: SafeArea(
-        child: Column(
-          children: [
-            Padding(
-              padding: const EdgeInsets.fromLTRB(20, 18, 18, 18),
-              child: Column(
-                children: [
-                  SizedBox(
-                    height: 72,
-                    child: Image.asset(
-                      'assets/crm/images/logo_elcope.png',
-                      fit: BoxFit.contain,
-                      errorBuilder: (_, __, ___) => const Row(
-                        children: [
-                          Icon(Icons.hub_outlined, color: Colors.white, size: 42),
-                          SizedBox(width: 12),
-                          Text('ELCOPE\nCRM COMERCIAL', style: TextStyle(color: Colors.white, fontWeight: FontWeight.w900, fontSize: 15, height: 1.05)),
-                        ],
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-            const Divider(color: Colors.white24, height: 1),
-            Expanded(
-              child: ListView(
-                padding: const EdgeInsets.symmetric(vertical: 12),
-                children: [
-                  _navItem(context, Icons.home_outlined, 'Inicio CRM', selected: true),
-                  if (_puedeVerCrm('crm_clientes')) _navItem(context, Icons.people_alt_outlined, 'Clientes', onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const CrmClientesPage()))),
-                  if (_puedeVerCrm('crm_cliente_360')) _navItem(context, Icons.person_search_outlined, 'Cliente 360°', onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const CrmCliente360Page()))),
-                  if (_puedeVerCrm('crm_actividades')) _navItem(context, Icons.fact_check_outlined, 'Actividades', onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const CrmActividadesPage()))),
-                  if (_puedeVerCrm('crm_seguimientos')) _navItem(context, Icons.track_changes_outlined, 'Seguimientos', onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const CrmSeguimientosPage()))),
-                  if (_puedeVerCrm('crm_oportunidades')) _navItem(context, Icons.business_center_outlined, 'Oportunidades', onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const CrmOportunidadesPage()))),
-                  if (_puedeVerCrm('crm_tareas')) _navItem(context, Icons.task_alt_outlined, 'Tareas', onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const CrmTareasPage()))),
-                  if (_puedeVerCrm('crm_visitas')) _navItem(context, Icons.calendar_month_outlined, 'Visitas Comerciales', onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const CrmVisitasPage()))),
-                  if (_puedeVerCrm('crm_facturacion')) _navItem(context, Icons.receipt_long_outlined, 'Facturación', onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const FacturacionImportacionPage()))),
-                  if (_puedeVerCrm('crm_cobranza')) _navItem(context, Icons.account_balance_wallet_outlined, 'Cobranza', onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const CrmCobranzaPage()))),
-                  if (_puedeVerCrm('crm_comisiones')) _navItem(context, Icons.percent_outlined, 'Comisiones', onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const ComisionesProductosPage()))),
-                  if (_puedeVerCrm('crm_reportes')) _navItem(context, Icons.bar_chart_outlined, 'Reportes', onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const CrmReportesPage()))),
-                  if (_puedeVerCrm('crm_catalogos')) _navItem(context, Icons.menu_book_outlined, 'Catálogos CRM', onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => CrmCatalogosPage()))),
-                ],
-              ),
-            ),
-            Padding(
-              padding: const EdgeInsets.fromLTRB(20, 8, 20, 20),
-              child: Column(
-                children: [
-                  const Text('CABLES QUE CONECTAN', style: TextStyle(color: Colors.white, fontWeight: FontWeight.w900, fontSize: 13, fontStyle: FontStyle.italic)),
-                  const Text('TU PROGRESO', style: TextStyle(color: Color(0xFF38D88A), fontWeight: FontWeight.w900, fontSize: 16, fontStyle: FontStyle.italic)),
-                  const SizedBox(height: 5),
-                  Text('Centro de Mando Comercial', style: TextStyle(color: Colors.white.withValues(alpha: .55), fontSize: 10)),
-                ],
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _navItem(BuildContext context, IconData icon, String label, {bool selected = false, VoidCallback? onTap}) {
-    return Container(
-      margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 3),
-      decoration: BoxDecoration(color: selected ? const Color(0xFF0877C9) : Colors.transparent, borderRadius: BorderRadius.circular(11)),
-      child: ListTile(
-        dense: true,
-        contentPadding: const EdgeInsets.symmetric(horizontal: 14),
-        leading: Icon(icon, color: Colors.white, size: 21),
-        title: Text(label, style: const TextStyle(color: Colors.white, fontSize: 14, fontWeight: FontWeight.w700)),
-        onTap: onTap ?? () => ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('$label estará disponible en la siguiente etapa.'))),
-      ),
-    );
-  }
-
-  Widget _contenido(BuildContext context) {
-    final width = MediaQuery.sizeOf(context).width;
-    final mobile = width < 800;
-    return Column(
-      children: [
-        _topbar(context, mobile),
-        Expanded(
-          child: RefreshIndicator(
-            onRefresh: _cargarDatos,
-            child: SingleChildScrollView(
-              physics: const AlwaysScrollableScrollPhysics(),
-              padding: EdgeInsets.fromLTRB(mobile ? 14 : 18, 12, mobile ? 14 : 18, 28),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  _banner(mobile),
-                  const SizedBox(height: 14),
-                  _kpis(mobile),
-                  const SizedBox(height: 14),
-                  _filaPrincipal(mobile),
-                  const SizedBox(height: 14),
-                  _filaAnalitica(mobile),
-                ],
-              ),
-            ),
-          ),
-        ),
-      ],
-    );
-  }
-
-  Widget _topbar(BuildContext context, bool mobile) {
-    return Container(
-      height: 66,
-      padding: EdgeInsets.symmetric(horizontal: mobile ? 10 : 18),
-      decoration: const BoxDecoration(color: Colors.white, border: Border(bottom: BorderSide(color: Color(0xFFE5EAF0)))),
-      child: Row(
-        children: [
-          IconButton(
-            tooltip: 'Regresar',
-            onPressed: () => Navigator.maybePop(context),
-            icon: const Icon(Icons.arrow_back_rounded, color: _azul, size: 27),
-          ),
-          if (mobile)
-            IconButton(onPressed: () => Scaffold.of(context).openDrawer(), icon: const Icon(Icons.menu, color: _azul)),
-          const SizedBox(width: 4),
-          const Expanded(child: Text('Centro de Mando Comercial', style: TextStyle(fontSize: 20, fontWeight: FontWeight.w900, color: _azul))),
-          if (!mobile)
-            SizedBox(
-              width: 320,
-              child: TextField(
-                onChanged: (v) {
-                  _busqueda = v;
-                  final token = ++_versionBusqueda;
-                  Future.delayed(const Duration(milliseconds: 450), () {
-                    if (!mounted || token != _versionBusqueda) return;
-                    _cargarDatos();
-                  });
-                },
-                decoration: InputDecoration(
-                  hintText: 'Buscar cliente, RUC, factura...',
-                  prefixIcon: const Icon(Icons.search),
-                  filled: true,
-                  fillColor: _fondo,
-                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(14), borderSide: BorderSide.none),
-                  contentPadding: const EdgeInsets.symmetric(vertical: 12),
-                ),
-              ),
-            ),
-          const SizedBox(width: 8),
-          IconButton(tooltip: 'Actualizar', onPressed: _cargarDatos, icon: const Icon(Icons.refresh, color: _azul)),
-          if (!mobile) ...[
-            const SizedBox(width: 4),
-            CircleAvatar(
-              radius: 17,
-              backgroundColor: _azul,
-              child: Text(
-                _iniciales,
-                style: const TextStyle(color: Colors.white, fontSize: 11, fontWeight: FontWeight.w900),
-              ),
-            ),
-            const SizedBox(width: 7),
-            Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                ConstrainedBox(
-                  constraints: const BoxConstraints(maxWidth: 170),
-                  child: Text(
-                    _nombreUsuario,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(
-                      color: _azul,
-                      fontWeight: FontWeight.w800,
-                    ),
-                  ),
-                ),
-                Text(
-                  _alcanceTexto,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(
-                    color: Colors.black45,
-                    fontSize: 8.5,
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-              ],
-            ),
-            const Icon(Icons.keyboard_arrow_down, color: _azul),
-          ],
-        ],
-      ),
-    );
-  }
-
-  Widget _banner(bool mobile) {
-    return Container(
-      constraints: const BoxConstraints(minHeight: 210),
-      clipBehavior: Clip.antiAlias,
-      decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(18),
-        gradient: const LinearGradient(colors: [Color(0xFF073B63), Color(0xFF075C91), Color(0xFF0A79B8)]),
-      ),
-      child: Stack(
-        children: [
-          Positioned(right: mobile ? -60 : 120, bottom: -25, child: Opacity(opacity: .12, child: Icon(Icons.cable_outlined, size: 260, color: Colors.white))),
-          Positioned(right: mobile ? -5 : 28, bottom: 0, child: SizedBox(height: mobile ? 155 : 225, child: Image.asset('assets/crm/images/amperio.png', fit: BoxFit.contain, errorBuilder: (_, __, ___) => const SizedBox.shrink()))),
-          Padding(
-            padding: EdgeInsets.fromLTRB(mobile ? 22 : 38, 25, mobile ? 150 : 330, 20),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                RichText(
-                  text: TextSpan(
-                    style: TextStyle(
-                      color: Colors.white,
-                      fontSize: mobile ? 27 : 34,
-                      fontWeight: FontWeight.w900,
-                    ),
-                    children: [
-                      const TextSpan(text: 'Bienvenido, '),
-                      TextSpan(
-                        text: _nombreCorto,
-                        style: const TextStyle(color: Color(0xFF2FE28A)),
-                      ),
-                    ],
-                  ),
-                ),
-                const SizedBox(height: 8),
-                Text('Gestiona tus clientes, actividades y oportunidades\nen un solo lugar.', style: TextStyle(color: Colors.white, fontSize: mobile ? 14 : 18, height: 1.25, fontWeight: FontWeight.w500)),
-                const SizedBox(height: 10),
-                Text(
-                  _alcanceTexto,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(
-                    color: Color(0xFFBFF3D8),
-                    fontSize: 11,
-                    fontWeight: FontWeight.w800,
-                  ),
-                ),
-                const SizedBox(height: 17),
-                Wrap(spacing: 12, runSpacing: 8, children: const [
-                  _BannerPill(icon: Icons.bar_chart_rounded, text: 'Más ventas'),
-                  _BannerPill(icon: Icons.groups_rounded, text: 'Mejores clientes'),
-                  _BannerPill(icon: Icons.track_changes_rounded, text: 'Nuevas oportunidades'),
-                ]),
-              ],
-            ),
-          ),
-          Positioned(top: 16, right: mobile ? 95 : 235, child: Container(padding: const EdgeInsets.symmetric(horizontal: 13, vertical: 9), decoration: BoxDecoration(color: const Color(0xFF0A9D4D), borderRadius: BorderRadius.circular(10)), child: const Text('ELCOPE', style: TextStyle(color: Colors.white, fontSize: 22, fontWeight: FontWeight.w900, letterSpacing: 1)))),
-        ],
-      ),
-    );
-  }
-
-  Widget _kpis(bool mobile) {
-    final cards = [
-      _kpi(
-        'Clientes totales',
-        '$_clientesCount',
-        Icons.groups_rounded,
-        const Color(0xFF1475D1),
-        '',
-      ),
-      _kpi(
-        'Actividades hoy',
-        '${(_kpiData['actividades_hoy'] as num?)?.toInt() ?? 0}',
-        Icons.event_available_rounded,
-        const Color(0xFF0A9B61),
-        '',
-      ),
-      _kpi(
-        'Oportunidades',
-        '${(_kpiData['oportunidades'] as num?)?.toInt() ?? 0}',
-        Icons.track_changes_rounded,
-        const Color(0xFF7C4DFF),
-        '',
-      ),
-      _kpi(
-        'Facturación (Mes)',
-        'US\$ ${_money.format(_facturacion)}',
-        Icons.receipt_long_rounded,
-        const Color(0xFFF28B18),
-        '',
-      ),
-    ];
-    return LayoutBuilder(builder: (context, c) {
-      final cols = c.maxWidth >= 1250 ? 4 : c.maxWidth >= 700 ? 2 : 1;
-      return GridView.count(crossAxisCount: cols, shrinkWrap: true, physics: const NeverScrollableScrollPhysics(), crossAxisSpacing: 12, mainAxisSpacing: 12, childAspectRatio: mobile ? 2.9 : 2.35, children: cards);
-    });
-  }
-
-  Widget _kpi(String title, String value, IconData icon, Color color, String trend) {
-    return Container(
-      padding: const EdgeInsets.all(15),
-      decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(16), border: Border.all(color: const Color(0xFFE0E7EF))),
-      child: Row(children: [
-        Container(width: 58, height: 58, decoration: BoxDecoration(color: color.withValues(alpha: .10), shape: BoxShape.circle), child: Icon(icon, color: color, size: 29)),
-        const SizedBox(width: 13),
-        Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, mainAxisAlignment: MainAxisAlignment.center, children: [
-          Text(title, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(color: Color(0xFF6E7681), fontSize: 13, fontWeight: FontWeight.w600)),
-          const SizedBox(height: 3),
-          Text(value, maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(color: _azul, fontSize: 23, fontWeight: FontWeight.w900)),
-          const SizedBox(height: 2),
-          if (trend.isNotEmpty)
-            Text(
-              '↗ $trend',
-              style: const TextStyle(
-                color: Color(0xFF08A64E),
-                fontSize: 12,
-                fontWeight: FontWeight.w800,
-              ),
-            ),
-        ])),
-        SizedBox(width: 75, height: 40, child: CustomPaint(painter: _MiniTrendPainter(color))),
-      ]),
-    );
-  }
-
-  Widget _filaPrincipal(bool mobile) {
-    if (mobile) return Column(children: [_panelFacturacion(), const SizedBox(height: 12), _panelTopClientes(), const SizedBox(height: 12), _panelActividades()]);
-    return Row(crossAxisAlignment: CrossAxisAlignment.start, children: [Expanded(flex: 5, child: _panelFacturacion()), const SizedBox(width: 12), Expanded(flex: 3, child: _panelTopClientes()), const SizedBox(width: 12), Expanded(flex: 2, child: _panelActividades())]);
-  }
-
-  Widget _filaAnalitica(bool mobile) {
-    if (mobile) return Column(children: [_panelOportunidades(), const SizedBox(height: 12), _panelSectores(), const SizedBox(height: 12), _panelDocumentos()]);
-    return Row(crossAxisAlignment: CrossAxisAlignment.start, children: [Expanded(child: _panelOportunidades()), const SizedBox(width: 12), Expanded(child: _panelSectores()), const SizedBox(width: 12), Expanded(child: _panelDocumentos())]);
-  }
-
-  Widget _panelBase(String title, IconData icon, Widget child, {String? action}) {
-    return Container(
-      decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(16), border: Border.all(color: const Color(0xFFE0E7EF))),
-      padding: const EdgeInsets.fromLTRB(18, 16, 18, 16),
+  Widget _dato(String label, String value) => SizedBox(
+    width: 190,
+    child: Padding(
+      padding: const EdgeInsets.only(bottom: 10),
       child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-        Row(children: [Icon(icon, color: _azulClaro, size: 22), const SizedBox(width: 9), Expanded(child: Text(title, style: const TextStyle(color: _azul, fontSize: 16, fontWeight: FontWeight.w900))), if (action != null) Text(action, style: const TextStyle(color: _azulClaro, fontWeight: FontWeight.w700, fontSize: 12))]),
+        Text(label, style: const TextStyle(color: Colors.black54, fontSize: 11, fontWeight: FontWeight.w600)),
+        const SizedBox(height: 2),
+        Text(value.isEmpty ? '-' : value, overflow: TextOverflow.ellipsis, style: const TextStyle(color: _azul, fontWeight: FontWeight.w800)),
+      ]),
+    ),
+  );
+
+  Widget _encabezado() {
+    final f = _factura!;
+    final fecha = _date(f['fecha_factura']);
+    final monto = _n(f['monto_factura']);
+    final estado = _s(f['estado']).isEmpty ? 'FACTURADA' : _s(f['estado']);
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(20),
+      decoration: BoxDecoration(
+        gradient: const LinearGradient(colors: [_azul, _azulClaro]),
+        borderRadius: BorderRadius.circular(16),
+      ),
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Row(children: [
+          const Icon(Icons.person_search_outlined, color: Colors.white, size: 28),
+          const SizedBox(width: 10),
+          const Expanded(child: Text('Cliente 360° · Factura seleccionada', style: TextStyle(color: Colors.white, fontSize: 19, fontWeight: FontWeight.w900))),
+          Container(padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 5), decoration: BoxDecoration(color: _verde.withValues(alpha: .20), borderRadius: BorderRadius.circular(20)), child: Text(estado, style: const TextStyle(color: Colors.white, fontSize: 10, fontWeight: FontWeight.w900))),
+        ]),
+        const SizedBox(height: 16),
+        Text(_nombreCliente, style: const TextStyle(color: Colors.white, fontSize: 22, fontWeight: FontWeight.w900)),
+        const SizedBox(height: 4),
+        Text('RUC/Código: ${_s(_cliente?['ruc']).isNotEmpty ? _s(_cliente?['ruc']) : widget.codigoCliente}', style: const TextStyle(color: Colors.white70)),
         const SizedBox(height: 14),
-        child,
+        Wrap(spacing: 28, runSpacing: 8, children: [
+          Text('Factura ${widget.numeroFactura}', style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w900)),
+          Text(fecha == null ? '-' : _fecha.format(fecha), style: const TextStyle(color: Colors.white)),
+          Text('US\$ ${_money.format(monto)}', style: const TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.w900)),
+        ]),
       ]),
     );
   }
 
-  Widget _panelFacturacion() {
-    return Container(
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: const Color(0xFFE0E7EF)),
-      ),
-      padding: const EdgeInsets.fromLTRB(18, 16, 18, 16),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              const Icon(
-                Icons.bar_chart_rounded,
-                color: _azulClaro,
-                size: 22,
-              ),
-              const SizedBox(width: 9),
-              const Expanded(
-                child: Text(
-                  'Evolución de facturación',
-                  style: TextStyle(
-                    color: _azul,
-                    fontSize: 16,
-                    fontWeight: FontWeight.w900,
-                  ),
-                ),
-              ),
-              Container(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 11,
-                  vertical: 7,
-                ),
-                decoration: BoxDecoration(
-                  color: const Color(0xFFEAF4FD),
-                  borderRadius: BorderRadius.circular(10),
-                  border: Border.all(
-                    color: const Color(0xFFCCE3F7),
-                  ),
-                ),
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    _resumenHeaderDato(
-                      titulo: 'Monto',
-                      valor: 'US\u0024 ${_money.format(_facturacion)}',
-                    ),
-                    const SizedBox(width: 14),
-                    _resumenHeaderDato(
-                      titulo: 'Facturas',
-                      valor: NumberFormat('#,##0', 'en_US')
-                          .format(_facturasCount),
-                    ),
-                    const SizedBox(width: 14),
-                    _resumenHeaderDato(
-                      titulo: 'Clientes',
-                      valor: NumberFormat('#,##0', 'en_US')
-                          .format(_clientesCount),
-                    ),
-                  ],
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 6),
-          Text(
-            _periodo == 'TODOS'
-                ? 'Facturación acumulada del período seleccionado'
-                : 'Facturación de ${_periodoLabel(_periodo)}',
-            style: const TextStyle(
-              color: Colors.black45,
-              fontSize: 10,
-              fontWeight: FontWeight.w600,
-            ),
-          ),
-          const SizedBox(height: 10),
-          SizedBox(
-            height: 245,
-            child: _graficoFacturacion(),
-          ),
-        ],
+  Widget _historial() {
+    final f = _factura!;
+    final fecha = _date(f['fecha_factura']);
+    return Card(
+      elevation: 0,
+      color: Colors.white,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14), side: const BorderSide(color: _borde)),
+      child: Padding(
+        padding: const EdgeInsets.all(18),
+        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          const Row(children: [Icon(Icons.history_rounded, color: _azul), SizedBox(width: 8), Text('Historial de esta factura', style: TextStyle(color: _azul, fontSize: 17, fontWeight: FontWeight.w900))]),
+          const SizedBox(height: 15),
+          Wrap(spacing: 18, runSpacing: 8, children: [
+            _dato('Factura', _s(f['numero_factura'])),
+            _dato('Fecha', fecha == null ? '-' : _fecha.format(fecha)),
+            _dato('Cliente', _nombreCliente),
+            _dato('Vendedor', _s(f['vendedor'])),
+            _dato('Orden de compra', _s(f['numero_orden_compra'])),
+            _dato('Forma de pago', _s(f['forma_pago'])),
+            _dato('Canal', _s(f['canal'])),
+            _dato('Sector', _s(f['sector'])),
+            _dato('Giro', _s(f['giro'])),
+            _dato('Código cliente', _s(f['codigo_cliente'])),
+          ]),
+        ]),
       ),
     );
   }
 
-  Widget _resumenHeaderDato({
-    required String titulo,
-    required String valor,
-  }) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.end,
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        Text(
-          titulo,
-          style: const TextStyle(
-            color: Colors.black54,
-            fontSize: 8.5,
-            fontWeight: FontWeight.w700,
-          ),
-        ),
-        const SizedBox(height: 2),
-        Text(
-          valor,
-          style: const TextStyle(
-            color: _azul,
-            fontSize: 11.5,
-            fontWeight: FontWeight.w900,
-          ),
-        ),
-      ],
-    );
-  }
-
-  Widget _graficoFacturacion() {
-    final meses = _meses;
-    if (meses.isEmpty) return const Center(child: Text('Sin información de facturación.', style: TextStyle(color: Colors.grey)));
-    return CustomPaint(
-      painter: _SalesChartPainter(
-        meses.map((e) => _num(e['monto'])).toList(),
-        _azulClaro,
-      ),
-      child: const SizedBox.expand(),
-    );
-  }
-
-  List<MapEntry<String, double>> _top(
-    Map<String, double> map, [
-    int n = 10,
-  ]) {
-    final list = map.entries.toList()
-      ..sort((a, b) => b.value.compareTo(a.value));
-    return list.take(n).toList();
-  }
-
-  Widget _panelTopClientes() {
-    final top = _top(_porCliente, 5);
-    return _panelBase('Top 5 clientes', Icons.emoji_events_outlined, top.isEmpty ? const SizedBox(height: 210, child: Center(child: Text('Sin información para los filtros actuales.', style: TextStyle(color: Colors.grey)))) : Column(children: [for (int i=0;i<top.length;i++) _rankingRow(i+1, top[i].key, top[i].value, _facturacion)]));
-  }
-
-  Widget _rankingRow(int index, String name, double value, double total) {
-    final pct = total <= 0 ? 0.0 : (value / total).clamp(0.0, 1.0);
-    return Padding(padding: const EdgeInsets.symmetric(vertical: 7), child: Row(children: [Container(width: 25, height: 25, alignment: Alignment.center, decoration: BoxDecoration(color: index == 1 ? _azulClaro : const Color(0xFFE9EEF5), shape: BoxShape.circle), child: Text('$index', style: TextStyle(color: index == 1 ? Colors.white : _azul, fontWeight: FontWeight.w900, fontSize: 11))), const SizedBox(width: 9), Expanded(child: Text(name, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 12))), const SizedBox(width: 8), SizedBox(width: 70, child: LinearProgressIndicator(value: pct, minHeight: 7, borderRadius: BorderRadius.circular(8), backgroundColor: const Color(0xFFE9EEF4))), const SizedBox(width: 7), SizedBox(width: 72, child: Text(_money.format(value), textAlign: TextAlign.right, style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w800, color: _azul)))]));
-  }
-
-  Widget _panelActividades() {
-    final recientes = _dashboardActividades.take(5).toList();
-    final hoy = (_kpiData['actividades_hoy'] as num?)?.toInt() ?? 0;
-
-    return _panelBase(
-      'Actividades próximas',
-      Icons.event_note_outlined,
-      recientes.isEmpty
-          ? SizedBox(
-              height: 210,
-              child: Center(
-                child: Text(
-                  hoy > 0
-                      ? '$hoy actividad(es) registrada(s) hoy.'
-                      : 'No hay actividades registradas.',
-                  style: const TextStyle(color: Colors.grey),
-                ),
-              ),
-            )
-          : Column(
-              children: [
-                for (final r in recientes) _actividadCrmRow(r),
-              ],
-            ),
-      action: 'Ver todas',
-    );
-  }
-
-  Widget _actividadCrmRow(Map<String, dynamic> r) {
-    final d = _date(r['fecha']);
-
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 7),
-      child: Row(
-        children: [
-          SizedBox(
-            width: 43,
-            child: Text(
-              d == null ? '--/--' : DateFormat('dd/MM').format(d),
-              style: const TextStyle(
-                color: _azul,
-                fontSize: 11,
-                fontWeight: FontWeight.w800,
-              ),
-            ),
-          ),
-          Container(
-            width: 30,
-            height: 30,
-            decoration: const BoxDecoration(
-              color: Color(0xFFE8F4FF),
-              shape: BoxShape.circle,
-            ),
-            child: const Icon(
-              Icons.fact_check_outlined,
-              size: 16,
-              color: _azulClaro,
-            ),
-          ),
+  Widget _productos() {
+    final totalMetros = _productosFactura.fold<double>(0, (sum, p) => sum + _n(p['cantidad_metros']));
+    final totalPeso = _productosFactura.fold<double>(0, (sum, p) => sum + _n(p['peso_kg_cobre']));
+    return Card(
+      elevation: 0,
+      color: Colors.white,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14), side: const BorderSide(color: _borde)),
+      clipBehavior: Clip.antiAlias,
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Padding(padding: const EdgeInsets.fromLTRB(18, 16, 18, 10), child: Row(children: [
+          const Icon(Icons.inventory_2_outlined, color: _verde),
           const SizedBox(width: 8),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  _texto(r['asunto']).isEmpty
-                      ? 'Actividad'
-                      : _texto(r['asunto']),
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(
-                    fontSize: 11,
-                    fontWeight: FontWeight.w800,
-                    color: _azul,
-                  ),
-                ),
-                Text(
-                  _texto(r['tipo']),
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(fontSize: 10, color: Colors.grey),
-                ),
+          const Expanded(child: Text('Productos de esta factura', style: TextStyle(color: _azul, fontSize: 17, fontWeight: FontWeight.w900))),
+          Text('${_productosFactura.length} ítems', style: const TextStyle(color: Colors.black54, fontWeight: FontWeight.w700)),
+        ])),
+        const Divider(height: 1),
+        if (_productosFactura.isEmpty)
+          const Padding(padding: EdgeInsets.all(30), child: Center(child: Text('Esta factura no tiene productos registrados.')))
+        else
+          SingleChildScrollView(
+            scrollDirection: Axis.horizontal,
+            child: DataTable(
+              headingRowColor: const WidgetStatePropertyAll(Color(0xFFF2F6FA)),
+              columns: const [
+                DataColumn(label: Text('#')), DataColumn(label: Text('Código')), DataColumn(label: Text('Producto')),
+                DataColumn(label: Text('Familia')), DataColumn(label: Text('Calibre')), DataColumn(label: Text('Clase')),
+                DataColumn(label: Text('Cantidad')), DataColumn(label: Text('Metros')), DataColumn(label: Text('Unidad')),
+                DataColumn(label: Text('Importe')),
               ],
+              rows: _productosFactura.map((p) => DataRow(cells: [
+                DataCell(Text(_s(p['numero_item']))),
+                DataCell(Text(_s(p['codigo_articulo']))),
+                DataCell(SizedBox(width: 340, child: Text(_s(p['articulo']), maxLines: 2, overflow: TextOverflow.ellipsis))),
+                DataCell(Text(_s(p['familia']))),
+                DataCell(Text(_s(p['calibre']))),
+                DataCell(Text(_s(p['clase']))),
+                DataCell(Text(_money.format(_n(p['cantidad'])))),
+                DataCell(Text(_money.format(_n(p['cantidad_metros'])))),
+                DataCell(Text(_s(p['unidad_medida']))),
+                DataCell(Text('US\$ ${_money.format(_n(p['monto_factura']))}', style: const TextStyle(fontWeight: FontWeight.w800))),
+              ])).toList(),
             ),
           ),
-        ],
-      ),
+        Container(width: double.infinity, padding: const EdgeInsets.all(14), color: const Color(0xFFF7FAFC), child: Wrap(spacing: 28, runSpacing: 8, children: [
+          Text('Metros: ${_money.format(totalMetros)}', style: const TextStyle(fontWeight: FontWeight.w800, color: _azul)),
+          Text('Peso cobre: ${_money.format(totalPeso)} kg', style: const TextStyle(fontWeight: FontWeight.w800, color: _azul)),
+          Text('Total factura: US\$ ${_money.format(_n(_factura?['monto_factura']))}', style: const TextStyle(fontWeight: FontWeight.w900, color: _verde)),
+        ])),
+      ]),
     );
   }
 
-  Widget _panelOportunidades() {
-    return _panelBase('Oportunidades por etapa', Icons.donut_large_outlined, SizedBox(height: 175, child: Row(children: [Expanded(child: CustomPaint(painter: _DonutPainter(), child: const Center(child: Text('CRM', style: TextStyle(fontWeight: FontWeight.w900, color: _azul))))), const SizedBox(width: 10), const Expanded(child: Column(mainAxisAlignment: MainAxisAlignment.center, crossAxisAlignment: CrossAxisAlignment.start, children: [_LegendDot(color: Color(0xFF1686E8), label: 'Prospección', value: '—'), _LegendDot(color: Color(0xFFFFA726), label: 'Cotización', value: '—'), _LegendDot(color: Color(0xFF13B77A), label: 'Negociación', value: '—'), _LegendDot(color: Color(0xFF8E5CF6), label: 'Cierre', value: '—')]))])));
-  }
-
-  Widget _panelSectores() {
-    final top = _top(_porVendedor, 5);
-    return _panelBase('Clientes / venta por vendedor', Icons.domain_outlined, top.isEmpty ? const SizedBox(height: 175, child: Center(child: Text('Sin información.', style: TextStyle(color: Colors.grey)))) : Column(children: [for (final e in top) _barRow(e.key, e.value)]));
-  }
-
-  Widget _barRow(String label, double value) {
-    final max = _porVendedor.values.fold<double>(0, (a,b) => a>b?a:b);
-    final pct = max <= 0 ? 0.0 : value / max;
-    return Padding(padding: const EdgeInsets.symmetric(vertical: 7), child: Row(children: [SizedBox(width: 95, child: Text(label, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w700))), Expanded(child: ClipRRect(borderRadius: BorderRadius.circular(8), child: LinearProgressIndicator(value: pct, minHeight: 9, backgroundColor: const Color(0xFFE9EEF4), valueColor: const AlwaysStoppedAnimation<Color>(Color(0xFF36B5C8))))), const SizedBox(width: 7), SizedBox(width: 65, child: Text(_money.format(value), textAlign: TextAlign.right, style: const TextStyle(fontSize: 10, fontWeight: FontWeight.w800, color: _azul)))]));
-  }
-
-  Widget _panelDocumentos() {
-    final docs = _recientes.take(3).toList();
-    return _panelBase('Documentos recientes', Icons.description_outlined, docs.isEmpty ? const SizedBox(height: 175, child: Center(child: Text('Sin documentos.', style: TextStyle(color: Colors.grey)))) : Column(children: [for (final r in docs) _documentoRow(r)]), action: 'Ver todos');
-  }
-
-  Widget _documentoRow(Map<String, dynamic> r) {
-    return Padding(padding: const EdgeInsets.symmetric(vertical: 7), child: Row(children: [Container(width: 34, height: 34, decoration: BoxDecoration(color: const Color(0xFFFFEFE8), borderRadius: BorderRadius.circular(9)), child: const Icon(Icons.picture_as_pdf_outlined, color: Colors.redAccent, size: 18)), const SizedBox(width: 8), Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [Text('${_texto(r['punto_factura'])}-${_texto(r['numero_factura'])}', style: const TextStyle(color: _azul, fontSize: 11, fontWeight: FontWeight.w800)), Text(_texto(r['cliente']).isEmpty ? 'Cliente' : _texto(r['cliente']), maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(color: Colors.grey, fontSize: 10))])), Text(_fecha.format(_date(r['fecha_factura']) ?? DateTime.now()), style: const TextStyle(color: Colors.grey, fontSize: 10)), const SizedBox(width: 3), const Icon(Icons.more_vert, size: 17, color: Colors.grey)]));
-  }
-}
-
-class _BannerPill extends StatelessWidget {
-  final IconData icon;
-  final String text;
-  const _BannerPill({required this.icon, required this.text});
-  @override
-  Widget build(BuildContext context) => Container(padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7), decoration: BoxDecoration(color: Colors.black.withValues(alpha: .16), border: Border.all(color: const Color(0xFF32E68C).withValues(alpha: .55)), borderRadius: BorderRadius.circular(22)), child: Row(mainAxisSize: MainAxisSize.min, children: [Icon(icon, size: 17, color: const Color(0xFF32E68C)), const SizedBox(width: 6), Text(text, style: const TextStyle(color: Colors.white, fontSize: 11, fontWeight: FontWeight.w700))]));
-}
-
-class _LegendDot extends StatelessWidget {
-  final Color color; final String label; final String value;
-  const _LegendDot({required this.color, required this.label, required this.value});
-  @override
-  Widget build(BuildContext context) => Padding(padding: const EdgeInsets.symmetric(vertical: 5), child: Row(children: [Container(width: 9, height: 9, decoration: BoxDecoration(color: color, shape: BoxShape.circle)), const SizedBox(width: 7), Expanded(child: Text(label, style: const TextStyle(fontSize: 11))), Text(value, style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w900, color: _azul))]));
-}
-
-class _MiniTrendPainter extends CustomPainter {
-  final Color color; _MiniTrendPainter(this.color);
-  @override
-  void paint(Canvas c, Size s) { final p=Paint()..color=color.withValues(alpha:.18)..style=PaintingStyle.fill; final l=Paint()..color=color..strokeWidth=2..style=PaintingStyle.stroke; final path=Path()..moveTo(0,s.height*.78)..lineTo(s.width*.18,s.height*.62)..lineTo(s.width*.35,s.height*.67)..lineTo(s.width*.53,s.height*.43)..lineTo(s.width*.72,s.height*.5)..lineTo(s.width,s.height*.15)..lineTo(s.width,s.height)..lineTo(0,s.height)..close(); c.drawPath(path,p); final line=Path()..moveTo(0,s.height*.78)..lineTo(s.width*.18,s.height*.62)..lineTo(s.width*.35,s.height*.67)..lineTo(s.width*.53,s.height*.43)..lineTo(s.width*.72,s.height*.5)..lineTo(s.width,s.height*.15); c.drawPath(line,l); }
-  @override bool shouldRepaint(covariant _MiniTrendPainter old) => old.color != color;
-}
-
-class _SalesChartPainter extends CustomPainter {
-  final List<double> values;
-  final Color color;
-
-  _SalesChartPainter(this.values, this.color);
-
-  String _formatoMonto(double value) {
-    if (value.abs() >= 1000000) {
-      return 'US\u0024 ${(value / 1000000).toStringAsFixed(2)} M';
-    }
-    if (value.abs() >= 1000) {
-      return 'US\u0024 ${(value / 1000).toStringAsFixed(0)} K';
-    }
-    return 'US\u0024 ${value.toStringAsFixed(0)}';
-  }
+  Widget _errorView() => Center(child: Card(margin: const EdgeInsets.all(30), child: Padding(padding: const EdgeInsets.all(24), child: Column(mainAxisSize: MainAxisSize.min, children: [
+    const Icon(Icons.error_outline, color: Colors.red, size: 44), const SizedBox(height: 10),
+    const Text('No se pudo cargar la factura', style: TextStyle(fontWeight: FontWeight.w900, fontSize: 18)), const SizedBox(height: 8),
+    Text(_error!, textAlign: TextAlign.center), const SizedBox(height: 14),
+    FilledButton.icon(onPressed: _cargar, icon: const Icon(Icons.refresh), label: const Text('Reintentar')),
+  ]))));
 
   @override
-  void paint(Canvas canvas, Size size) {
-    if (values.isEmpty || size.width <= 0 || size.height <= 0) return;
-
-    double maxValue = 0;
-    for (final value in values) {
-      if (value > maxValue) maxValue = value;
-    }
-    if (maxValue <= 0) maxValue = 1;
-
-    final gridPaint = Paint()
-      ..color = const Color(0xFFE8EEF5)
-      ..strokeWidth = 1;
-
-    for (int i = 0; i < 4; i++) {
-      final double y = size.height * 0.12 + i * size.height * 0.25;
-      canvas.drawLine(
-        Offset(0, y),
-        Offset(size.width, y),
-        gridPaint,
-      );
-    }
-
-    final barPaint = Paint()
-      ..color = color.withValues(alpha: 0.72);
-
-    final linePaint = Paint()
-      ..color = color
-      ..strokeWidth = 2.8
-      ..style = PaintingStyle.stroke;
-
-    final fillPaint = Paint()
-      ..color = color.withValues(alpha: 0.10)
-      ..style = PaintingStyle.fill;
-
-    final pointPaint = Paint()..color = color;
-
-    final path = Path();
-    final linePath = Path();
-
-    final int count = values.length;
-    final double baseY = size.height * 0.80;
-
-    // Space on top of each bar for the amount label.
-    final labelStyle = TextStyle(
-      color: color,
-      fontSize: count > 9 ? 8.5 : 9.5,
-      fontWeight: FontWeight.w900,
-    );
-
-    for (int i = 0; i < count; i++) {
-      final double x = count == 1
-          ? size.width / 2
-          : ((size.width - 25) * i / (count - 1)) + 12;
-
-      final double y = baseY -
-          (values[i] / maxValue) * size.height * 0.62;
-
-      final double barWidth = count == 1
-          ? 30.0
-          : ((size.width - 35) / count) * 0.48;
-
-      final double barHeight =
-          (baseY - y).clamp(0.0, size.height).toDouble();
-
-      canvas.drawRect(
-        Rect.fromLTWH(
-          x - barWidth / 2,
-          y,
-          barWidth,
-          barHeight,
-        ),
-        barPaint,
-      );
-
-      // Amount label above the bar.
-      final label = _formatoMonto(values[i]);
-      final textPainter = TextPainter(
-        text: TextSpan(
-          text: label,
-          style: labelStyle,
-        ),
-        textDirection: ui.TextDirection.ltr,
-        textAlign: TextAlign.center,
-        maxLines: 1,
-        ellipsis: '…',
-      )..layout(
-          minWidth: 0,
-          maxWidth: count > 9 ? 70 : 82,
-        );
-
-      // Never let the label leave the chart's top boundary.
-      final labelY = (y - textPainter.height - 5)
-          .clamp(0.0, size.height - textPainter.height)
-          .toDouble();
-
-      final labelX =
-          (x - textPainter.width / 2)
-              .clamp(0.0, size.width - textPainter.width)
-              .toDouble();
-
-      textPainter.paint(
-        canvas,
-        Offset(labelX, labelY),
-      );
-
-      if (i == 0) {
-        linePath.moveTo(x, y);
-        path.moveTo(x, y);
-      } else {
-        linePath.lineTo(x, y);
-        path.lineTo(x, y);
-      }
-
-      canvas.drawCircle(
-        Offset(x, y),
-        4.0,
-        pointPaint,
-      );
-    }
-
-    final double lastX = count == 1
-        ? size.width / 2
-        : ((size.width - 25) * (count - 1) / (count - 1)) + 12;
-
-    final fillPath = Path.from(path)
-      ..lineTo(lastX, baseY)
-      ..lineTo(12, baseY)
-      ..close();
-
-    canvas.drawPath(fillPath, fillPaint);
-    canvas.drawPath(linePath, linePaint);
-  }
-
-  @override
-  bool shouldRepaint(covariant _SalesChartPainter oldDelegate) {
-    return oldDelegate.values != values ||
-        oldDelegate.color != color;
-  }
-}
-
-class _DonutPainter extends CustomPainter {
-  @override
-  void paint(Canvas canvas, Size size) {
-    final double radius = (size.shortestSide / 2) - 8;
-    final Offset center = Offset(size.width / 2, size.height / 2);
-    final Rect rect = Rect.fromCircle(center: center, radius: radius);
-    const colors = <Color>[
-      Color(0xFF1686E8),
-      Color(0xFFFFA726),
-      Color(0xFF13B77A),
-      Color(0xFF8E5CF6),
-    ];
-
-    double startAngle = -1.57;
-    for (final color in colors) {
-      final paint = Paint()
-        ..color = color
-        ..style = PaintingStyle.stroke
-        ..strokeWidth = 22;
-      canvas.drawArc(rect, startAngle, 1.35, false, paint);
-      startAngle += 1.52;
-    }
-  }
-
-  @override
-  bool shouldRepaint(covariant _DonutPainter oldDelegate) => false;
+  Widget build(BuildContext context) => Scaffold(
+    backgroundColor: _fondo,
+    appBar: AppBar(
+      backgroundColor: Colors.white,
+      foregroundColor: _azul,
+      elevation: 0,
+      title: const Text('Cliente 360° · Factura', style: TextStyle(fontWeight: FontWeight.w900)),
+      actions: [IconButton(tooltip: 'Actualizar', onPressed: _cargando ? null : _cargar, icon: const Icon(Icons.refresh))],
+    ),
+    body: _cargando
+        ? const Center(child: CircularProgressIndicator())
+        : _error != null
+            ? _errorView()
+            : SingleChildScrollView(
+                padding: const EdgeInsets.fromLTRB(18, 18, 18, 30),
+                child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                  _encabezado(), const SizedBox(height: 14), _historial(), const SizedBox(height: 14), _productos(),
+                ]),
+              ),
+  );
 }

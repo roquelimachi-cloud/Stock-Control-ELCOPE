@@ -378,7 +378,10 @@ class _DashboardPageState extends State<DashboardPage> {
     try {
       final List<Map<String, dynamic>> rows = [];
 
-      await _cargarMapaVendedores();
+      // No bloqueamos la carga del stock esperando el mapa de todos los
+      // clientes. La tabla stock guarda el nombre del vendedor al importar.
+      // El mapa se consulta en segundo plano para búsquedas auxiliares.
+      _cargarMapaVendedores();
 
       // ============================================================
       // CONSULTA OPTIMIZADA A SUPABASE
@@ -417,7 +420,7 @@ class _DashboardPageState extends State<DashboardPage> {
           data = await _db
               .from('stock')
               .select()
-              .ilike('vendedor', vendedorCodigo)
+              .ilike('vendedor', vendedorFiltro)
               .range(from, from + 999);
         } else if (filtrarPorOp) {
           data = await _db

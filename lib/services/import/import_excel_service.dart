@@ -1,112 +1,173 @@
-
 import 'dart:typed_data';
-
 import 'package:excel/excel.dart';
 
 import '../../models/excel/stock_excel_row.dart';
-class ImportExcelService {
+import '../excel_helper.dart';
+import '../excel_mapper.dart';
 
-Future<List<StockExcelRow>> importar({
-  required Uint8List bytes,
-}) async {
-final excel = Excel.decodeBytes(bytes);
+class ImportExcelService {
+  // Mantiene compatibilidad con pantallas que llaman importar(bytes: ...).
+  Future<List<StockExcelRow>> importar({required Uint8List bytes}) {
+    return importarBytes(bytes);
+  }
+
+  Future<List<StockExcelRow>> importarBytes(Uint8List bytes) async {
+    if (bytes.isEmpty) {
+      throw Exception("El archivo Excel está vacío.");
+    }
+
+    final excel = Excel.decodeBytes(bytes);
 
     if (excel.tables.isEmpty) {
-      throw Exception("El archivo no contiene hojas.");
+      throw Exception("El Excel no contiene hojas.");
     }
 
-    final Sheet hoja = excel.tables.values.first;
-
-    final List<StockExcelRow> registros = [];
+    final hoja = excel.tables.values.first;
 
     if (hoja.rows.length <= 1) {
-      return registros;
+      return [];
     }
+
+    final encabezados = hoja.rows.first
+        .map((e) => e?.value?.toString().trim() ?? "")
+        .toList();
+
+    final columnas = <String, int>{
+      'codigoAlmacen': ExcelHelper.buscarColumna(
+        encabezados,
+        ['codigo almacen'],
+      ),
+      'codigoArticulo': ExcelHelper.buscarColumna(
+        encabezados,
+        ['codigo articulo'],
+      ),
+      'articulo': ExcelHelper.buscarColumna(
+        encabezados,
+        ['articulo'],
+      ),
+      'lote': ExcelHelper.buscarColumna(
+        encabezados,
+        ['lote'],
+      ),
+      'stock': ExcelHelper.buscarColumna(
+        encabezados,
+        ['stock almacen'],
+      ),
+      'peso': ExcelHelper.buscarColumna(
+        encabezados,
+        ['peso cobre'],
+      ),
+      'fechaIngreso': ExcelHelper.buscarColumna(
+        encabezados,
+        ['fecha ingreso'],
+      ),
+      'codigoVendedor': ExcelHelper.buscarColumna(
+        encabezados,
+        ['codigo vendedor'],
+      ),
+      'vendedor': ExcelHelper.buscarColumna(
+        encabezados,
+        ['vendedor'],
+      ),
+      'codigoCliente': ExcelHelper.buscarColumna(
+        encabezados,
+        ['codigo cliente'],
+      ),
+      'cliente': ExcelHelper.buscarColumna(
+        encabezados,
+        ['cliente'],
+      ),
+      'ordenProduccion': ExcelHelper.buscarColumna(
+        encabezados,
+        ['orden produccion'],
+      ),
+      'fechaOrdenProduccion': ExcelHelper.buscarColumna(
+        encabezados,
+        ['fecha orden produccion'],
+      ),
+      'modelo': ExcelHelper.buscarColumna(
+        encabezados,
+        ['modelo'],
+      ),
+      'unidad': ExcelHelper.buscarColumna(
+        encabezados,
+        ['unidad medida'],
+      ),
+      'cantidadEmpaque': ExcelHelper.buscarColumna(
+        encabezados,
+        ['cantidad empaque'],
+      ),
+      'listaPrecio': ExcelHelper.buscarColumna(
+        encabezados,
+        ['lista precio dolar'],
+      ),
+      'ultimoPrecio': ExcelHelper.buscarColumna(
+        encabezados,
+        ['ultimo precio facturado dolar'],
+      ),
+      'codigoUltimoCliente': ExcelHelper.buscarColumna(
+        encabezados,
+        ['codigo ultimo cliente facturado'],
+      ),
+      'ultimoCliente': ExcelHelper.buscarColumna(
+        encabezados,
+        ['ultimo cliente facturado'],
+      ),
+      'valorLista': ExcelHelper.buscarColumna(
+        encabezados,
+        ['valor lista precio dolar'],
+      ),
+      'valorFacturacion': ExcelHelper.buscarColumna(
+        encabezados,
+        ['valor facturacion dolar'],
+      ),
+      'familia': ExcelHelper.buscarColumna(
+        encabezados,
+        ['familia'],
+      ),
+      'calibre': ExcelHelper.buscarColumna(
+        encabezados,
+        ['calibre'],
+      ),
+      'clase': ExcelHelper.buscarColumna(
+        encabezados,
+        ['clase'],
+      ),
+      'color': ExcelHelper.buscarColumna(
+        encabezados,
+        ['color'],
+      ),
+      'presentacion': ExcelHelper.buscarColumna(
+        encabezados,
+        ['presentacion'],
+      ),
+    };
+
+    // Evita importar silenciosamente el stock si no se detectó "Modelo".
+    if ((columnas['modelo'] ?? -1) < 0) {
+      throw Exception(
+        'No se encontró la columna "Modelo" en el Excel. '
+        'Verifica que el encabezado esté escrito como Modelo.',
+      );
+    }
+
+    final List<StockExcelRow> items = [];
 
     for (int i = 1; i < hoja.rows.length; i++) {
       final fila = hoja.rows[i];
 
-      String texto(int index) {
-        if (index >= fila.length) return "";
-        return fila[index]?.value?.toString().trim() ?? "";
+      if (ExcelHelper.filaVacia(fila)) {
+        continue;
       }
 
-      double numero(int index) {
-        if (index >= fila.length) return 0;
-
-        final cell = fila[index];
-
-        if (cell == null || cell.value == null) return 0;
-
-        final valor = cell.value.toString();
-
-        return double.tryParse(
-              valor.replaceAll(",", ""),
-            ) ??
-            0;
-      }
-
-      DateTime? fecha(int index) {
-        if (index >= fila.length) return null;
-
-        final cell = fila[index];
-
-        if (cell == null || cell.value == null) {
-          return null;
-        }
-
-        return DateTime.tryParse(cell.value.toString());
-      }
-
-      // ========= SOLO PARA DEPURAR =========
-      if (i == 1) {
-        print("========== PRIMER REGISTRO ==========");
-
-        for (int c = 0; c < fila.length; c++) {
-          print("Columna $c = ${texto(c)}");
-        }
-
-        print("=====================================");
-      }
-      // ====================================
-
-      registros.add(
- StockExcelRow(
-  codigoAlmacen: texto(0),
-  codigoArticulo: texto(1),
-  articulo: texto(2),
-  lote: texto(3),
-  stockAlmacen: numero(4),
-  pesoCobre: numero(5),
-  fechaIngreso: fecha(6),
-  codigoVendedor: texto(7),
-  vendedor: texto(8),
-  codigoCliente: texto(9),
-  cliente: texto(10),
-  ordenProduccion: texto(11),
-  fechaOrdenProduccion: fecha(12),
-  modelo: texto(13),
-  unidadMedida: texto(14),
-  cantidadEmpaque: numero(15),
-  listaPrecioDolar: numero(16),
-  ultimoPrecioFacturadoDolar: numero(17),
-  codigoUltimoClienteFacturado: texto(18),
-  ultimoClienteFacturado: texto(19),
-
-  // PRECIOS CORRECTOS
-  valorListaPrecioDolar: numero(20),
-  valorFacturacionDolar: numero(21),
-
-  // DATOS DEL PRODUCTO
-  familia: texto(22),
-  calibre: texto(23),
-  clase: texto(24),
-  color: texto(25),
-  presentacion: texto(26),
-),
+      items.add(
+        ExcelMapper.convertir(
+          fila,
+          columnas,
+        ),
       );
     }
 
-    return registros;
+    return items;
   }
 }

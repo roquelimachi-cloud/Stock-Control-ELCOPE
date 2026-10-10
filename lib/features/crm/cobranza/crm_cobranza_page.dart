@@ -1,3 +1,7 @@
+import 'dart:typed_data';
+
+import 'package:excel/excel.dart' hide Border;
+import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 
@@ -13,10 +17,15 @@ class CrmCobranzaPage extends StatefulWidget {
 
 class _CrmCobranzaPageState extends State<CrmCobranzaPage> {
   static const azul = Color(0xFF0B3B63);
-  static const verde = Color(0xFF0A9B61);
-  static const fondo = Color(0xFFF4F7FA);
-  static const rojo = Color(0xFFC62828);
-  static const naranja = Color(0xFFE67E22);
+  static const verde = Color(0xFF00C98D);
+  static const fondo = Color(0xFF06263B);
+  static const panel = Color(0xFF0A3550);
+  static const panelClaro = Color(0xFF104361);
+  static const borde = Color(0xFF176184);
+  static const texto = Color(0xFFF4F8FC);
+  static const textoSuave = Color(0xFFAAC4D6);
+  static const rojo = Color(0xFFFF5364);
+  static const naranja = Color(0xFFFFA31A);
 
   final db = SupabaseService.client;
   final search = TextEditingController();
@@ -317,6 +326,188 @@ class _CrmCobranzaPageState extends State<CrmCobranzaPage> {
     }
   }
 
+  bool get _puedeImportar =>
+      Sesion.esAdministrador ||
+      ['administrador', 'gerencia'].contains(Sesion.rol.trim().toLowerCase());
+
+  String _normalizarColumna(dynamic value) => '$value'
+      .trim()
+      .toLowerCase()
+      .replaceAll('á', 'a')
+      .replaceAll('é', 'e')
+      .replaceAll('í', 'i')
+      .replaceAll('ó', 'o')
+      .replaceAll('ú', 'u')
+      .replaceAll('ü', 'u')
+      .replaceAll('ñ', 'n')
+      .replaceAll(RegExp(r'[^a-z0-9]+'), '_')
+      .replaceAll(RegExp(r'^_|_$'), '');
+
+  String _celdaTexto(dynamic value) {
+    if (value == null) return '';
+    return '$value'.trim();
+  }
+
+  double _celdaNumero(dynamic value) {
+    if (value is num) return value.toDouble();
+    var raw = _celdaTexto(value).replaceAll('S/', '').replaceAll('US\$', '').replaceAll(' ', '');
+    if (raw.contains(',') && raw.contains('.')) {
+      raw = raw.lastIndexOf(',') > raw.lastIndexOf('.')
+          ? raw.replaceAll('.', '').replaceAll(',', '.')
+          : raw.replaceAll(',', '');
+    } else if (raw.contains(',')) {
+      raw = raw.replaceAll(',', '.');
+    }
+    return double.tryParse(raw) ?? 0;
+  }
+
+  String? _celdaFecha(dynamic value) {
+    if (value == null || '$value'.trim().isEmpty) return null;
+    DateTime? d;
+    if (value is DateTime) d = value;
+    if (value is num) {
+      // Excel usa 1899-12-30 como origen para sus fechas serializadas.
+      d = DateTime(1899, 12, 30).add(Duration(days: value.floor()));
+    }
+    final raw = _celdaTexto(value);
+    d ??= DateTime.tryParse(raw);
+    if (d == null) {
+      for (final f in ['dd/MM/yyyy', 'd/M/yyyy', 'dd-MM-yyyy', 'd-M-yyyy']) {
+        try { d = DateFormat(f).parseStrict(raw); break; } catch (_) {}
+      }
+    }
+    return d == null ? null : DateFormat('yyyy-MM-dd').format(d);
+  }
+
+  Future<void> _importarExcel() async {
+    if (!_puedeImportar) {
+      _msg('Solo Administrador o Gerencia puede importar cobranzas.');
+      return;
+    }
+    try {
+      final result = await FilePicker.platform.pickFiles(
+        type: FileType.custom,
+        allowedExtensions: ['xlsx', 'xls'],
+        withData: true,
+      );
+      if (result == null || result.files.isEmpty) return;
+      final bytes = result.files.single.bytes;
+      if (bytes == null) throw Exception('No se pudieron leer los datos del archivo.');
+      final workbook = Excel.decodeBytes(Uint8List.fromList(bytes));
+      Sheet? sheet;
+      for (final candidate in workbook.tables.values) {
+        if (candidate.rows.length > 1) { sheet = candidate; break; }
+      }
+      if (sheet == null) throw Exception('El archivo no tiene filas para importar.');
+
+      final headers = <String, int>{};
+      final first = sheet.rows.first;
+      for (var i = 0; i < first.length; i++) {
+        final h = _normalizarColumna(first[i]?.value);
+        if (h.isNotEmpty) headers[h] = i;
+      }
+      int col(List<String> names) {
+        for (final name in names) {
+          final index = headers[_normalizarColumna(name)];
+          if (index != null) return index;
+        }
+        return -1;
+      }
+      dynamic cell(List<Data?> row, List<String> names) {
+        final i = col(names);
+        return i < 0 || i >= row.length ? null : row[i]?.value;
+      }
+
+      final cCliente = col(['codigo_cliente', 'codigo cliente', 'codigo', 'ruc', 'cliente', 'razon social', 'razon_social']);
+      final cMonto = col(['monto_factura', 'monto factura', 'importe', 'total factura', 'total', 'monto', 'deuda']);
+      final cVence = col(['fecha_vencimiento', 'fecha vencimiento', 'vencimiento', 'fecha de vencimiento']);
+      if (cCliente < 0 || cMonto < 0 || cVence < 0) {
+        throw Exception('Faltan columnas obligatorias. Se requiere código/RUC del cliente, monto de factura y fecha de vencimiento.');
+      }
+
+      final parsed = <Map<String, dynamic>>[];
+      var omitidas = 0;
+      for (final row in sheet.rows.skip(1)) {
+        final codigo = _celdaTexto(cell(row, ['codigo_cliente', 'codigo cliente', 'codigo', 'ruc']));
+        final documento = _celdaTexto(cell(row, ['documento', 'factura', 'numero_factura', 'numero factura', 'nro factura', 'comprobante']));
+        final vencimiento = _celdaFecha(cell(row, ['fecha_vencimiento', 'fecha vencimiento', 'vencimiento', 'fecha de vencimiento']));
+        final montoFactura = _celdaNumero(cell(row, ['monto_factura', 'monto factura', 'importe', 'total factura', 'total', 'monto', 'deuda']));
+        if (codigo.isEmpty || vencimiento == null || montoFactura <= 0) { omitidas++; continue; }
+        parsed.add({
+          'codigo_cliente': codigo,
+          'documento': documento,
+          'fecha_emision': _celdaFecha(cell(row, ['fecha_emision', 'fecha emision', 'fecha factura', 'fecha'])) ,
+          'fecha_vencimiento': vencimiento,
+          'monto_factura': montoFactura,
+          'monto_pagado': _celdaNumero(cell(row, ['monto_pagado', 'monto pagado', 'pagado', 'cobrado', 'importe cobrado'])),
+          'vendedor': _celdaTexto(cell(row, ['vendedor', 'asesor comercial'])),
+          'observacion': _celdaTexto(cell(row, ['observacion', 'observación', 'comentario'])),
+        });
+      }
+      if (parsed.isEmpty) throw Exception('No se encontraron filas válidas. Revisa los encabezados y las fechas.');
+      if (!mounted) return;
+      final confirmar = await showDialog<bool>(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          title: const Text('Confirmar importación de cobranzas'),
+          content: SizedBox(width: 520, child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
+            Text('Archivo: ${result.files.single.name}'),
+            const SizedBox(height: 8),
+            Text('Filas listas para importar: ${parsed.length}', style: const TextStyle(fontWeight: FontWeight.w800)),
+            Text('Filas omitidas por datos incompletos: $omitidas'),
+            const SizedBox(height: 10),
+            const Text('Se revisarán duplicados por cliente y documento antes de registrar. Confirma que el archivo corresponde a la tabla especial de cobranzas.'),
+            const SizedBox(height: 10),
+            Container(height: 150, decoration: BoxDecoration(border: Border.all(color: Colors.black12), borderRadius: BorderRadius.circular(8)), child: ListView.builder(itemCount: parsed.length < 6 ? parsed.length : 6, itemBuilder: (_, i) {
+              final r = parsed[i];
+              return ListTile(dense: true, title: Text('${r['codigo_cliente']} · ${r['documento'].toString().isEmpty ? 'Sin documento' : r['documento']}'), subtitle: Text('Vence ${r['fecha_vencimiento']} · US\$ ${money.format(r['monto_factura'])}'));
+            })),
+          ])),
+          actions: [TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancelar')), FilledButton.icon(onPressed: () => Navigator.pop(ctx, true), icon: const Icon(Icons.cloud_upload_outlined), label: const Text('Importar'))],
+        ),
+      );
+      if (confirmar != true) return;
+
+      // Detecta duplicados sin borrar ni sobrescribir registros existentes.
+      final existentesData = await db.from('crm_cobranzas').select('codigo_cliente,documento').limit(10000);
+      final existentes = <String>{};
+      for (final e in existentesData as List) {
+        final m = Map<String, dynamic>.from(e);
+        existentes.add('${_s(m['codigo_cliente'])}|${_s(m['documento']).toUpperCase()}');
+      }
+      var insertadas = 0;
+      var duplicadas = 0;
+      var errores = 0;
+      for (final r in parsed) {
+        final codigo = _s(r['codigo_cliente']);
+        final documento = _s(r['documento']);
+        final key = '$codigo|${documento.toUpperCase()}';
+        if (documento.isNotEmpty && existentes.contains(key)) { duplicadas++; continue; }
+        try {
+          await db.rpc('crm_registrar_cobranza', params: {
+            'p_codigo_cliente': codigo,
+            'p_factura_id': null,
+            'p_documento': documento.isEmpty ? null : documento,
+            'p_fecha_emision': r['fecha_emision'],
+            'p_fecha_vencimiento': r['fecha_vencimiento'],
+            'p_monto_factura': r['monto_factura'],
+            'p_monto_pagado': r['monto_pagado'],
+            'p_fecha_ultimo_pago': null,
+            'p_observacion': _s(r['observacion']).isEmpty ? 'Importado desde ${result.files.single.name}' : r['observacion'],
+            'p_vendedor': _s(r['vendedor']).isEmpty ? null : r['vendedor'],
+            'p_usuario_id': Sesion.idUsuario,
+          });
+          insertadas++;
+          if (documento.isNotEmpty) existentes.add(key);
+        } catch (_) { errores++; }
+      }
+      await _cargar();
+      if (mounted) _msg('Importación finalizada. Insertadas: $insertadas · Duplicadas: $duplicadas · Con error: $errores · Omitidas: $omitidas.');
+    } catch (e) {
+      if (mounted) _msg('No se pudo importar el archivo: $e');
+    }
+  }
+
   Future<void> _registrarPago(Map<String, dynamic> row) async {
     final pago = TextEditingController(text: _n(row['monto_pagado']).toStringAsFixed(2));
     final obs = TextEditingController(text: _s(row['observacion']));
@@ -367,18 +558,96 @@ class _CrmCobranzaPageState extends State<CrmCobranzaPage> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: fondo,
-      appBar: AppBar(backgroundColor: azul, foregroundColor: Colors.white, title: const Text('Cobranza CRM'), actions: [IconButton(onPressed: loading ? null : _cargar, icon: const Icon(Icons.refresh))]),
-      floatingActionButton: FloatingActionButton.extended(onPressed: _nuevaCobranza, backgroundColor: verde, foregroundColor: Colors.white, icon: const Icon(Icons.add), label: const Text('Nueva cobranza')),
-      body: Padding(padding: const EdgeInsets.all(18), child: Column(children: [
-        _toolbar(), const SizedBox(height: 14), _kpis(), const SizedBox(height: 14),
-        Expanded(child: loading ? const Center(child: CircularProgressIndicator()) : error != null ? _errorView() : _table()),
-      ])),
+    final base = Theme.of(context);
+    return Theme(
+      data: base.copyWith(
+        brightness: Brightness.dark,
+        scaffoldBackgroundColor: fondo,
+        cardColor: panel,
+        canvasColor: panel,
+        dividerColor: borde,
+        colorScheme: base.colorScheme.copyWith(
+          brightness: Brightness.dark,
+          primary: const Color(0xFF12B8FF),
+          secondary: verde,
+          surface: panel,
+          onSurface: texto,
+          error: rojo,
+        ),
+        textTheme: base.textTheme.apply(bodyColor: texto, displayColor: texto),
+        inputDecorationTheme: InputDecorationTheme(
+          filled: true,
+          fillColor: panelClaro,
+          labelStyle: const TextStyle(color: textoSuave),
+          hintStyle: const TextStyle(color: textoSuave),
+          prefixIconColor: const Color(0xFF12B8FF),
+          suffixIconColor: textoSuave,
+          border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: const BorderSide(color: borde)),
+          enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: const BorderSide(color: borde)),
+          focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: const BorderSide(color: Color(0xFF12B8FF), width: 1.5)),
+        ),
+        dataTableTheme: const DataTableThemeData(
+          headingRowColor: WidgetStatePropertyAll(Color(0xFF104361)),
+          dataRowColor: WidgetStatePropertyAll(Color(0xFF0A3550)),
+          headingTextStyle: TextStyle(color: texto, fontWeight: FontWeight.w800),
+          dataTextStyle: TextStyle(color: texto),
+          dividerThickness: 0.7,
+        ),
+      ),
+      child: Scaffold(
+        backgroundColor: fondo,
+        appBar: AppBar(
+          backgroundColor: azul,
+          foregroundColor: Colors.white,
+          elevation: 0,
+          title: const Text('Cobranza CRM', style: TextStyle(fontWeight: FontWeight.w800)),
+          actions: [
+            if (_puedeImportar)
+              Padding(
+                padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 6),
+                child: FilledButton.icon(
+                  onPressed: _importarExcel,
+                  icon: const Icon(Icons.file_upload_outlined),
+                  label: const Text('Importar'),
+                  style: FilledButton.styleFrom(backgroundColor: verde, foregroundColor: const Color(0xFF032D37)),
+                ),
+              ),
+            IconButton(tooltip: 'Actualizar', onPressed: loading ? null : _cargar, icon: const Icon(Icons.refresh)),
+            const SizedBox(width: 8),
+          ],
+        ),
+        floatingActionButton: FloatingActionButton.extended(
+          onPressed: _nuevaCobranza,
+          backgroundColor: verde,
+          foregroundColor: const Color(0xFF032D37),
+          icon: const Icon(Icons.add),
+          label: const Text('Nueva cobranza', style: TextStyle(fontWeight: FontWeight.w800)),
+        ),
+        body: Padding(
+          padding: const EdgeInsets.all(18),
+          child: Column(children: [
+            _toolbar(),
+            const SizedBox(height: 16),
+            _kpis(),
+            const SizedBox(height: 16),
+            Expanded(
+              child: Container(
+                width: double.infinity,
+                decoration: BoxDecoration(color: panel, borderRadius: BorderRadius.circular(16), border: Border.all(color: borde)),
+                child: loading
+                    ? const Center(child: CircularProgressIndicator())
+                    : error != null
+                        ? _errorView()
+                        : _table(),
+              ),
+            ),
+          ]),
+        ),
+      ),
     );
   }
 
-  Widget _toolbar() => Card(child: Padding(padding: const EdgeInsets.all(14), child: Wrap(spacing:12,runSpacing:12,crossAxisAlignment:WrapCrossAlignment.center,children:[
+  Widget _toolbar() => Card(color: panel, elevation: 0, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16), side: const BorderSide(color: borde)), child: Padding(padding: const EdgeInsets.all(14), child: Wrap(spacing:12,runSpacing:12,crossAxisAlignment:WrapCrossAlignment.center,children:[
     SizedBox(width:340,child:TextField(controller:search,onSubmitted:(_)=>_cargar(),decoration:InputDecoration(labelText:'Buscar cliente, RUC o documento',prefixIcon:const Icon(Icons.search),suffixIcon:IconButton(onPressed:(){search.clear();_cargar();},icon:const Icon(Icons.clear)),border:const OutlineInputBorder()))),
     SizedBox(width:180,child:DropdownButtonFormField<String>(initialValue:estado,decoration:const InputDecoration(labelText:'Estado',border:OutlineInputBorder()),items:const [DropdownMenuItem(value:'TODOS',child:Text('Todos')),DropdownMenuItem(value:'PENDIENTE',child:Text('Pendiente')),DropdownMenuItem(value:'PROMESA',child:Text('Promesa')),DropdownMenuItem(value:'VENCIDA',child:Text('Vencida')),DropdownMenuItem(value:'PAGADA',child:Text('Pagada'))],onChanged:(v){if(v!=null){setState(()=>estado=v);_cargar();}})),
     SizedBox(width:230,child:DropdownButtonFormField<String>(initialValue:vendedor,decoration:const InputDecoration(labelText:'Vendedor',border:OutlineInputBorder()),items:[const DropdownMenuItem(value:'TODOS',child:Text('Todos')), ...vendedores.map((v)=>DropdownMenuItem(value:v,child:Text(v,overflow:TextOverflow.ellipsis)))],onChanged:(v){if(v!=null){setState(()=>vendedor=v);_cargar();}})),
@@ -386,11 +655,17 @@ class _CrmCobranzaPageState extends State<CrmCobranzaPage> {
   ])));
 
   Widget _kpis()=>Wrap(spacing:12,runSpacing:12,children:[_kpi('Cartera', 'US\$ ${money.format(total)}', azul, Icons.account_balance_wallet),_kpi('Pagado','US\$ ${money.format(pagado)}',verde,Icons.payments),_kpi('Saldo','US\$ ${money.format(saldo)}',rojo,Icons.warning_amber),_kpi('Vencidas','$vencidas',naranja,Icons.event_busy)]);
-  Widget _kpi(String t,String v,Color c,IconData i)=>SizedBox(width:220,child:Card(child:Padding(padding:const EdgeInsets.all(15),child:Row(children:[CircleAvatar(backgroundColor:c.withValues(alpha:.1),child:Icon(i,color:c)),const SizedBox(width:10),Expanded(child:Column(crossAxisAlignment:CrossAxisAlignment.start,children:[Text(t,style:const TextStyle(color:Colors.grey)),Text(v,style:TextStyle(fontSize:18,fontWeight:FontWeight.w900,color:c))]))]))));
+  Widget _kpi(String t,String v,Color c,IconData i)=>SizedBox(width:220,child:Card(color:panel,elevation:0,shape:RoundedRectangleBorder(borderRadius:BorderRadius.circular(16),side:const BorderSide(color:borde)),child:Padding(padding:const EdgeInsets.all(15),child:Row(children:[CircleAvatar(backgroundColor:c.withValues(alpha:.14),child:Icon(i,color:c)),const SizedBox(width:10),Expanded(child:Column(crossAxisAlignment:CrossAxisAlignment.start,children:[Text(t,style:const TextStyle(color:textoSuave)),Text(v,style:TextStyle(fontSize:18,fontWeight:FontWeight.w900,color:c))]))]))));
+
+  Future<List<Map<String, dynamic>>> _buscarClientePorCodigo(String codigo) async {
+    if (codigo.isEmpty) return [];
+    final data = await db.from('clientes').select('codigo,razon_social,nombre').eq('codigo', codigo).limit(1);
+    return List<Map<String, dynamic>>.from(data);
+  }
 
   Widget _table(){
-    if(rows.isEmpty)return const Center(child:Text('No hay cobranzas para los filtros seleccionados.'));
-    return Card(child: Scrollbar(thumbVisibility:true,child:SingleChildScrollView(scrollDirection:Axis.vertical,child:SingleChildScrollView(scrollDirection:Axis.horizontal,child:DataTable(columns:const [DataColumn(label:Text('VENCIMIENTO')),DataColumn(label:Text('CLIENTE')),DataColumn(label:Text('DOCUMENTO')),DataColumn(label:Text('VENDEDOR')),DataColumn(label:Text('FACTURA')),DataColumn(label:Text('PAGADO')),DataColumn(label:Text('SALDO')),DataColumn(label:Text('ESTADO')),DataColumn(label:Text('ACCIONES'))],rows:rows.map((r){final e=_s(r['estado']);return DataRow(cells:[DataCell(Text(_dt(r['fecha_vencimiento'])==null?'—':date.format(_dt(r['fecha_vencimiento'])!))),DataCell(Text(_s(r['codigo_cliente']))),DataCell(Text(_s(r['documento']).isEmpty?'—':_s(r['documento']))),DataCell(Text(_s(r['vendedor']))),DataCell(Text('US\$ ${money.format(_n(r['monto_factura']))}')),DataCell(Text('US\$ ${money.format(_n(r['monto_pagado']))}')),DataCell(Text('US\$ ${money.format(_n(r['saldo']))}',style:TextStyle(fontWeight:FontWeight.w800,color:_estadoColor(e)))),DataCell(Chip(label:Text(e),avatar:Icon(e=='PAGADA'?Icons.check:e=='VENCIDA'?Icons.warning_amber:Icons.schedule,size:16,color:_estadoColor(e)))),DataCell(IconButton(tooltip:'Registrar pago / actualizar',onPressed:()=>_registrarPago(r),icon:const Icon(Icons.edit_note)))]);}).toList())))));
+    if(rows.isEmpty)return const Center(child:Padding(padding:EdgeInsets.all(28),child:Column(mainAxisSize:MainAxisSize.min,children:[Icon(Icons.receipt_long_outlined,size:48,color:Color(0xFF12B8FF)),SizedBox(height:12),Text('No hay cobranzas para los filtros seleccionados.',style:TextStyle(color:texto,fontWeight:FontWeight.w700,fontSize:16)),SizedBox(height:6),Text('Importa tu archivo o registra una cobranza para comenzar.',style:TextStyle(color:textoSuave))])));
+    return Card(color:panel,elevation:0,child: Scrollbar(thumbVisibility:true,child:SingleChildScrollView(scrollDirection:Axis.vertical,child:SingleChildScrollView(scrollDirection:Axis.horizontal,child:DataTable(columns:const [DataColumn(label:Text('VENCIMIENTO')),DataColumn(label:Text('CLIENTE')),DataColumn(label:Text('DOCUMENTO')),DataColumn(label:Text('VENDEDOR')),DataColumn(label:Text('FACTURA')),DataColumn(label:Text('PAGADO')),DataColumn(label:Text('SALDO')),DataColumn(label:Text('ESTADO')),DataColumn(label:Text('ACCIONES'))],rows:rows.map((r){final e=_s(r['estado']);return DataRow(cells:[DataCell(Text(_dt(r['fecha_vencimiento'])==null?'—':date.format(_dt(r['fecha_vencimiento'])!))),DataCell(SizedBox(width:220, child: FutureBuilder<List<Map<String, dynamic>>>(future: _buscarClientePorCodigo(_s(r['codigo_cliente'])), builder: (context, snapshot) { final cl = snapshot.data?.isNotEmpty == true ? snapshot.data!.first : null; final nombre = cl == null ? '' : (_s(cl['razon_social']).isNotEmpty ? _s(cl['razon_social']) : _s(cl['nombre'])); return Column(crossAxisAlignment:CrossAxisAlignment.start,mainAxisAlignment:MainAxisAlignment.center,children:[Text(nombre.isEmpty ? _s(r['codigo_cliente']) : nombre,maxLines:1,overflow:TextOverflow.ellipsis,style:const TextStyle(fontWeight:FontWeight.w700)),if(nombre.isNotEmpty) Text(_s(r['codigo_cliente']),style:const TextStyle(color:textoSuave,fontSize:11))]); }))),DataCell(Text(_s(r['documento']).isEmpty?'—':_s(r['documento']))),DataCell(Text(_s(r['vendedor']))),DataCell(Text('US\$ ${money.format(_n(r['monto_factura']))}')),DataCell(Text('US\$ ${money.format(_n(r['monto_pagado']))}')),DataCell(Text('US\$ ${money.format(_n(r['saldo']))}',style:TextStyle(fontWeight:FontWeight.w800,color:_estadoColor(e)))),DataCell(Chip(label:Text(e),avatar:Icon(e=='PAGADA'?Icons.check:e=='VENCIDA'?Icons.warning_amber:Icons.schedule,size:16,color:_estadoColor(e)))),DataCell(IconButton(tooltip:'Registrar pago / actualizar',onPressed:()=>_registrarPago(r),icon:const Icon(Icons.edit_note)))]);}).toList())))));
   }
 
   Widget _errorView()=>Center(child:Column(mainAxisSize:MainAxisSize.min,children:[const Icon(Icons.error_outline,size:50,color:rojo),const SizedBox(height:10),Text(error??'Error'),const SizedBox(height:12),FilledButton(onPressed:_cargar,child:const Text('Reintentar'))]));

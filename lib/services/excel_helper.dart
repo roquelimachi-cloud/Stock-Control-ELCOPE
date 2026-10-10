@@ -30,19 +30,37 @@ class ExcelHelper {
     List encabezados,
     List nombres,
   ) {
-    for (int i = 0; i < encabezados.length; i++) {
-      final texto = _normalizar(encabezados[i].toString());
+    final headers = encabezados
+        .map((e) => _normalizar(e.toString()))
+        .toList();
+    final buscados = nombres
+        .map((e) => _normalizar(e.toString()))
+        .toList();
 
-      for (final nombre in nombres) {
-        final buscado = _normalizar(nombre.toString());
+    // 1) Prioriza una coincidencia exacta para evitar que "Vendedor"
+    //    se confunda con "Código Vendedor".
+    for (final buscado in buscados) {
+      final indice = headers.indexOf(buscado);
+      if (indice >= 0) return indice;
+    }
 
-        if (texto.contains(buscado)) {
-          return i;
+    // 2) Si el encabezado incluye información adicional, elige la
+    //    coincidencia parcial más específica (encabezado más corto).
+    int mejorIndice = -1;
+    int menorLongitud = 1 << 30;
+
+    for (int i = 0; i < headers.length; i++) {
+      for (final buscado in buscados) {
+        if (buscado.isNotEmpty && headers[i].contains(buscado)) {
+          if (headers[i].length < menorLongitud) {
+            menorLongitud = headers[i].length;
+            mejorIndice = i;
+          }
         }
       }
     }
 
-    return -1;
+    return mejorIndice;
   }
 
   //=====================================================

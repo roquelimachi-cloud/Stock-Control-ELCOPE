@@ -1,16 +1,64 @@
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
-
-import '../catalogos/crm_catalogos_service.dart';
+import '../../../services/supabase/supabase_service.dart';
+import '../shared/crm_modulo_permisos.dart';
 
 class CrmOportunidadesPage extends StatefulWidget {
-  const CrmOportunidadesPage({super.key});
+  const CrmOportunidadesPage({super.key, this.clienteInicial});
+
+  /// Cliente precargado cuando se abre Oportunidades desde otro módulo del CRM.
+  final String? clienteInicial;
 
   @override
   State<CrmOportunidadesPage> createState() => _CrmOportunidadesPageState();
 }
 
 class _CrmOportunidadesPageState extends State<CrmOportunidadesPage> {
+
+  bool _cargandoPermisosModulo = true;
+  bool _puedeVerModulo = false;
+  bool _puedeCrearModulo = false;
+  bool _puedeEditarModulo = false;
+  bool _puedeEliminarModulo = false;
+  bool _puedeImprimirModulo = false;
+
+  Future<void> _cargarPermisosModulo() async {
+    final permisos = await CrmModuloPermisos.cargar('crm_oportunidades');
+    if (!mounted) return;
+    setState(() {
+      _puedeVerModulo = permisos['ver'] == true;
+      _puedeCrearModulo = permisos['crear'] == true;
+      _puedeEditarModulo = permisos['editar'] == true;
+      _puedeEliminarModulo = permisos['eliminar'] == true;
+      _puedeImprimirModulo = permisos['imprimir'] == true;
+      _cargandoPermisosModulo = false;
+    });
+  }
+
+  Widget _sinAccesoModulo() {
+    return Scaffold(
+      backgroundColor: const Color(0xFFF4F7FA),
+      body: Center(
+        child: Card(
+          margin: const EdgeInsets.all(24),
+          child: Padding(
+            padding: const EdgeInsets.all(28),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: const [
+                Icon(Icons.lock_outline_rounded, size: 48, color: Color(0xFF0B3B63)),
+                SizedBox(height: 12),
+                Text('Acceso no autorizado', style: TextStyle(fontSize: 21, fontWeight: FontWeight.w900)),
+                SizedBox(height: 6),
+                Text('Solicita al administrador que habilite este módulo en Usuarios y Accesos.'),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
   static const Color azul = Color(0xFF063B63);
   static const Color azul2 = Color(0xFF1686E8);
   static const Color fondo = Color(0xFFF4F7FA);
@@ -62,23 +110,11 @@ class _CrmOportunidadesPageState extends State<CrmOportunidadesPage> {
   ];
 
   String _etapa = 'TODAS';
-  List<String> _etapasFiltro = const ['TODAS'];
 
   @override
   void initState() {
     super.initState();
-    _cargarEtapasFiltro();
-  }
-
-  Future<void> _cargarEtapasFiltro() async {
-    try {
-      final etapas = await CrmCatalogosService.obtenerNombres('etapas_oportunidad');
-      if (!mounted || etapas.isEmpty) return;
-      setState(() {
-        _etapasFiltro = ['TODAS', ...etapas];
-        if (!_etapasFiltro.contains(_etapa)) _etapa = 'TODAS';
-      });
-    } catch (_) {}
+    _cargarPermisosModulo();
   }
 
   @override
@@ -304,7 +340,13 @@ class _CrmOportunidadesPageState extends State<CrmOportunidadesPage> {
   }
 
   Widget _filters() {
-    final stages = _etapasFiltro;
+    final stages = [
+      'TODAS',
+      'En evaluación',
+      'Propuesta enviada',
+      'Negociación',
+      'Ganada',
+    ];
 
     return Container(
       padding: const EdgeInsets.all(12),
@@ -387,7 +429,7 @@ class _CrmOportunidadesPageState extends State<CrmOportunidadesPage> {
             label: const Text('Limpiar'),
           ),
           FilledButton.icon(
-            onPressed: _nuevaOportunidad,
+            onPressed: _puedeCrearModulo ? _nuevaOportunidad : null,
             icon: const Icon(Icons.add, size: 17),
             label: const Text('Nueva oportunidad'),
             style: FilledButton.styleFrom(
@@ -845,6 +887,13 @@ class _CrmOportunidadesPageState extends State<CrmOportunidadesPage> {
 
   @override
   Widget build(BuildContext context) {
+    if (_cargandoPermisosModulo) {
+      return const Scaffold(
+        backgroundColor: Color(0xFFF4F7FA),
+        body: Center(child: CircularProgressIndicator()),
+      );
+    }
+    if (!_puedeVerModulo) return _sinAccesoModulo();
     return Scaffold(
       backgroundColor: fondo,
       body: SafeArea(
@@ -854,9 +903,19 @@ class _CrmOportunidadesPageState extends State<CrmOportunidadesPage> {
   }
 
   Future<void> _nuevaOportunidad() async {
+    if (!_puedeCrearModulo) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('No tienes permiso para realizar esta acción.')),
+      );
+      return;
+    }
+
     final result = await showDialog<Map<String, dynamic>>(
       context: context,
-      builder: (_) => _OportunidadDialog(clientes: _oportunidades.map((e) => {'nombre': e['cliente'], 'codigo': ''}).toList()),
+      builder: (_) => _OportunidadDialog(
+        clienteInicial: widget.clienteInicial,
+        clientes: _oportunidades.map((e) => {'nombre': e['cliente'], 'codigo': ''}).toList(),
+      ),
     );
 
     if (result == null) return;
@@ -867,6 +926,13 @@ class _CrmOportunidadesPageState extends State<CrmOportunidadesPage> {
   }
 
   Future<void> _editarOportunidad(Map<String, dynamic> row) async {
+    if (!_puedeEditarModulo) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('No tienes permiso para realizar esta acción.')),
+      );
+      return;
+    }
+
     final result = await showDialog<Map<String, dynamic>>(
       context: context,
       builder: (_) => _OportunidadDialog(initial: row, clientes: _oportunidades.map((e) => {'nombre': e['cliente'], 'codigo': ''}).toList()),
@@ -883,6 +949,13 @@ class _CrmOportunidadesPageState extends State<CrmOportunidadesPage> {
   }
 
   void _eliminar(Map<String, dynamic> row) {
+    if (!_puedeEliminarModulo) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('No tienes permiso para realizar esta acción.')),
+      );
+      return;
+    }
+
     showDialog<void>(
       context: context,
       builder: (_) => AlertDialog(
@@ -980,9 +1053,10 @@ class _ActivityPreview extends StatelessWidget {
 }
 
 class _OportunidadDialog extends StatefulWidget {
-  const _OportunidadDialog({this.initial, required this.clientes});
+  const _OportunidadDialog({this.initial, this.clienteInicial, required this.clientes});
 
   final Map<String, dynamic>? initial;
+  final String? clienteInicial;
   final List<Map<String, dynamic>> clientes;
 
   @override
@@ -991,25 +1065,16 @@ class _OportunidadDialog extends StatefulWidget {
 
 class _OportunidadDialogState extends State<_OportunidadDialog> {
   static const Color azul = Color(0xFF063B63);
-  static const Color azul2 = Color(0xFF1686E8);
   static const Color borde = Color(0xFFE0E7EF);
-  static const Color fondo = Color(0xFFF7F9FC);
-  static const Color verde = Color(0xFF13B77A);
-  static const Color naranja = Color(0xFFFFA726);
-  static const Color rojo = Color(0xFFFF4D57);
-  static const Color morado = Color(0xFF8E5CF6);
-
   final _cliente = TextEditingController();
   final _proyecto = TextEditingController();
   final _monto = TextEditingController();
   final _probabilidad = TextEditingController();
   final _cierre = TextEditingController();
 
-  String _etapa = '';
-  List<String> _etapasCatalogo = const [];
+  String _etapa = 'En evaluación';
   String _asesor = 'Michael Roque';
   String _clienteSeleccionado = '';
-  bool _cargandoCatalogos = true;
 
   @override
   void initState() {
@@ -1022,28 +1087,14 @@ class _OportunidadDialogState extends State<_OportunidadDialog> {
       _monto.text = row['monto']?.toString() ?? '';
       _probabilidad.text = row['probabilidad']?.toString() ?? '50';
       _cierre.text = row['cierre']?.toString() ?? '';
-      _etapa = row['etapa']?.toString() ?? '';
+      _etapa = row['etapa']?.toString() ?? _etapa;
       _asesor = row['asesor']?.toString() ?? _asesor;
-    }
-    _cargarCatalogos();
-  }
-
-  Future<void> _cargarCatalogos() async {
-    try {
-      final etapas = await CrmCatalogosService.obtenerNombres('etapas_oportunidad');
-      if (!mounted) return;
-      setState(() {
-        _etapasCatalogo = etapas;
-        if (_etapa.isEmpty && etapas.isNotEmpty) {
-          _etapa = etapas.first;
-        } else if (_etapa.isNotEmpty && etapas.isNotEmpty && !etapas.contains(_etapa)) {
-          _etapa = etapas.first;
-        }
-        _cargandoCatalogos = false;
-      });
-    } catch (_) {
-      if (!mounted) return;
-      setState(() => _cargandoCatalogos = false);
+    } else {
+      final cliente = widget.clienteInicial?.trim() ?? '';
+      if (cliente.isNotEmpty) {
+        _cliente.text = cliente;
+        _clienteSeleccionado = cliente;
+      }
     }
   }
 
@@ -1057,44 +1108,25 @@ class _OportunidadDialogState extends State<_OportunidadDialog> {
     super.dispose();
   }
 
-  String _nombre(Map<String, dynamic> c) =>
-      (c['razon_social'] ?? c['nombre'] ?? '').toString();
-  String _codigo(Map<String, dynamic> c) =>
-      (c['ruc'] ?? c['codigo'] ?? '').toString();
+  String _nombre(Map<String, dynamic> c) => c['nombre']?.toString() ?? '';
+  String _codigo(Map<String, dynamic> c) => c['codigo']?.toString() ?? '';
 
-  InputDecoration _campo({
-    required String label,
-    required String hint,
-    IconData? icon,
-  }) {
+  InputDecoration _campo({required String label, required String hint, IconData? icon}) {
     return InputDecoration(
       labelText: label,
       hintText: hint,
       prefixIcon: icon == null ? null : Icon(icon, color: azul),
       filled: true,
-      fillColor: Colors.white,
+      fillColor: const Color(0xFFF9FBFD),
       contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 16),
-      border: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(12),
-        borderSide: const BorderSide(color: borde),
-      ),
-      enabledBorder: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(12),
-        borderSide: const BorderSide(color: borde),
-      ),
-      focusedBorder: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(12),
-        borderSide: const BorderSide(color: azul2, width: 1.6),
-      ),
+      border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: const BorderSide(color: borde)),
+      enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: const BorderSide(color: borde)),
+      focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: const BorderSide(color: azul, width: 1.5)),
     );
   }
 
   Future<void> _seleccionarCierre() async {
-    DateTime? base;
-    try {
-      base = DateFormat('dd/MM/yyyy').parse(_cierre.text);
-    } catch (_) {}
-
+    final base = DateTime.tryParse(_cierre.text);
     final date = await showDatePicker(
       context: context,
       firstDate: DateTime.now(),
@@ -1106,46 +1138,17 @@ class _OportunidadDialogState extends State<_OportunidadDialog> {
     }
   }
 
-  Color _colorEtapa(String etapa) {
-    switch (etapa.trim().toUpperCase()) {
-      case 'GANADA':
-        return verde;
-      case 'PERDIDA':
-        return rojo;
-      case 'NEGOCIACIÓN':
-      case 'NEGOCIACION':
-        return morado;
-      case 'PROPUESTA ENVIADA':
-        return azul2;
-      default:
-        return naranja;
-    }
-  }
-
   void _guardar() {
     final cliente = _cliente.text.trim();
     final proyecto = _proyecto.text.trim();
     final monto = double.tryParse(_monto.text.trim().replaceAll(',', ''));
     final prob = int.tryParse(_probabilidad.text.trim());
-
     if (cliente.isEmpty || proyecto.isEmpty || monto == null || prob == null) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Completa cliente, proyecto, monto y probabilidad.'),
-        ),
+        const SnackBar(content: Text('Completa cliente, proyecto, monto y probabilidad.')),
       );
       return;
     }
-
-    if (_etapasCatalogo.isEmpty || _etapa.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('No hay etapas configuradas en Catálogos CRM.'),
-        ),
-      );
-      return;
-    }
-
     Navigator.pop(context, {
       'cliente': cliente,
       'proyecto': proyecto,
@@ -1159,99 +1162,47 @@ class _OportunidadDialogState extends State<_OportunidadDialog> {
 
   @override
   Widget build(BuildContext context) {
-    final etapaColor = _colorEtapa(_etapa);
-
+    const etapas = ['En evaluación', 'Propuesta enviada', 'Negociación', 'Ganada', 'Perdida'];
     return Dialog(
-      backgroundColor: fondo,
-      insetPadding: const EdgeInsets.symmetric(horizontal: 24, vertical: 24),
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(22)),
+      insetPadding: const EdgeInsets.symmetric(horizontal: 30, vertical: 24),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
       child: ConstrainedBox(
-        constraints: const BoxConstraints(maxWidth: 900, maxHeight: 820),
+        constraints: const BoxConstraints(maxWidth: 930, maxHeight: 720),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
             Container(
-              width: double.infinity,
-              padding: const EdgeInsets.fromLTRB(26, 22, 22, 20),
+              padding: const EdgeInsets.fromLTRB(24, 18, 18, 18),
               decoration: const BoxDecoration(
                 color: azul,
-                borderRadius: BorderRadius.only(
-                  topLeft: Radius.circular(22),
-                  topRight: Radius.circular(22),
-                ),
+                borderRadius: BorderRadius.only(topLeft: Radius.circular(20), topRight: Radius.circular(20)),
               ),
               child: Row(
                 children: [
                   Container(
-                    width: 46,
-                    height: 46,
-                    decoration: BoxDecoration(
-                      color: Colors.white.withValues(alpha: .14),
-                      borderRadius: BorderRadius.circular(13),
-                    ),
-                    child: const Icon(
-                      Icons.business_center_outlined,
-                      color: Colors.white,
-                      size: 25,
-                    ),
+                    width: 46, height: 46,
+                    decoration: BoxDecoration(color: Colors.white.withValues(alpha: .14), borderRadius: BorderRadius.circular(13)),
+                    child: const Icon(Icons.business_center_outlined, color: Colors.white, size: 25),
                   ),
                   const SizedBox(width: 13),
                   Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          widget.initial == null
-                              ? 'Nueva oportunidad'
-                              : 'Editar oportunidad',
-                          style: const TextStyle(
-                            color: Colors.white,
-                            fontSize: 21,
-                            fontWeight: FontWeight.w900,
-                          ),
-                        ),
-                        const SizedBox(height: 3),
-                        const Text(
-                          'Gestiona el proyecto comercial y su probabilidad de cierre.',
-                          style: TextStyle(color: Colors.white70, fontSize: 12),
-                        ),
-                      ],
-                    ),
+                    child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                      Text(widget.initial == null ? 'Nueva oportunidad' : 'Editar oportunidad',
+                        style: const TextStyle(color: Colors.white, fontSize: 21, fontWeight: FontWeight.w900)),
+                      const SizedBox(height: 3),
+                      const Text('Registra un proyecto comercial y define su probabilidad de cierre.',
+                        style: TextStyle(color: Colors.white70, fontSize: 12)),
+                    ]),
                   ),
-                  IconButton(
-                    tooltip: 'Cerrar',
-                    onPressed: () => Navigator.pop(context),
-                    icon: const Icon(Icons.close, color: Colors.white),
-                  ),
+                  IconButton(onPressed: () => Navigator.pop(context), icon: const Icon(Icons.close, color: Colors.white)),
                 ],
               ),
             ),
-            Flexible(
+            Expanded(
               child: SingleChildScrollView(
-                padding: const EdgeInsets.fromLTRB(26, 22, 26, 14),
+                padding: const EdgeInsets.fromLTRB(24, 20, 24, 16),
                 child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Row(
-                      children: [
-                        const Icon(Icons.person_search_outlined, color: azul, size: 19),
-                        const SizedBox(width: 7),
-                        const Text(
-                          'Cliente y proyecto',
-                          style: TextStyle(color: azul, fontWeight: FontWeight.w900, fontSize: 13),
-                        ),
-                        const Spacer(),
-                        if (_clienteSeleccionado.isNotEmpty)
-                          const Row(
-                            children: [
-                              Icon(Icons.verified_outlined, color: verde, size: 16),
-                              SizedBox(width: 4),
-                              Text('Cliente seleccionado', style: TextStyle(color: verde, fontSize: 11, fontWeight: FontWeight.w800)),
-                            ],
-                          ),
-                      ],
-                    ),
-                    const SizedBox(height: 10),
                     Autocomplete<Map<String, dynamic>>(
                       displayStringForOption: (c) => _nombre(c),
                       optionsBuilder: (value) {
@@ -1270,24 +1221,18 @@ class _OportunidadDialogState extends State<_OportunidadDialog> {
                         });
                       },
                       fieldViewBuilder: (context, controller, focusNode, onFieldSubmitted) {
-                        if (_cliente.text.isNotEmpty && controller.text.isEmpty) {
-                          controller.text = _cliente.text;
-                        }
+                        if (_cliente.text.isNotEmpty && controller.text.isEmpty) controller.text = _cliente.text;
                         return TextField(
                           controller: controller,
                           focusNode: focusNode,
                           onChanged: (v) {
                             _cliente.text = v;
-                            if (_clienteSeleccionado.isNotEmpty) {
-                              setState(() => _clienteSeleccionado = '');
-                            }
+                            if (_clienteSeleccionado.isNotEmpty) setState(() => _clienteSeleccionado = '');
                           },
-                          decoration: _campo(
-                            label: 'Cliente *',
-                            hint: 'Busca razón social, RUC o código',
-                            icon: Icons.business_outlined,
-                          ).copyWith(
+                          decoration: _campo(label: 'Cliente *', hint: 'Escribe nombre, RUC o código', icon: Icons.business_outlined).copyWith(
                             suffixIcon: const Icon(Icons.search, color: Color(0xFF6C8299)),
+                            helperText: _clienteSeleccionado.isEmpty ? 'Busca y selecciona un cliente' : 'Cliente seleccionado',
+                            helperStyle: TextStyle(color: _clienteSeleccionado.isEmpty ? const Color(0xFF71869A) : Colors.green),
                           ),
                         );
                       },
@@ -1300,7 +1245,7 @@ class _OportunidadDialogState extends State<_OportunidadDialog> {
                             borderRadius: BorderRadius.circular(14),
                             clipBehavior: Clip.antiAlias,
                             child: ConstrainedBox(
-                              constraints: const BoxConstraints(maxWidth: 850, maxHeight: 280),
+                              constraints: const BoxConstraints(maxWidth: 880, maxHeight: 280),
                               child: ListView.separated(
                                 padding: const EdgeInsets.symmetric(vertical: 6),
                                 shrinkWrap: true,
@@ -1309,19 +1254,9 @@ class _OportunidadDialogState extends State<_OportunidadDialog> {
                                 itemBuilder: (_, i) {
                                   final c = lista[i];
                                   return ListTile(
-                                    leading: const CircleAvatar(
-                                      backgroundColor: Color(0xFFEAF3FA),
-                                      child: Icon(Icons.business_outlined, color: azul),
-                                    ),
-                                    title: Text(
-                                      _nombre(c),
-                                      maxLines: 1,
-                                      overflow: TextOverflow.ellipsis,
-                                      style: const TextStyle(fontWeight: FontWeight.w800),
-                                    ),
-                                    subtitle: Text(
-                                      _codigo(c).isEmpty ? 'Cliente registrado' : 'RUC / Código: ${_codigo(c)}',
-                                    ),
+                                    leading: const CircleAvatar(backgroundColor: Color(0xFFEAF3FA), child: Icon(Icons.business_outlined, color: azul)),
+                                    title: Text(_nombre(c), maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontWeight: FontWeight.w800)),
+                                    subtitle: Text(_codigo(c).isEmpty ? 'Cliente registrado' : 'RUC / Código: ${_codigo(c)}'),
                                     trailing: const Icon(Icons.arrow_forward_ios, size: 14),
                                     onTap: () => onSelected(c),
                                   );
@@ -1332,99 +1267,24 @@ class _OportunidadDialogState extends State<_OportunidadDialog> {
                         );
                       },
                     ),
+                    const SizedBox(height: 14),
+                    TextField(controller: _proyecto, decoration: _campo(label: 'Proyecto / Oportunidad *', hint: 'Ej. Sparq 140', icon: Icons.work_outline)),
                     const SizedBox(height: 12),
-                    TextField(
-                      controller: _proyecto,
-                      decoration: _campo(
-                        label: 'Proyecto / Oportunidad *',
-                        hint: 'Ej. Planta Quimpac, Vista Tower, Sparq 140',
-                        icon: Icons.work_outline,
-                      ),
-                    ),
-                    const SizedBox(height: 20),
-                    const Row(
-                      children: [
-                        Icon(Icons.analytics_outlined, color: azul, size: 19),
-                        SizedBox(width: 7),
-                        Text('Valor comercial', style: TextStyle(color: azul, fontWeight: FontWeight.w900, fontSize: 13)),
-                      ],
-                    ),
-                    const SizedBox(height: 10),
                     Row(
                       children: [
-                        Expanded(
-                          child: TextField(
-                            controller: _monto,
-                            keyboardType: const TextInputType.numberWithOptions(decimal: true),
-                            decoration: _campo(label: 'Valor estimado US\$ *', hint: 'Ej. 85000', icon: Icons.attach_money),
-                          ),
-                        ),
+                        Expanded(child: TextField(controller: _monto, keyboardType: TextInputType.number, decoration: _campo(label: 'Valor estimado US\$ *', hint: 'Ej. 85000', icon: Icons.attach_money))),
                         const SizedBox(width: 12),
-                        Expanded(
-                          child: TextField(
-                            controller: _probabilidad,
-                            keyboardType: TextInputType.number,
-                            decoration: _campo(label: 'Probabilidad % *', hint: '0 - 100', icon: Icons.percent),
-                          ),
-                        ),
+                        Expanded(child: TextField(controller: _probabilidad, keyboardType: TextInputType.number, decoration: _campo(label: 'Probabilidad % *', hint: '0 - 100', icon: Icons.percent))),
                       ],
                     ),
-                    const SizedBox(height: 20),
-                    const Row(
-                      children: [
-                        Icon(Icons.alt_route_outlined, color: azul, size: 19),
-                        SizedBox(width: 7),
-                        Text('Pipeline comercial', style: TextStyle(color: azul, fontWeight: FontWeight.w900, fontSize: 13)),
-                      ],
+                    const SizedBox(height: 12),
+                    DropdownButtonFormField<String>(
+                      value: etapas.contains(_etapa) ? _etapa : etapas.first,
+                      isExpanded: true,
+                      decoration: _campo(label: 'Etapa', hint: 'Selecciona etapa', icon: Icons.flag_outlined),
+                      items: etapas.map((e) => DropdownMenuItem(value: e, child: Text(e))).toList(),
+                      onChanged: (v) { if (v != null) setState(() => _etapa = v); },
                     ),
-                    const SizedBox(height: 10),
-                    if (_cargandoCatalogos)
-                      Container(
-                        height: 58,
-                        padding: const EdgeInsets.symmetric(horizontal: 14),
-                        decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(12), border: Border.all(color: borde)),
-                        child: const Row(
-                          children: [
-                            SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2)),
-                            SizedBox(width: 10),
-                            Text('Cargando etapas desde Catálogos CRM...'),
-                          ],
-                        ),
-                      )
-                    else if (_etapasCatalogo.isEmpty)
-                      Container(
-                        padding: const EdgeInsets.all(14),
-                        decoration: BoxDecoration(color: const Color(0xFFFFF6E5), borderRadius: BorderRadius.circular(12), border: Border.all(color: const Color(0xFFFFD58A))),
-                        child: const Row(
-                          children: [
-                            Icon(Icons.warning_amber_rounded, color: naranja),
-                            SizedBox(width: 10),
-                            Expanded(child: Text('No hay etapas de oportunidad configuradas. Regístralas en Catálogos CRM antes de guardar.')),
-                          ],
-                        ),
-                      )
-                    else
-                      DropdownButtonFormField<String>(
-                        value: _etapasCatalogo.contains(_etapa) ? _etapa : _etapasCatalogo.first,
-                        isExpanded: true,
-                        decoration: _campo(label: 'Etapa *', hint: 'Selecciona una etapa del catálogo', icon: Icons.flag_outlined),
-                        items: _etapasCatalogo.map((e) {
-                          final color = _colorEtapa(e);
-                          return DropdownMenuItem<String>(
-                            value: e,
-                            child: Row(
-                              children: [
-                                Container(width: 9, height: 9, decoration: BoxDecoration(color: color, shape: BoxShape.circle)),
-                                const SizedBox(width: 9),
-                                Text(e, style: const TextStyle(fontWeight: FontWeight.w700)),
-                              ],
-                            ),
-                          );
-                        }).toList(),
-                        onChanged: (v) {
-                          if (v != null) setState(() => _etapa = v);
-                        },
-                      ),
                     const SizedBox(height: 12),
                     Row(
                       children: [
@@ -1433,72 +1293,39 @@ class _OportunidadDialogState extends State<_OportunidadDialog> {
                             onTap: _seleccionarCierre,
                             borderRadius: BorderRadius.circular(12),
                             child: InputDecorator(
-                              decoration: _campo(label: 'Cierre estimado', hint: 'Fecha esperada', icon: Icons.calendar_today_outlined),
-                              child: Text(
-                                _cierre.text.isEmpty ? 'Seleccionar fecha' : _cierre.text,
-                                style: TextStyle(
-                                  color: _cierre.text.isEmpty ? const Color(0xFF71869A) : azul,
-                                  fontWeight: _cierre.text.isEmpty ? FontWeight.w400 : FontWeight.w800,
-                                ),
-                              ),
+                              decoration: _campo(label: 'Cierre estimado', hint: '', icon: Icons.calendar_today_outlined),
+                              child: Text(_cierre.text.isEmpty ? 'Seleccionar fecha' : _cierre.text,
+                                style: TextStyle(color: _cierre.text.isEmpty ? const Color(0xFF71869A) : azul, fontWeight: _cierre.text.isEmpty ? FontWeight.w400 : FontWeight.w800)),
                             ),
                           ),
                         ),
                         const SizedBox(width: 12),
                         Expanded(
                           child: TextField(
-                            readOnly: true,
                             controller: TextEditingController(text: _asesor),
-                            decoration: _campo(label: 'Asesor', hint: 'Responsable comercial', icon: Icons.person_outline),
+                            readOnly: true,
+                            decoration: _campo(label: 'Asesor', hint: '', icon: Icons.person_outline),
                           ),
                         ),
                       ],
                     ),
-                    if (_etapa.isNotEmpty) ...[
-                      const SizedBox(height: 12),
-                      Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-                        decoration: BoxDecoration(
-                          color: etapaColor.withValues(alpha: .08),
-                          borderRadius: BorderRadius.circular(10),
-                          border: Border.all(color: etapaColor.withValues(alpha: .20)),
-                        ),
-                        child: Row(
-                          children: [
-                            Icon(Icons.flag_outlined, color: etapaColor, size: 17),
-                            const SizedBox(width: 8),
-                            Expanded(child: Text('Etapa actual: $_etapa', style: TextStyle(color: etapaColor, fontWeight: FontWeight.w800, fontSize: 11))),
-                            Text('${int.tryParse(_probabilidad.text) ?? 0}%', style: TextStyle(color: etapaColor, fontWeight: FontWeight.w900, fontSize: 12)),
-                          ],
-                        ),
-                      ),
-                    ],
                   ],
                 ),
               ),
             ),
             Container(
-              padding: const EdgeInsets.fromLTRB(26, 12, 26, 16),
-              decoration: const BoxDecoration(
-                color: fondo,
-                borderRadius: BorderRadius.only(bottomLeft: Radius.circular(22), bottomRight: Radius.circular(22)),
-              ),
+              padding: const EdgeInsets.fromLTRB(24, 12, 24, 16),
+              decoration: const BoxDecoration(color: Color(0xFFF7F9FC), borderRadius: BorderRadius.only(bottomLeft: Radius.circular(20), bottomRight: Radius.circular(20))),
               child: Row(
+                mainAxisAlignment: MainAxisAlignment.end,
                 children: [
-                  const Icon(Icons.menu_book_outlined, size: 16, color: Color(0xFF71869A)),
-                  const SizedBox(width: 6),
-                  const Expanded(child: Text('La etapa se toma directamente de Catálogos CRM.', style: TextStyle(color: Color(0xFF71869A), fontSize: 10))),
                   TextButton(onPressed: () => Navigator.pop(context), child: const Text('Cancelar')),
-                  const SizedBox(width: 8),
+                  const SizedBox(width: 10),
                   FilledButton.icon(
                     onPressed: _guardar,
                     icon: const Icon(Icons.save_outlined),
                     label: const Text('Guardar oportunidad'),
-                    style: FilledButton.styleFrom(
-                      backgroundColor: azul,
-                      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(11)),
-                    ),
+                    style: FilledButton.styleFrom(backgroundColor: azul, padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(11))),
                   ),
                 ],
               ),

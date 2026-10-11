@@ -3,6 +3,8 @@ import 'package:intl/intl.dart';
 
 import '../../../services/sesion.dart';
 import '../../../services/supabase/supabase_service.dart';
+import '../shared/crm_modulo_permisos.dart';
+import '../catalogos/crm_catalogos_service.dart';
 
 class CrmSeguimientosPage extends StatefulWidget {
   const CrmSeguimientosPage({super.key});
@@ -12,6 +14,51 @@ class CrmSeguimientosPage extends StatefulWidget {
 }
 
 class _CrmSeguimientosPageState extends State<CrmSeguimientosPage> {
+
+  bool _cargandoPermisosModulo = true;
+  bool _puedeVerModulo = false;
+  bool _puedeCrearModulo = false;
+  bool _puedeEditarModulo = false;
+  bool _puedeEliminarModulo = false;
+  bool _puedeImprimirModulo = false;
+
+  Future<void> _cargarPermisosModulo() async {
+    final permisos = await CrmModuloPermisos.cargar('crm_seguimientos');
+    if (!mounted) return;
+    setState(() {
+      _puedeVerModulo = permisos['ver'] == true;
+      _puedeCrearModulo = permisos['crear'] == true;
+      _puedeEditarModulo = permisos['editar'] == true;
+      _puedeEliminarModulo = permisos['eliminar'] == true;
+      _puedeImprimirModulo = permisos['imprimir'] == true;
+      _cargandoPermisosModulo = false;
+    });
+  }
+
+  Widget _sinAccesoModulo() {
+    return Scaffold(
+      backgroundColor: const Color(0xFFF4F7FA),
+      body: Center(
+        child: Card(
+          margin: const EdgeInsets.all(24),
+          child: Padding(
+            padding: const EdgeInsets.all(28),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: const [
+                Icon(Icons.lock_outline_rounded, size: 48, color: Color(0xFF0B3B63)),
+                SizedBox(height: 12),
+                Text('Acceso no autorizado', style: TextStyle(fontSize: 21, fontWeight: FontWeight.w900)),
+                SizedBox(height: 6),
+                Text('Solicita al administrador que habilite este módulo en Usuarios y Accesos.'),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
   static const Color azul = Color(0xFF063B63);
   static const Color azul2 = Color(0xFF1686E8);
   static const Color fondo = Color(0xFFF4F7FA);
@@ -255,6 +302,8 @@ class _CrmSeguimientosPageState extends State<CrmSeguimientosPage> {
   }
 
   Future<void> _inicializar() async {
+    await _cargarPermisosModulo();
+    if (!_puedeVerModulo) { if (mounted) setState(() => _cargando = false); return; }
     try {
       await _cargarPermisos();
       await _cargarClientes();
@@ -894,7 +943,7 @@ class _CrmSeguimientosPageState extends State<CrmSeguimientosPage> {
                 ),
                 const Spacer(),
                 FilledButton.icon(
-                  onPressed: _nuevoSeguimiento,
+                  onPressed: _puedeCrearModulo ? _nuevoSeguimiento : null,
                   icon: const Icon(Icons.add, size: 17),
                   label: const Text('Nuevo seguimiento'),
                   style: FilledButton.styleFrom(
@@ -1244,6 +1293,13 @@ class _CrmSeguimientosPageState extends State<CrmSeguimientosPage> {
 
   @override
   Widget build(BuildContext context) {
+    if (_cargandoPermisosModulo) {
+      return const Scaffold(
+        backgroundColor: Color(0xFFF4F7FA),
+        body: Center(child: CircularProgressIndicator()),
+      );
+    }
+    if (!_puedeVerModulo) return _sinAccesoModulo();
     return Scaffold(
       backgroundColor: fondo,
       body: SafeArea(
@@ -1253,6 +1309,13 @@ class _CrmSeguimientosPageState extends State<CrmSeguimientosPage> {
   }
 
   Future<void> _nuevoSeguimiento() async {
+    if (!_puedeCrearModulo) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('No tienes permiso para realizar esta acción.')),
+      );
+      return;
+    }
+
     final result = await showDialog<bool>(
       context: context,
       barrierDismissible: false,
@@ -1269,6 +1332,13 @@ class _CrmSeguimientosPageState extends State<CrmSeguimientosPage> {
   }
 
   Future<void> _editar(Map<String, dynamic> row) async {
+    if (!_puedeEditarModulo) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('No tienes permiso para realizar esta acción.')),
+      );
+      return;
+    }
+
     final result = await showDialog<bool>(
       context: context,
       barrierDismissible: false,
@@ -1394,6 +1464,7 @@ class _NuevaSeguimientoDialogState extends State<_NuevaSeguimientoDialog> {
   final _proxima = TextEditingController();
 
   String _tipo = 'LLAMADA';
+  List<String> _tiposGestion = const ['LLAMADA'];
   String _cliente = '';
   String _vendedor = '';
   DateTime? _fechaProxima;
@@ -1406,6 +1477,20 @@ class _NuevaSeguimientoDialogState extends State<_NuevaSeguimientoDialog> {
     _vendedor = widget.vendedorActual.isNotEmpty
         ? widget.vendedorActual
         : (widget.vendedores.isNotEmpty ? widget.vendedores.first : '');
+    _cargarTiposGestion();
+  }
+
+  Future<void> _cargarTiposGestion() async {
+    try {
+      final tipos = await CrmCatalogosService.obtenerNombres('tipos_gestion');
+      if (!mounted || tipos.isEmpty) return;
+      setState(() {
+        _tiposGestion = tipos;
+        if (!_tiposGestion.contains(_tipo)) _tipo = _tiposGestion.first;
+      });
+    } catch (_) {
+      // Conserva el tipo inicial si el catálogo no está disponible.
+    }
   }
 
   @override
@@ -1531,6 +1616,19 @@ class _NuevaSeguimientoDialogState extends State<_NuevaSeguimientoDialog> {
       ),
       labelStyle: const TextStyle(color: textoSecundario),
     );
+  }
+
+  IconData _iconoTipo(String tipo) {
+    final t = tipo.toLowerCase();
+    if (t.contains('video') || t.contains('videollamada')) return Icons.videocam_outlined;
+    if (t.contains('whatsapp')) return Icons.chat_outlined;
+    if (t.contains('correo') || t.contains('email')) return Icons.mail_outline;
+    if (t.contains('visita')) return Icons.location_on_outlined;
+    if (t.contains('reuni')) return Icons.groups_outlined;
+    if (t.contains('llamad')) return Icons.phone_outlined;
+    if (t.contains('segu')) return Icons.sync_alt;
+    if (t.contains('cobran')) return Icons.payments_outlined;
+    return Icons.task_alt_outlined;
   }
 
   Widget _tipoChip(String value, IconData icon) {
@@ -1803,208 +1901,254 @@ class _NuevaSeguimientoDialogState extends State<_NuevaSeguimientoDialog> {
     );
   }
 
-  Widget _sectionTitle(String title, String subtitle, IconData icon) {
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 9),
-      child: Row(
-        children: [
-          Container(
-            width: 32,
-            height: 32,
-            decoration: BoxDecoration(
-              color: azulClaro,
-              borderRadius: BorderRadius.circular(9),
-            ),
-            child: Icon(icon, color: azul, size: 17),
-          ),
-          const SizedBox(width: 10),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(title, style: const TextStyle(color: azul, fontSize: 13, fontWeight: FontWeight.w900)),
-                const SizedBox(height: 1),
-                Text(subtitle, style: const TextStyle(color: textoSecundario, fontSize: 10.5)),
-              ],
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _tipoCard(String value, IconData icon, Color accent) {
-    final selected = _tipo == value;
-    return InkWell(
-      borderRadius: BorderRadius.circular(12),
-      onTap: _guardando ? null : () => setState(() => _tipo = value),
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 180),
-        width: 142,
-        height: 54,
-        padding: const EdgeInsets.symmetric(horizontal: 11),
-        decoration: BoxDecoration(
-          color: selected ? accent : Colors.white,
-          borderRadius: BorderRadius.circular(12),
-          border: Border.all(color: selected ? accent : borde),
-          boxShadow: selected
-              ? [BoxShadow(color: accent.withValues(alpha: .16), blurRadius: 10, offset: const Offset(0, 3))]
-              : null,
-        ),
-        child: Row(
-          children: [
-            Icon(icon, size: 19, color: selected ? Colors.white : accent),
-            const SizedBox(width: 8),
-            Expanded(
-              child: Text(
-                value == 'REUNION' ? 'REUNIÓN' : value,
-                overflow: TextOverflow.ellipsis,
-                style: TextStyle(color: selected ? Colors.white : azul, fontSize: 11, fontWeight: FontWeight.w900),
-              ),
-            ),
-            if (selected) const Icon(Icons.check_circle, size: 16, color: Colors.white),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _infoCard({required String label, required String value, required IconData icon, bool selected = false}) {
-    return Container(
-      height: 60,
-      padding: const EdgeInsets.symmetric(horizontal: 13),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: selected ? const Color(0xFF13B77A) : borde),
-      ),
-      child: Row(
-        children: [
-          Icon(icon, color: selected ? const Color(0xFF13B77A) : azul, size: 20),
-          const SizedBox(width: 10),
-          Expanded(
-            child: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(label, style: const TextStyle(color: textoSecundario, fontSize: 10.5, fontWeight: FontWeight.w600)),
-                const SizedBox(height: 3),
-                Text(value.isEmpty ? 'Seleccionar' : value, maxLines: 1, overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(color: azul, fontSize: 13, fontWeight: FontWeight.w800)),
-              ],
-            ),
-          ),
-          Icon(selected ? Icons.verified : Icons.keyboard_arrow_down_rounded,
-              color: selected ? const Color(0xFF13B77A) : textoSecundario, size: 19),
-        ],
-      ),
-    );
-  }
-
   @override
   Widget build(BuildContext context) {
-    final vendedores = widget.vendedores.isEmpty ? <String>[_vendedor] : widget.vendedores.toSet().toList();
+    final vendedores = widget.vendedores.isEmpty
+        ? <String>[_vendedor]
+        : widget.vendedores.toSet().toList();
 
     return Dialog(
-      backgroundColor: const Color(0xFFF5F8FC),
-      insetPadding: const EdgeInsets.symmetric(horizontal: 26, vertical: 22),
+      backgroundColor: const Color(0xFFF7F9FC),
+      insetPadding: const EdgeInsets.symmetric(horizontal: 24, vertical: 24),
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(22)),
       child: ConstrainedBox(
-        constraints: const BoxConstraints(maxWidth: 900, maxHeight: 820),
+        constraints: const BoxConstraints(maxWidth: 780, maxHeight: 850),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
             Container(
               width: double.infinity,
-              padding: const EdgeInsets.fromLTRB(24, 19, 18, 18),
+              padding: const EdgeInsets.fromLTRB(26, 22, 22, 20),
               decoration: const BoxDecoration(
                 color: azul,
-                borderRadius: BorderRadius.only(topLeft: Radius.circular(22), topRight: Radius.circular(22)),
+                borderRadius: BorderRadius.only(
+                  topLeft: Radius.circular(22),
+                  topRight: Radius.circular(22),
+                ),
               ),
               child: Row(
                 children: [
-                  Container(width: 44, height: 44,
-                    decoration: BoxDecoration(color: Colors.white.withValues(alpha: .14), borderRadius: BorderRadius.circular(12)),
-                    child: const Icon(Icons.track_changes_outlined, color: Colors.white, size: 24)),
-                  const SizedBox(width: 12),
-                  const Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                    Text('Nuevo seguimiento', style: TextStyle(color: Colors.white, fontSize: 21, fontWeight: FontWeight.w900)),
-                    SizedBox(height: 3),
-                    Text('Registra la gestión comercial y define el siguiente paso.', style: TextStyle(color: Colors.white70, fontSize: 11.5)),
-                  ])),
-                  IconButton(tooltip: 'Cerrar', onPressed: _guardando ? null : () => Navigator.pop(context), icon: const Icon(Icons.close, color: Colors.white)),
+                  Container(
+                    width: 44,
+                    height: 44,
+                    decoration: BoxDecoration(
+                      color: Colors.white.withValues(alpha: .14),
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: const Icon(
+                      Icons.track_changes_outlined,
+                      color: Colors.white,
+                      size: 25,
+                    ),
+                  ),
+                  const SizedBox(width: 13),
+                  const Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'Nuevo seguimiento',
+                          style: TextStyle(
+                            color: Colors.white,
+                            fontSize: 21,
+                            fontWeight: FontWeight.w900,
+                          ),
+                        ),
+                        SizedBox(height: 3),
+                        Text(
+                          'Registra la gestión comercial y define la próxima acción.',
+                          style: TextStyle(
+                            color: Colors.white70,
+                            fontSize: 12,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  IconButton(
+                    tooltip: 'Cerrar',
+                    onPressed: _guardando ? null : () => Navigator.pop(context),
+                    icon: const Icon(Icons.close, color: Colors.white),
+                  ),
                 ],
               ),
             ),
             Flexible(
               child: SingleChildScrollView(
-                padding: const EdgeInsets.fromLTRB(24, 19, 24, 15),
-                child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                  _sectionTitle('Tipo de gestión', 'Selecciona cómo realizaste o realizarás el contacto.', Icons.category_outlined),
-                  Wrap(spacing: 8, runSpacing: 8, children: [
-                    _tipoCard('LLAMADA', Icons.phone_outlined, const Color(0xFF0B5C8A)),
-                    _tipoCard('WHATSAPP', Icons.chat_outlined, const Color(0xFF159B67)),
-                    _tipoCard('CORREO', Icons.mail_outline, const Color(0xFF4F46A5)),
-                    _tipoCard('VISITA', Icons.location_on_outlined, const Color(0xFF7C3AED)),
-                    _tipoCard('REUNION', Icons.groups_outlined, const Color(0xFFD97706)),
-                    _tipoCard('SEGUIMIENTO', Icons.sync_alt, const Color(0xFF2563EB)),
-                  ]),
-                  const SizedBox(height: 18),
-                  _sectionTitle('Cliente y responsable', 'Identifica la cuenta y el asesor que realizará el seguimiento.', Icons.business_center_outlined),
-                  _clienteField(),
-                  if (_clienteSeleccionado != null) ...[
-                    const SizedBox(height: 7),
-                    Container(padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
-                      decoration: BoxDecoration(color: const Color(0xFFEAF9F3), borderRadius: BorderRadius.circular(9)),
-                      child: Row(children: [
-                        const Icon(Icons.verified_outlined, color: Color(0xFF13B77A), size: 16),
-                        const SizedBox(width: 7),
-                        Expanded(child: Text('${_nombre(_clienteSeleccionado!)} · ${_codigo(_clienteSeleccionado!)}', maxLines: 1, overflow: TextOverflow.ellipsis,
-                          style: const TextStyle(color: Color(0xFF087A50), fontSize: 11, fontWeight: FontWeight.w800))),
-                      ])),
+                padding: const EdgeInsets.fromLTRB(26, 22, 26, 12),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text(
+                      'Tipo de gestión',
+                      style: TextStyle(
+                        color: azul,
+                        fontSize: 13,
+                        fontWeight: FontWeight.w900,
+                      ),
+                    ),
+                    const SizedBox(height: 9),
+                    Wrap(
+                      spacing: 8,
+                      runSpacing: 8,
+                      children: _tiposGestion
+                          .map((tipo) => _tipoChip(tipo, _iconoTipo(tipo)))
+                          .toList(),
+                    ),
+                    const SizedBox(height: 20),
+                    _clienteField(),
+                    if (_clienteSeleccionado != null) ...[
+                      const SizedBox(height: 7),
+                      Row(
+                        children: [
+                          const Icon(Icons.verified_outlined,
+                              color: Color(0xFF13B77A), size: 16),
+                          const SizedBox(width: 6),
+                          Expanded(
+                            child: Text(
+                              '${_nombre(_clienteSeleccionado!)} · ${_codigo(_clienteSeleccionado!)}',
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: const TextStyle(
+                                color: Color(0xFF13B77A),
+                                fontSize: 11,
+                                fontWeight: FontWeight.w700,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
+                    const SizedBox(height: 16),
+                    LayoutBuilder(
+                      builder: (context, constraints) {
+                        final twoColumns = constraints.maxWidth >= 620;
+                        final width = twoColumns
+                            ? (constraints.maxWidth - 12) / 2
+                            : constraints.maxWidth;
+                        return Wrap(
+                          spacing: 12,
+                          runSpacing: 14,
+                          children: [
+                            SizedBox(
+                              width: width,
+                              child: _menuSelector(
+                                label: 'Asesor',
+                                value: _vendedor,
+                                icon: Icons.person_outline,
+                                options: vendedores,
+                                onChanged: (value) => setState(
+                                  () => _vendedor = value,
+                                ),
+                              ),
+                            ),
+                            SizedBox(
+                              width: width,
+                              child: TextField(
+                                controller: _asunto,
+                                enabled: !_guardando,
+                                decoration: _decoracion(
+                                  label: 'Asunto',
+                                  hint: 'Ej. Revisión de cotización',
+                                  icon: Icons.subject_outlined,
+                                ),
+                              ),
+                            ),
+                            SizedBox(
+                              width: width,
+                              child: TextField(
+                                controller: _resultado,
+                                enabled: !_guardando,
+                                decoration: _decoracion(
+                                  label: 'Resultado',
+                                  hint: 'Ej. Interesado / En evaluación',
+                                  icon: Icons.fact_check_outlined,
+                                ),
+                              ),
+                            ),
+                            SizedBox(
+                              width: width,
+                              child: TextField(
+                                controller: _proxima,
+                                enabled: !_guardando,
+                                decoration: _decoracion(
+                                  label: 'Próxima acción',
+                                  hint: 'Ej. Enviar cotización',
+                                  icon: Icons.next_plan_outlined,
+                                ),
+                              ),
+                            ),
+                            SizedBox(width: width, child: _campoFecha()),
+                            SizedBox(
+                              width: width,
+                              child: TextField(
+                                controller: _descripcion,
+                                enabled: !_guardando,
+                                maxLines: 2,
+                                decoration: _decoracion(
+                                  label: 'Descripción',
+                                  hint: 'Detalle de la gestión...',
+                                  icon: Icons.notes_outlined,
+                                ),
+                              ),
+                            ),
+                          ],
+                        );
+                      },
+                    ),
                   ],
-                  const SizedBox(height: 11),
-                  LayoutBuilder(builder: (context, constraints) {
-                    final width = constraints.maxWidth >= 650 ? (constraints.maxWidth - 12) / 2 : constraints.maxWidth;
-                    return Wrap(spacing: 12, runSpacing: 12, children: [
-                      SizedBox(width: width, child: _menuSelector(label: 'Asesor responsable', value: _vendedor, icon: Icons.person_outline, options: vendedores, onChanged: (v) => setState(() => _vendedor = v))),
-                      SizedBox(width: width, child: _infoCard(label: 'Estado', value: 'Pendiente de seguimiento', icon: Icons.schedule_outlined)),
-                    ]);
-                  }),
-                  const SizedBox(height: 18),
-                  _sectionTitle('Gestión comercial', 'Registra el motivo, resultado y la acción que continuará la relación.', Icons.assignment_outlined),
-                  LayoutBuilder(builder: (context, constraints) {
-                    final width = constraints.maxWidth >= 650 ? (constraints.maxWidth - 12) / 2 : constraints.maxWidth;
-                    return Wrap(spacing: 12, runSpacing: 12, children: [
-                      SizedBox(width: width, child: TextField(controller: _asunto, enabled: !_guardando, decoration: _decoracion(label: 'Asunto *', hint: 'Ej. Revisión de cotización', icon: Icons.subject_outlined))),
-                      SizedBox(width: width, child: TextField(controller: _resultado, enabled: !_guardando, decoration: _decoracion(label: 'Resultado', hint: 'Ej. Cliente interesado / En evaluación', icon: Icons.fact_check_outlined))),
-                      SizedBox(width: width, child: TextField(controller: _proxima, enabled: !_guardando, decoration: _decoracion(label: 'Próxima acción', hint: 'Ej. Enviar cotización', icon: Icons.next_plan_outlined))),
-                      SizedBox(width: width, child: _campoFecha()),
-                      SizedBox(width: constraints.maxWidth, child: TextField(controller: _descripcion, enabled: !_guardando, maxLines: 3, decoration: _decoracion(label: 'Detalle de la gestión', hint: 'Escribe acuerdos, observaciones o información relevante...', icon: Icons.notes_outlined))),
-                    ]);
-                  }),
-                ]),
+                ),
               ),
             ),
             Container(
-              padding: const EdgeInsets.fromLTRB(24, 12, 24, 18),
-              decoration: const BoxDecoration(color: Colors.white, borderRadius: BorderRadius.only(bottomLeft: Radius.circular(22), bottomRight: Radius.circular(22))),
-              child: Row(children: [
-                const Expanded(child: Text('La información quedará registrada en el historial comercial del cliente.', style: TextStyle(color: textoSecundario, fontSize: 10.5))),
-                TextButton(onPressed: _guardando ? null : () => Navigator.pop(context), child: const Text('Cancelar')),
-                const SizedBox(width: 8),
-                FilledButton.icon(onPressed: _guardando ? null : _guardar,
-                  style: FilledButton.styleFrom(backgroundColor: azul, padding: const EdgeInsets.symmetric(horizontal: 19, vertical: 13), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10))),
-                  icon: _guardando ? const SizedBox(width: 17, height: 17, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white)) : const Icon(Icons.check_circle_outline, size: 18),
-                  label: Text(_guardando ? 'Guardando...' : 'Registrar seguimiento')),
-              ]),
+              padding: const EdgeInsets.fromLTRB(26, 12, 26, 20),
+              decoration: const BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.only(
+                  bottomLeft: Radius.circular(22),
+                  bottomRight: Radius.circular(22),
+                ),
+              ),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.end,
+                children: [
+                  TextButton(
+                    onPressed: _guardando ? null : () => Navigator.pop(context),
+                    child: const Text('Cancelar'),
+                  ),
+                  const SizedBox(width: 10),
+                  FilledButton.icon(
+                    onPressed: _guardando ? null : _guardar,
+                    style: FilledButton.styleFrom(
+                      backgroundColor: azul,
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 20,
+                        vertical: 13,
+                      ),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                    ),
+                    icon: _guardando
+                        ? const SizedBox(
+                            width: 17,
+                            height: 17,
+                            child: CircularProgressIndicator(
+                              strokeWidth: 2,
+                              color: Colors.white,
+                            ),
+                          )
+                        : const Icon(Icons.save_outlined, size: 18),
+                    label: Text(_guardando ? 'Guardando...' : 'Guardar seguimiento'),
+                  ),
+                ],
+              ),
             ),
           ],
         ),
       ),
     );
   }
-
 }
 
 class _EditarSeguimientoDialog extends StatefulWidget {
@@ -2033,6 +2177,7 @@ class _EditarSeguimientoDialogState extends State<_EditarSeguimientoDialog> {
 
   late String _tipo;
   late String _vendedor;
+  List<String> _tiposGestion = const ['LLAMADA'];
   DateTime? _fechaProxima;
   bool _guardando = false;
 
@@ -2042,6 +2187,7 @@ class _EditarSeguimientoDialogState extends State<_EditarSeguimientoDialog> {
     _tipo = _s(widget.row['tipo']).isEmpty
         ? 'LLAMADA'
         : _s(widget.row['tipo']);
+    _cargarTiposGestion();
     _vendedor = _s(widget.row['vendedor']);
     _asunto.text = _s(widget.row['asunto']);
     _descripcion.text = _s(widget.row['descripcion']);
@@ -2053,6 +2199,32 @@ class _EditarSeguimientoDialogState extends State<_EditarSeguimientoDialog> {
   }
 
   String _s(dynamic value) => value?.toString().trim() ?? '';
+
+  Future<void> _cargarTiposGestion() async {
+    try {
+      final tipos = await CrmCatalogosService.obtenerNombres('tipos_gestion');
+      final unicos = <String>[];
+      final vistos = <String>{};
+      for (final tipo in tipos) {
+        final nombre = tipo.trim();
+        final clave = nombre.toUpperCase();
+        if (nombre.isNotEmpty && vistos.add(clave)) {
+          unicos.add(nombre);
+        }
+      }
+      if (!mounted) return;
+      setState(() {
+        _tiposGestion = unicos.isEmpty ? ['LLAMADA'] : unicos;
+        if (!_tiposGestion.any((e) => e.toUpperCase() == _tipo.toUpperCase())) {
+          _tiposGestion.insert(0, _tipo);
+        }
+      });
+    } catch (_) {
+      if (mounted && !_tiposGestion.contains(_tipo)) {
+        setState(() => _tiposGestion = ['LLAMADA', _tipo].toSet().toList());
+      }
+    }
+  }
 
   @override
   void dispose() {
@@ -2143,16 +2315,11 @@ class _EditarSeguimientoDialogState extends State<_EditarSeguimientoDialog> {
               ),
               const SizedBox(height: 12),
               DropdownButtonFormField<String>(
-                value: _tipo,
+                value: _tiposGestion.contains(_tipo) ? _tipo : null,
+                isExpanded: true,
                 decoration: const InputDecoration(labelText: 'Tipo'),
-                items: const [
-                  'LLAMADA',
-                  'WHATSAPP',
-                  'CORREO',
-                  'VISITA',
-                  'REUNION',
-                  'SEGUIMIENTO',
-                ]
+                items: _tiposGestion
+                    .toSet()
                     .map(
                       (e) => DropdownMenuItem(
                         value: e,

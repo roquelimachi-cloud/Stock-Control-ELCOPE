@@ -127,7 +127,8 @@ class UsuarioService {
     final respuesta = await db
         .from('usuarios')
         .select()
-        .eq('usuario', usuario)
+        // Usuario sin distinguir mayúsculas/minúsculas; contraseña sí distingue.
+        .ilike('usuario', usuario.trim())
         .eq('password', password);
 
     if (respuesta.isEmpty) {

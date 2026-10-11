@@ -13,6 +13,7 @@ import '../cobranza/crm_cobranza_page.dart';
 import '../comisiones/crm_comisiones_page.dart';
 import '../reportes/crm_reportes_page.dart';
 import '../../../services/sesion.dart';
+import '../../../services/supabase/supabase_service.dart';
 import '../../../screens/login/login_page.dart';
 
 class CrmShellPage extends StatefulWidget {
@@ -32,8 +33,104 @@ class _CrmShellPageState extends State<CrmShellPage> {
   static const _fondo = Color(0xFF071F35);
 
   late int _indice;
-  final _busqueda = TextEditingController();
   String? _clienteSeleccionadoCodigo;
+  bool _cargandoPermisosMenu = true;
+  bool _mostrarCobranza = false;
+  final Map<String, bool> _permisosVerMenu = {};
+
+  static const Map<int, String> _codigoModuloPorIndice = {
+    1: 'crm_clientes',
+    2: 'crm_cliente_360',
+    3: 'crm_actividades',
+    4: 'crm_seguimientos',
+    5: 'crm_oportunidades',
+    6: 'crm_tareas',
+    7: 'crm_visitas',
+    8: 'crm_facturacion',
+    9: 'crm_cobranza',
+    10: 'crm_comisiones',
+    11: 'crm_reportes',
+  };
+
+  bool get _esAdministrador =>
+      Sesion.esAdministrador ||
+      Sesion.rol.trim().toLowerCase() == 'administrador';
+
+  // Mantiene los índices originales para que las rutas de los demás módulos
+  // no cambien cuando Cobranza se oculta. Mientras se consulta el permiso,
+  // Cobranza no se muestra a usuarios no administradores.
+  List<int> get _indicesMenuVisibles => List<int>.generate(_items.length, (i) => i)
+      .where((i) {
+        if (_esAdministrador || i == 0) return true;
+        final codigo = _codigoModuloPorIndice[i];
+        if (codigo == null) return true;
+        // Cobranza se oculta durante la consulta y si no existe autorización.
+        if (i == 9 && _cargandoPermisosMenu) return false;
+        final permiso = _permisosVerMenu[codigo];
+        if (permiso != null) return permiso;
+        return i != 9 && !_cargandoPermisosMenu;
+      })
+      .toList();
+
+  @override
+  void initState() {
+    super.initState();
+    _indice = widget.indiceInicial.clamp(0, _items.length - 1);
+    _cargarPermisosMenu();
+  }
+
+  Future<void> _cargarPermisosMenu() async {
+    if (_esAdministrador) {
+      if (mounted) setState(() {
+        _mostrarCobranza = true;
+        _cargandoPermisosMenu = false;
+      });
+      return;
+    }
+
+    final usuarioId = Sesion.idUsuario;
+    try {
+      final db = SupabaseService.client;
+      final data = await db
+          .from('accesos_usuario')
+          .select('puede_ver, accesos_modulos!inner(codigo)')
+          .eq('usuario_id', usuarioId);
+
+      final permisos = <String, bool>{};
+      for (final raw in data as List) {
+        final fila = Map<String, dynamic>.from(raw as Map);
+        final moduloRaw = fila['accesos_modulos'];
+        if (moduloRaw == null) continue;
+        final modulo = Map<String, dynamic>.from(moduloRaw as Map);
+        final codigo = (modulo['codigo'] ?? '').toString().trim();
+        if (codigo.isNotEmpty) permisos[codigo] = fila['puede_ver'] == true;
+      }
+
+      if (!mounted) return;
+      setState(() {
+        _permisosVerMenu
+          ..clear()
+          ..addAll(permisos);
+        _mostrarCobranza = permisos['crm_cobranza'] == true;
+        _cargandoPermisosMenu = false;
+        if (!_mostrarCobranza && _indice == 9) _indice = 0;
+        // Si la pantalla se abrió directamente en un módulo denegado, regresar al inicio.
+        final codigoActual = _codigoModuloPorIndice[_indice];
+        if (codigoActual != null && permisos.containsKey(codigoActual) && permisos[codigoActual] != true) {
+          _indice = 0;
+        }
+      });
+    } catch (_) {
+      // No mostrar Cobranza cuando no se puede verificar su permiso.
+      if (!mounted) return;
+      setState(() {
+        _permisosVerMenu['crm_cobranza'] = false;
+        _mostrarCobranza = false;
+        _cargandoPermisosMenu = false;
+        if (_indice == 9) _indice = 0;
+      });
+    }
+  }
 
   final _items = const [
     _CrmMenuItem(Icons.home_rounded, 'Inicio CRM'),
@@ -51,14 +148,7 @@ class _CrmShellPageState extends State<CrmShellPage> {
   ];
 
   @override
-  void initState() {
-    super.initState();
-    _indice = widget.indiceInicial.clamp(0, _items.length - 1);
-  }
-
-  @override
   void dispose() {
-    _busqueda.dispose();
     super.dispose();
   }
 
@@ -109,9 +199,8 @@ class _CrmShellPageState extends State<CrmShellPage> {
           onAbrirActividades: _abrirActividadesDelCliente,
         );
       case 3:
-        return CrmActividadesPage(
-          clienteInicial: _clienteSeleccionadoCodigo,
-        );
+        // Compatible con la versión de CrmActividadesPage instalada en el proyecto.
+        return const CrmActividadesPage();
       case 4:
         return const CrmSeguimientosPage();
       case 5:
@@ -123,7 +212,9 @@ class _CrmShellPageState extends State<CrmShellPage> {
       case 8:
         return const FacturacionImportacionPage();
       case 9:
-        return const CrmCobranzaPage();
+        return (!_cargandoPermisosMenu && _mostrarCobranza)
+            ? const CrmCobranzaPage()
+            : const CrmDashboardPage(embebido: true);
       case 10:
         return const ComisionesProductosPage();
       case 11:
@@ -196,8 +287,8 @@ class _CrmShellPageState extends State<CrmShellPage> {
             Expanded(
               child: ListView.builder(
                 padding: const EdgeInsets.symmetric(vertical: 4),
-                itemCount: _items.length,
-                itemBuilder: (_, i) => _sideItem(i),
+                itemCount: _indicesMenuVisibles.length,
+                itemBuilder: (_, i) => _sideItem(_indicesMenuVisibles[i]),
               ),
             ),
             Padding(
@@ -264,29 +355,12 @@ class _CrmShellPageState extends State<CrmShellPage> {
           const Text('ELCOPE', style: TextStyle(color: Colors.white, fontSize: 25, fontWeight: FontWeight.w900, fontStyle: FontStyle.italic)),
           const SizedBox(width: 12),
           const Text('CRM', style: TextStyle(color: Colors.white, fontSize: 19, fontWeight: FontWeight.w400)),
-          const SizedBox(width: 34),
-          Expanded(
-            child: ConstrainedBox(
-              constraints: const BoxConstraints(maxWidth: 610),
-              child: SizedBox(
-                height: 42,
-                child: TextField(
-                  controller: _busqueda,
-                  style: const TextStyle(color: Colors.white),
-                  decoration: InputDecoration(
-                    hintText: 'Buscar clientes, oportunidades, actividades, facturas, RUC...',
-                    hintStyle: const TextStyle(color: Colors.white70, fontSize: 12),
-                    prefixIcon: const Icon(Icons.search_rounded, color: Colors.white),
-                    filled: true,
-                    fillColor: Colors.white.withValues(alpha: .12),
-                    contentPadding: const EdgeInsets.symmetric(vertical: 0, horizontal: 14),
-                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(24), borderSide: BorderSide(color: Colors.white.withValues(alpha: .22))),
-                    enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(24), borderSide: BorderSide(color: Colors.white.withValues(alpha: .22))),
-                  ),
-                ),
-              ),
-            ),
-          ),
+          if (_indice == 9) ...[
+            const SizedBox(width: 14),
+            Container(width: 1, height: 26, color: Colors.white.withValues(alpha: .28)),
+            const SizedBox(width: 14),
+            const Text('Cobranza', style: TextStyle(color: Colors.white, fontSize: 17, fontWeight: FontWeight.w800)),
+          ],
           const Spacer(),
           if (!compacto) ...[
             // Campanita con accesos seleccionables a los módulos que contienen eventos.

@@ -40,7 +40,7 @@ class _DashboardPageState extends State<DashboardPage> {
   final ScrollController _resumenVertical = ScrollController();
   final ScrollController _resumenHorizontal = ScrollController();
   final GlobalKey<ScaffoldState> _scaffoldKey = GlobalKey<ScaffoldState>();
-  bool _menuVisible = true;
+  bool _menuVisible = false;
 
   final Map<String, bool> _verPermisos = {};
   bool _cargandoPermisos = true;
@@ -2019,11 +2019,13 @@ if (_puedeVer('crm'))
               crossAxisAlignment: CrossAxisAlignment.center,
               children: [
                 IconButton(
-                  tooltip: 'Menú',
+                  tooltip: _menuVisible ? 'Contraer menú' : 'Expandir menú',
                   onPressed: () {
                     final desktop = MediaQuery.sizeOf(context).width >= 1200;
                     if (desktop) {
-                      setState(() => _menuVisible = !_menuVisible);
+                      setState(() {
+                        _menuVisible = !_menuVisible;
+                      });
                     } else {
                       _scaffoldKey.currentState?.openDrawer();
                     }

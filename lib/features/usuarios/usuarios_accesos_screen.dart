@@ -35,6 +35,7 @@ class _UsuariosAccesosScreenState extends State<UsuariosAccesosScreen> {
     {'id': 12, 'codigo': 'usuarios_accesos', 'nombre': 'Usuarios y Accesos', 'activo': true},
     {'id': 13, 'codigo': 'configuracion', 'nombre': 'Configuración', 'activo': true},
     {'id': 14, 'codigo': 'auditoria', 'nombre': 'Auditoría', 'activo': true},
+    {'id': 34, 'codigo': 'crm_cobranza', 'nombre': 'Cobranza', 'activo': true},
   ];
 
   final SupabaseClient _db = SupabaseService.client;
@@ -1029,142 +1030,6 @@ class _UsuariosAccesosScreenState extends State<UsuariosAccesosScreen> {
   // CONTENIDO
   // ============================================================
 
-
-  bool _esModuloCrm(Map<String, dynamic> modulo) {
-    final codigo = (modulo['codigo']?.toString() ?? '').trim().toLowerCase();
-    return codigo == 'crm' || codigo.startsWith('crm_');
-  }
-
-  String _nombreModuloCrm(String codigo, String fallback) {
-    const nombres = {
-      'crm': 'CRM Comercial',
-      'crm_dashboard': 'Inicio CRM',
-      'crm_clientes': 'Clientes',
-      'crm_cliente_360': 'Cliente 360°',
-      'crm_actividades': 'Actividades',
-      'crm_seguimientos': 'Seguimientos',
-      'crm_oportunidades': 'Oportunidades',
-      'crm_tareas': 'Tareas',
-      'crm_visitas': 'Visitas Comerciales',
-      'crm_facturacion': 'Facturación',
-      'crm_cobranza': 'Cobranza',
-      'crm_comisiones': 'Comisiones',
-      'crm_reportes': 'Reportes',
-      'crm_catalogos': 'Catálogos CRM',
-      'crm_catalogo_vendedores': 'Catálogo · Vendedores',
-      'crm_catalogo_sectores': 'Catálogo · Sectores',
-      'crm_catalogo_giros': 'Catálogo · Giros',
-      'crm_catalogo_familias': 'Catálogo · Familias',
-      'crm_catalogo_clases': 'Catálogo · Clases',
-      'crm_catalogo_colores': 'Catálogo · Colores',
-      'crm_catalogo_presentaciones': 'Catálogo · Presentaciones',
-    };
-    return nombres[codigo] ?? fallback;
-  }
-
-  Widget _crmPermisosPanel(Map<String, dynamic> usuario) {
-    final crm = _modulos.where(_esModuloCrm).toList();
-    if (crm.isEmpty) {
-      return const Center(child: Text('No hay pestañas CRM configuradas.'));
-    }
-
-    return Card(
-      elevation: 0,
-      margin: EdgeInsets.zero,
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(16),
-        side: const BorderSide(color: _borde),
-      ),
-      child: Column(
-        children: [
-          Container(
-            padding: const EdgeInsets.fromLTRB(20, 18, 20, 14),
-            decoration: const BoxDecoration(
-              color: _verdeClaro,
-              borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
-            ),
-            child: Row(
-              children: [
-                Container(
-                  width: 44,
-                  height: 44,
-                  decoration: BoxDecoration(
-                    color: _verde.withValues(alpha: .10),
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                  child: const Icon(Icons.hub_outlined, color: _verde),
-                ),
-                const SizedBox(width: 12),
-                const Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text('ACCESOS DEL CRM', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w900)),
-                      SizedBox(height: 3),
-                      Text('Selecciona exactamente qué pestañas podrá ver este usuario.', style: TextStyle(color: Colors.black54)),
-                    ],
-                  ),
-                ),
-                OutlinedButton.icon(
-                  onPressed: () => _crmCambiarTodos(true),
-                  icon: const Icon(Icons.done_all, size: 18),
-                  label: const Text('Ver todo'),
-                ),
-                const SizedBox(width: 8),
-                OutlinedButton.icon(
-                  onPressed: () => _crmCambiarTodos(false),
-                  icon: const Icon(Icons.remove_done, size: 18),
-                  label: const Text('Ocultar todo'),
-                ),
-              ],
-            ),
-          ),
-          const Padding(
-            padding: EdgeInsets.fromLTRB(20, 12, 20, 4),
-            child: Align(
-              alignment: Alignment.centerLeft,
-              child: Text('PESTAÑAS VISIBLES', style: TextStyle(fontWeight: FontWeight.w900, color: Colors.black54, fontSize: 11)),
-            ),
-          ),
-          ...crm.where((m) => (m['codigo']?.toString() ?? '') != 'crm').map((m) {
-            final id = _toInt(m['id']);
-            if (id == null) return const SizedBox.shrink();
-            final permiso = _permiso(id);
-            final codigo = m['codigo']?.toString() ?? '';
-            final nombre = _nombreModuloCrm(codigo, m['nombre']?.toString() ?? 'CRM');
-            final catalogo = codigo.startsWith('crm_catalogo_');
-            return SwitchListTile.adaptive(
-              value: permiso.ver,
-              onChanged: (v) => _cambiarPermiso(id, 'ver', v),
-              secondary: Icon(catalogo ? Icons.menu_book_outlined : Icons.tab_outlined, color: _verde),
-              title: Text(nombre, style: const TextStyle(fontWeight: FontWeight.w800)),
-              subtitle: Text(catalogo ? 'Catálogo CRM' : 'Pestaña del CRM'),
-              activeColor: _verde,
-              contentPadding: const EdgeInsets.symmetric(horizontal: 20),
-            );
-          }),
-          const SizedBox(height: 8),
-        ],
-      ),
-    );
-  }
-
-  void _crmCambiarTodos(bool valor) {
-    for (final modulo in _modulos.where(_esModuloCrm)) {
-      final id = _toInt(modulo['id']);
-      if (id != null) _cambiarPermiso(id, 'ver', valor);
-    }
-  }
-
-  Map<String, dynamic>? _usuarioSeleccionadoMap() {
-    if (_usuarioId == null) return null;
-    for (final u in _usuarios) {
-      final id = _toInt(u['id']);
-      if (id == _usuarioId) return u;
-    }
-    return null;
-  }
-
   Widget _contenido() {
     final activos =
         _usuarios.where(
@@ -1174,8 +1039,6 @@ class _UsuariosAccesosScreenState extends State<UsuariosAccesosScreen> {
     final inactivos =
         _usuarios.length -
             activos;
-
-    final usuario = _usuarioSeleccionadoMap();
 
     return Padding(
       padding:
@@ -1660,11 +1523,6 @@ class _UsuariosAccesosScreenState extends State<UsuariosAccesosScreen> {
               ],
             ),
           ),
-
-          if (usuario != null) ...[
-            _crmPermisosPanel(usuario),
-            const SizedBox(height: 16),
-          ],
 
           const Divider(
             height: 1,

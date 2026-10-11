@@ -3,22 +3,65 @@ import 'package:intl/intl.dart';
 
 import '../../../services/sesion.dart';
 import '../../../services/supabase/supabase_service.dart';
+import '../shared/crm_modulo_permisos.dart';
 
 class CrmActividadesPage extends StatefulWidget {
-  const CrmActividadesPage({super.key, this.clienteInicial});
-
-  /// Cliente preseleccionado al abrir Actividades desde Cliente 360.
-  final String? clienteInicial;
+  const CrmActividadesPage({super.key});
 
   @override
   State<CrmActividadesPage> createState() => _CrmActividadesPageState();
 }
 
 class _CrmActividadesPageState extends State<CrmActividadesPage> {
+
+  bool _cargandoPermisosModulo = true;
+  bool _puedeVerModulo = false;
+  bool _puedeCrearModulo = false;
+  bool _puedeEditarModulo = false;
+  bool _puedeEliminarModulo = false;
+  bool _puedeImprimirModulo = false;
+
+  Future<void> _cargarPermisosModulo() async {
+    final permisos = await CrmModuloPermisos.cargar('crm_actividades');
+    if (!mounted) return;
+    setState(() {
+      _puedeVerModulo = permisos['ver'] == true;
+      _puedeCrearModulo = permisos['crear'] == true;
+      _puedeEditarModulo = permisos['editar'] == true;
+      _puedeEliminarModulo = permisos['eliminar'] == true;
+      _puedeImprimirModulo = permisos['imprimir'] == true;
+      _cargandoPermisosModulo = false;
+    });
+  }
+
+  Widget _sinAccesoModulo() {
+    return Scaffold(
+      backgroundColor: const Color(0xFFF4F7FA),
+      body: Center(
+        child: Card(
+          margin: const EdgeInsets.all(24),
+          child: Padding(
+            padding: const EdgeInsets.all(28),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: const [
+                Icon(Icons.lock_outline_rounded, size: 48, color: Color(0xFF0B3B63)),
+                SizedBox(height: 12),
+                Text('Acceso no autorizado', style: TextStyle(fontSize: 21, fontWeight: FontWeight.w900)),
+                SizedBox(height: 6),
+                Text('Solicita al administrador que habilite este módulo en Usuarios y Accesos.'),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
   static const _azul = Color(0xFF0B3B63);
-  static const _azulClaro = Color(0xFF12A8FF);
-  static const _verde = Color(0xFF20D6A0);
-  static const _fondo = Color(0xFF031F33);
+  static const _azulClaro = Color(0xFF1468A8);
+  static const _verde = Color(0xFF0A9B61);
+  static const _fondo = Color(0xFFF4F7FA);
 
   final _db = SupabaseService.client;
   final _buscarController = TextEditingController();
@@ -46,10 +89,6 @@ class _CrmActividadesPageState extends State<CrmActividadesPage> {
   @override
   void initState() {
     super.initState();
-    final inicial = widget.clienteInicial?.trim() ?? '';
-    if (inicial.isNotEmpty) {
-      _buscarController.text = inicial;
-    }
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) _inicializar();
     });
@@ -62,29 +101,6 @@ class _CrmActividadesPageState extends State<CrmActividadesPage> {
   }
 
   String _s(dynamic value) => value?.toString().trim() ?? '';
-
-  /// Resuelve el identificador guardado en la actividad a la razón social.
-  /// Algunas actividades antiguas guardaron el RUC en codigo_cliente; otras,
-  /// el código interno. Se comparan ambos para mostrar siempre el nombre.
-  String _razonSocialActividad(dynamic identificador) {
-    final id = _s(identificador);
-    if (id.isEmpty) return 'Cliente no especificado';
-    for (final c in _clientes) {
-      final claves = [c['codigo'], c['codigo_cliente'], c['ruc'], c['id']]
-          .map(_s)
-          .where((v) => v.isNotEmpty);
-      if (claves.any((v) => v.toLowerCase() == id.toLowerCase())) {
-        final nombre = _s(c['razon_social']).isNotEmpty
-            ? _s(c['razon_social'])
-            : _s(c['nombre']).isNotEmpty
-                ? _s(c['nombre'])
-                : _s(c['cliente']);
-        if (nombre.isNotEmpty) return nombre;
-      }
-    }
-    // Si no está en la primera carga, no mostrar el RUC como si fuera nombre.
-    return 'Cliente (código $id)';
-  }
 
   Future<void> _cargarPermisos() async {
     if (_esGerencia) {
@@ -128,12 +144,12 @@ class _CrmActividadesPageState extends State<CrmActividadesPage> {
       'p_anio': null,
       'p_vendedores_permitidos': vendedores,
     });
-    final cargados = List<Map<String, dynamic>>.from(data as List);
-    if (!mounted) return;
-    setState(() => _clientes = cargados);
+    _clientes = List<Map<String, dynamic>>.from(data as List);
   }
 
   Future<void> _inicializar() async {
+    await _cargarPermisosModulo();
+    if (!_puedeVerModulo) { if (mounted) setState(() => _cargando = false); return; }
     if (!mounted) return;
     setState(() {
       _cargando = true;
@@ -231,6 +247,13 @@ class _CrmActividadesPageState extends State<CrmActividadesPage> {
   }
 
   Future<void> _editarActividad(Map<String, dynamic> actividad) async {
+    if (!_puedeEditarModulo) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('No tienes permiso para realizar esta acción.')),
+      );
+      return;
+    }
+
     final actualizado = await showDialog<bool>(
       context: context,
       barrierDismissible: false,
@@ -247,6 +270,13 @@ class _CrmActividadesPageState extends State<CrmActividadesPage> {
   }
 
   Future<void> _nuevaActividad() async {
+    if (!_puedeCrearModulo) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('No tienes permiso para realizar esta acción.')),
+      );
+      return;
+    }
+
     final resultado = await showDialog<bool>(
       context: context,
       barrierDismissible: false,
@@ -307,40 +337,18 @@ class _CrmActividadesPageState extends State<CrmActividadesPage> {
 
   @override
   Widget build(BuildContext context) {
-    return Theme(
-      data: Theme.of(context).copyWith(
-        brightness: Brightness.dark,
-        scaffoldBackgroundColor: _fondo,
-        colorScheme: Theme.of(context).colorScheme.copyWith(
-          brightness: Brightness.dark,
-          surface: const Color(0xFF062D49),
-          onSurface: Colors.white,
-          primary: const Color(0xFF12A8FF),
-          onPrimary: Colors.white,
-          secondary: const Color(0xFF20D6A0),
-        ),
-        cardTheme: const CardThemeData(
-          color: Color(0xFF062D49),
-          surfaceTintColor: Colors.transparent,
-          elevation: 0,
-          margin: EdgeInsets.zero,
-        ),
-        iconTheme: const IconThemeData(color: Color(0xFF12A8FF)),
-        dividerColor: const Color(0xFF155578),
-        textTheme: Theme.of(context).textTheme.apply(
-          bodyColor: Colors.white,
-          displayColor: Colors.white,
-        ),
-        inputDecorationTheme: const InputDecorationTheme(
-          labelStyle: TextStyle(color: Color(0xFFD0E3F0)),
-          hintStyle: TextStyle(color: Color(0xFFB8D1E3)),
-        ),
-      ),
-      child: Scaffold(
+    if (_cargandoPermisosModulo) {
+      return const Scaffold(
+        backgroundColor: Color(0xFFF4F7FA),
+        body: Center(child: CircularProgressIndicator()),
+      );
+    }
+    if (!_puedeVerModulo) return _sinAccesoModulo();
+    return Scaffold(
       backgroundColor: _fondo,
       appBar: AppBar(
-        backgroundColor: const Color(0xFF0B3B63),
-        foregroundColor: Colors.white,
+        backgroundColor: Colors.white,
+        foregroundColor: _azul,
         elevation: 0,
         automaticallyImplyLeading: false,
         leading: IconButton(
@@ -391,7 +399,6 @@ class _CrmActividadesPageState extends State<CrmActividadesPage> {
                 ],
               ),
       ),
-      ),
     );
   }
 
@@ -405,14 +412,14 @@ class _CrmActividadesPageState extends State<CrmActividadesPage> {
             children: [
               Text(
                 'Gestiona y da seguimiento a todas tus actividades comerciales con tus clientes.',
-                style: TextStyle(fontSize: 16, color: Color(0xFFD0E3F0)),
+                style: TextStyle(fontSize: 16, color: Color(0xFF52657A)),
               ),
             ],
           ),
         ),
         const SizedBox(width: 12),
         FilledButton.icon(
-          onPressed: _cargando ? null : _nuevaActividad,
+          onPressed: (_cargando || !_puedeCrearModulo) ? null : _nuevaActividad,
           icon: const Icon(Icons.add_rounded),
           label: const Text('Nueva actividad'),
           style: ButtonStyle(
@@ -441,7 +448,7 @@ class _CrmActividadesPageState extends State<CrmActividadesPage> {
           Text('Registra y controla cada contacto con tus clientes.', style: TextStyle(color: Colors.white70)),
         ])),
         ElevatedButton.icon(
-          onPressed: _nuevaActividad,
+          onPressed: _puedeCrearModulo ? _nuevaActividad : null,
           icon: const Icon(Icons.add),
           label: const Text('Nueva actividad'),
           style: ElevatedButton.styleFrom(backgroundColor: Colors.white, foregroundColor: _azul, padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 14)),
@@ -454,7 +461,7 @@ class _CrmActividadesPageState extends State<CrmActividadesPage> {
     final vendedores = ['TODOS', ..._vendedoresPermitidos];
     return Card(
       elevation: 0,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16), side: const BorderSide(color: Color(0xFF12618A))),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16), side: const BorderSide(color: Color(0xFFE0E6EC))),
       child: Padding(
         padding: const EdgeInsets.all(16),
         child: Wrap(
@@ -465,15 +472,7 @@ class _CrmActividadesPageState extends State<CrmActividadesPage> {
             SizedBox(width: 320, child: TextField(
               controller: _buscarController,
               onSubmitted: (_) => _aplicarFiltros(),
-              style: const TextStyle(color: Colors.white),
-              decoration: InputDecoration(
-                prefixIcon: const Icon(Icons.search, color: Color(0xFF8FCDF0)),
-                hintText: 'Buscar cliente, código, asunto...',
-                hintStyle: const TextStyle(color: Color(0xFFB8D1E3)),
-                filled: true,
-                fillColor: const Color(0xFF0A3A5A),
-                border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide.none),
-              ),
+              decoration: InputDecoration(prefixIcon: const Icon(Icons.search), hintText: 'Buscar cliente, código, asunto...', filled: true, fillColor: const Color(0xFFF4F7FA), border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide.none)),
             )),
             _dropdown('Tipo', _tipo, ['TODOS','LLAMADA','WHATSAPP','CORREO','VISITA','REUNION','SEGUIMIENTO','COBRANZA'], (v) { setState(() => _tipo = v!); _aplicarFiltros(); }),
             _dropdown('Vendedor', _vendedor, vendedores.isEmpty ? ['TODOS'] : vendedores, (v) { setState(() => _vendedor = v!); _aplicarFiltros(); }),
@@ -491,23 +490,8 @@ class _CrmActividadesPageState extends State<CrmActividadesPage> {
     return SizedBox(width: 190, child: DropdownButtonFormField<String>(
       value: safe,
       isExpanded: true,
-      decoration: InputDecoration(
-        labelText: label,
-        filled: true,
-        fillColor: const Color(0xFF0A3A5A),
-        labelStyle: const TextStyle(color: Color(0xFFD0E3F0)),
-        enabledBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(12),
-          borderSide: const BorderSide(color: Color(0xFF12618A)),
-        ),
-        focusedBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(12),
-          borderSide: const BorderSide(color: Color(0xFF12A8FF), width: 1.5),
-        ),
-      ),
-      dropdownColor: const Color(0xFF062D49),
-      style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w600),
-      items: items.toSet().map((e) => DropdownMenuItem(value: e, child: Text(e, overflow: TextOverflow.ellipsis, style: const TextStyle(color: Colors.white)))).toList(),
+      decoration: InputDecoration(labelText: label, filled: true, fillColor: const Color(0xFFF4F7FA), border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide.none)),
+      items: items.toSet().map((e) => DropdownMenuItem(value: e, child: Text(e, overflow: TextOverflow.ellipsis))).toList(),
       onChanged: onChanged,
     ));
   }
@@ -522,24 +506,24 @@ class _CrmActividadesPageState extends State<CrmActividadesPage> {
   }
 
   Widget _kpi(IconData icon, String label, String value, Color color) {
-    return Container(width: 220, padding: const EdgeInsets.all(17), decoration: BoxDecoration(color: const Color(0xFF062D49), borderRadius: BorderRadius.circular(16), border: Border.all(color: const Color(0xFF12618A))), child: Row(children: [Container(padding: const EdgeInsets.all(10), decoration: BoxDecoration(color: color.withValues(alpha: .10), borderRadius: BorderRadius.circular(12)), child: Icon(icon, color: color)), const SizedBox(width: 12), Column(crossAxisAlignment: CrossAxisAlignment.start, children: [Text(label, style: const TextStyle(color: const Color(0xFFB8D1E3))), Text(value, style: TextStyle(fontSize: 22, fontWeight: FontWeight.w900, color: color))]) ]));
+    return Container(width: 220, padding: const EdgeInsets.all(17), decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(16), border: Border.all(color: const Color(0xFFE0E6EC))), child: Row(children: [Container(padding: const EdgeInsets.all(10), decoration: BoxDecoration(color: color.withValues(alpha: .10), borderRadius: BorderRadius.circular(12)), child: Icon(icon, color: color)), const SizedBox(width: 12), Column(crossAxisAlignment: CrossAxisAlignment.start, children: [Text(label, style: const TextStyle(color: Colors.grey)), Text(value, style: TextStyle(fontSize: 22, fontWeight: FontWeight.w900, color: color))]) ]));
   }
 
   Widget _lista() {
     if (_actividades.isEmpty) {
       return Card(
         elevation: 0,
-        color: const Color(0xFF062D49),
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18), side: const BorderSide(color: Color(0xFF12618A))),
+        color: Colors.white,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18), side: const BorderSide(color: Color(0xFFE0E6EC))),
         child: const Padding(
           padding: EdgeInsets.all(55),
           child: Column(
             children: [
-              Icon(Icons.event_busy_outlined, size: 55, color: const Color(0xFFB8D1E3)),
+              Icon(Icons.event_busy_outlined, size: 55, color: Colors.grey),
               SizedBox(height: 12),
-              Text('No hay actividades registradas', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w800, color: Colors.white)),
+              Text('No hay actividades registradas', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w800)),
               SizedBox(height: 5),
-              Text('Registra la primera actividad desde “Nueva actividad”.', style: TextStyle(color: const Color(0xFFB8D1E3))),
+              Text('Registra la primera actividad desde “Nueva actividad”.', style: TextStyle(color: Colors.grey)),
             ],
           ),
         ),
@@ -549,9 +533,9 @@ class _CrmActividadesPageState extends State<CrmActividadesPage> {
     return Container(
       padding: const EdgeInsets.fromLTRB(18, 18, 18, 20),
       decoration: BoxDecoration(
-        color: const Color(0xFF062D49),
+        color: Colors.white,
         borderRadius: BorderRadius.circular(18),
-        border: Border.all(color: const Color(0xFF12618A)),
+        border: Border.all(color: const Color(0xFFE0E6EC)),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -560,9 +544,9 @@ class _CrmActividadesPageState extends State<CrmActividadesPage> {
             children: [
               const Icon(Icons.view_list_rounded, color: _azulClaro, size: 25),
               const SizedBox(width: 10),
-              const Text('Listado de actividades', style: TextStyle(fontSize: 22, fontWeight: FontWeight.w900, color: Colors.white)),
+              const Text('Listado de actividades', style: TextStyle(fontSize: 19, fontWeight: FontWeight.w900, color: _azul)),
               const Spacer(),
-              Text('${_actividades.length} registros', style: const TextStyle(color: const Color(0xFFB8D1E3))),
+              Text('${_actividades.length} registros', style: const TextStyle(color: Colors.grey)),
             ],
           ),
           const SizedBox(height: 14),
@@ -584,7 +568,7 @@ class _CrmActividadesPageState extends State<CrmActividadesPage> {
     final resultado = _s(a['resultado']);
     final proxima = _s(a['fecha_proxima_accion']);
     final vendedor = _s(a['vendedor']);
-    final cliente = _razonSocialActividad(a['codigo_cliente']);
+    final cliente = _s(a['codigo_cliente']);
     final asunto = _s(a['asunto']).isEmpty ? '(Sin asunto)' : _s(a['asunto']);
 
     return Container(
@@ -592,9 +576,9 @@ class _CrmActividadesPageState extends State<CrmActividadesPage> {
       margin: const EdgeInsets.only(bottom: 14),
       padding: const EdgeInsets.all(18),
       decoration: BoxDecoration(
-        color: const Color(0xFF062D49),
+        color: Colors.white,
         borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: const Color(0xFF12618A)),
+        border: Border.all(color: const Color(0xFFE3E9EF)),
         boxShadow: const [
           BoxShadow(
             color: Color(0x0D000000),
@@ -603,10 +587,7 @@ class _CrmActividadesPageState extends State<CrmActividadesPage> {
           ),
         ],
       ),
-      child: InkWell(
-        borderRadius: BorderRadius.circular(16),
-        onTap: () => _editarActividad(a),
-        child: LayoutBuilder(
+      child: LayoutBuilder(
         builder: (context, constraints) {
           final compacto = constraints.maxWidth < 900;
 
@@ -614,7 +595,7 @@ class _CrmActividadesPageState extends State<CrmActividadesPage> {
             width: 78,
             padding: const EdgeInsets.symmetric(vertical: 10),
             decoration: BoxDecoration(
-              color: const Color(0xFF0A3A5A),
+              color: const Color(0xFFF2F7FB),
               borderRadius: BorderRadius.circular(12),
             ),
             child: Column(
@@ -625,7 +606,7 @@ class _CrmActividadesPageState extends State<CrmActividadesPage> {
                   style: const TextStyle(
                     fontSize: 12,
                     fontWeight: FontWeight.w800,
-                    color: Colors.white,
+                    color: _azul,
                   ),
                 ),
                 Text(
@@ -634,13 +615,13 @@ class _CrmActividadesPageState extends State<CrmActividadesPage> {
                     fontSize: 27,
                     height: 1.0,
                     fontWeight: FontWeight.w900,
-                    color: Colors.white,
+                    color: _azul,
                   ),
                 ),
                 const SizedBox(height: 3),
                 Text(
                   _anio(a['fecha']),
-                  style: const TextStyle(fontSize: 12, color: Colors.white),
+                  style: const TextStyle(fontSize: 12, color: _azul),
                 ),
               ],
             ),
@@ -681,16 +662,16 @@ class _CrmActividadesPageState extends State<CrmActividadesPage> {
                 style: const TextStyle(
                   fontSize: 17,
                   fontWeight: FontWeight.w900,
-                  color: Colors.white,
+                  color: _azul,
                 ),
               ),
               const SizedBox(height: 7),
               Text(
-                'Cliente: $cliente',
+                'Cliente: ${cliente.isEmpty ? '-' : cliente}',
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
                 style: const TextStyle(
-                  color: Color(0xFFD0E3F0),
+                  color: Color(0xFF52657A),
                   fontSize: 13,
                 ),
               ),
@@ -737,7 +718,7 @@ class _CrmActividadesPageState extends State<CrmActividadesPage> {
             label: const Text('Editar'),
             style: OutlinedButton.styleFrom(
               foregroundColor: _azulClaro,
-              side: const BorderSide(color: Color(0xFF12618A)),
+              side: const BorderSide(color: Color(0xFFD5E1EC)),
               padding: const EdgeInsets.symmetric(horizontal: 13, vertical: 11),
               shape: RoundedRectangleBorder(
                 borderRadius: BorderRadius.circular(10),
@@ -797,7 +778,6 @@ class _CrmActividadesPageState extends State<CrmActividadesPage> {
             ],
           );
         },
-        ),
       ),
     );
   }
@@ -816,7 +796,7 @@ class _CrmActividadesPageState extends State<CrmActividadesPage> {
               const SizedBox(width: 6),
               Text(
                 label,
-                style: const TextStyle(fontSize: 12, color: const Color(0xFFB8D1E3)),
+                style: const TextStyle(fontSize: 12, color: Colors.grey),
               ),
             ],
           ),
@@ -827,7 +807,7 @@ class _CrmActividadesPageState extends State<CrmActividadesPage> {
             overflow: TextOverflow.ellipsis,
             style: const TextStyle(
               fontWeight: FontWeight.w700,
-              color: Colors.white,
+              color: _azul,
               fontSize: 13,
             ),
           ),
@@ -905,6 +885,9 @@ class _EditarActividadDialogState extends State<_EditarActividadDialog> {
   final _descripcion = TextEditingController();
   final _resultado = TextEditingController();
   final _proxima = TextEditingController();
+  final _clienteBusqueda = TextEditingController();
+  List<Map<String, dynamic>> _clientesFiltrados = [];
+  bool _buscandoClientes = false;
   String _tipo = 'LLAMADA';
   String _vendedor = '';
   DateTime? _fechaProxima;
@@ -977,44 +960,11 @@ class _EditarActividadDialogState extends State<_EditarActividadDialog> {
 
   @override
   Widget build(BuildContext context) {
-    const panel = Color(0xFF0A3A5A);
-    const accent = Color(0xFF12A8FF);
-    const muted = Color(0xFFB8D1E3);
-
-    InputDecoration fieldDecoration(String label, {IconData? icon}) {
-      return InputDecoration(
-        labelText: label,
-        labelStyle: const TextStyle(color: muted, fontWeight: FontWeight.w500),
-        prefixIcon: icon == null ? null : Icon(icon, color: accent, size: 20),
-        filled: true,
-        fillColor: panel,
-        contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
-        enabledBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(12),
-          borderSide: const BorderSide(color: Color(0xFF12618A)),
-        ),
-        focusedBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(12),
-          borderSide: const BorderSide(color: accent, width: 1.5),
-        ),
-        border: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(12),
-          borderSide: const BorderSide(color: Color(0xFF12618A)),
-        ),
-      );
-    }
-
     final vendedores = widget.vendedores.toSet().toList();
     if (_vendedor.isNotEmpty && !vendedores.contains(_vendedor)) vendedores.add(_vendedor);
 
     return AlertDialog(
-      backgroundColor: const Color(0xFF062D49),
-      surfaceTintColor: Colors.transparent,
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(20),
-        side: const BorderSide(color: Color(0xFF12618A)),
-      ),
-      title: const Text('Editar actividad', style: TextStyle(fontWeight: FontWeight.w900, color: Colors.white)),
+      title: const Text('Editar actividad', style: TextStyle(fontWeight: FontWeight.w900, color: _azul)),
       content: SizedBox(
         width: 650,
         child: SingleChildScrollView(
@@ -1023,52 +973,26 @@ class _EditarActividadDialogState extends State<_EditarActividadDialog> {
             children: [
               DropdownButtonFormField<String>(
                 value: _tipo,
-                dropdownColor: panel,
-                style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w600),
-                decoration: fieldDecoration('Tipo de actividad', icon: Icons.category_outlined),
+                decoration: const InputDecoration(labelText: 'Tipo'),
                 items: const ['LLAMADA','WHATSAPP','CORREO','VISITA','REUNION','SEGUIMIENTO','COBRANZA']
-                    .map((e) => DropdownMenuItem(value: e, child: Text(e, style: const TextStyle(color: Colors.white)))).toList(),
+                    .map((e) => DropdownMenuItem(value: e, child: Text(e))).toList(),
                 onChanged: _guardando ? null : (v) => setState(() => _tipo = v!),
               ),
               const SizedBox(height: 12),
               DropdownButtonFormField<String>(
                 value: vendedores.contains(_vendedor) ? _vendedor : null,
-                dropdownColor: panel,
-                style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w600),
-                decoration: fieldDecoration('Vendedor asignado', icon: Icons.person_outline_rounded),
-                items: vendedores.where((e) => e.isNotEmpty).map((e) => DropdownMenuItem(value: e, child: Text(e, style: const TextStyle(color: Colors.white)))).toList(),
+                decoration: const InputDecoration(labelText: 'Vendedor'),
+                items: vendedores.where((e) => e.isNotEmpty).map((e) => DropdownMenuItem(value: e, child: Text(e))).toList(),
                 onChanged: _guardando ? null : (v) => setState(() => _vendedor = v ?? ''),
               ),
               const SizedBox(height: 12),
-              TextField(
-                controller: _asunto,
-                enabled: !_guardando,
-                style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w500),
-                decoration: fieldDecoration('Asunto', icon: Icons.short_text_rounded),
-              ),
+              TextField(controller: _asunto, enabled: !_guardando, decoration: const InputDecoration(labelText: 'Asunto')),
               const SizedBox(height: 12),
-              TextField(
-                controller: _descripcion,
-                enabled: !_guardando,
-                maxLines: 3,
-                style: const TextStyle(color: Colors.white),
-                decoration: fieldDecoration('Descripción', icon: Icons.notes_rounded),
-              ),
+              TextField(controller: _descripcion, enabled: !_guardando, maxLines: 3, decoration: const InputDecoration(labelText: 'Descripción')),
               const SizedBox(height: 12),
-              TextField(
-                controller: _resultado,
-                enabled: !_guardando,
-                maxLines: 2,
-                style: const TextStyle(color: Colors.white),
-                decoration: fieldDecoration('Resultado', icon: Icons.check_circle_outline_rounded),
-              ),
+              TextField(controller: _resultado, enabled: !_guardando, maxLines: 2, decoration: const InputDecoration(labelText: 'Resultado')),
               const SizedBox(height: 12),
-              TextField(
-                controller: _proxima,
-                enabled: !_guardando,
-                style: const TextStyle(color: Colors.white),
-                decoration: fieldDecoration('Próxima acción', icon: Icons.next_plan_outlined),
-              ),
+              TextField(controller: _proxima, enabled: !_guardando, decoration: const InputDecoration(labelText: 'Próxima acción')),
               const SizedBox(height: 12),
               Row(
                 children: [
@@ -1111,10 +1035,6 @@ class _NuevaActividadDialogState extends State<_NuevaActividadDialog> {
   String _tipo = 'LLAMADA';
   String _cliente = '';
   String _vendedor = '';
-  String? _asuntoElegido;
-  String? _descripcionElegida;
-  String? _resultadoElegido;
-  String? _proximaElegida;
   DateTime? _fechaProxima;
   bool _guardando = false;
 
@@ -1149,42 +1069,6 @@ class _NuevaActividadDialogState extends State<_NuevaActividadDialog> {
     if (_s(c['nombre']).isNotEmpty) return _s(c['nombre']);
     if (_s(c['cliente']).isNotEmpty) return _s(c['cliente']);
     return 'Cliente sin nombre';
-  }
-
-  String _nombreClienteSeleccionado() {
-    for (final c in widget.clientes) {
-      if (_codigoCliente(c) == _cliente) return _nombreCliente(c);
-    }
-    return _cliente;
-  }
-
-  Future<void> _seleccionarCliente() async {
-    final seleccionado = await showDialog<Map<String, dynamic>>(
-      context: context,
-      builder: (dialogContext) => _SelectorClienteDialog(
-        db: widget.db,
-        clientes: widget.clientes,
-        clienteActual: _cliente,
-        vendedorActual: widget.vendedorActual,
-      ),
-    );
-
-    if (seleccionado != null && mounted) {
-      final codigo = _codigoCliente(seleccionado);
-      if (codigo.isNotEmpty) {
-        final vendedorCliente = _s(seleccionado['vendedor']);
-        final vendedorDisponible = widget.vendedores.firstWhere(
-          (v) => v.trim().toLowerCase() == vendedorCliente.toLowerCase(),
-          orElse: () => '',
-        );
-        setState(() {
-          _cliente = codigo;
-          if (vendedorDisponible.isNotEmpty) {
-            _vendedor = vendedorDisponible;
-          }
-        });
-      }
-    }
   }
 
   String _textoCliente(Map<String, dynamic> c) {
@@ -1256,773 +1140,340 @@ class _NuevaActividadDialogState extends State<_NuevaActividadDialog> {
     }
   }
 
+
+  Widget _tipoButton({
+    required String tipo,
+    required IconData icon,
+    required Color color,
+  }) {
+    final selected = _tipo == tipo;
+    return Expanded(
+      child: OutlinedButton.icon(
+        onPressed: _guardando ? null : () => setState(() => _tipo = tipo),
+        icon: Icon(icon, size: 18),
+        label: Text(tipo),
+        style: OutlinedButton.styleFrom(
+          backgroundColor: selected ? _azul : Colors.white,
+          foregroundColor: selected ? Colors.white : _azul,
+          side: BorderSide(color: selected ? _azul : const Color(0xFFD6E1EC)),
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 14),
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+        ),
+      ),
+    );
+  }
+
+  InputDecoration _campo({
+    required String hint,
+    IconData? icon,
+    String? label,
+  }) {
+    return InputDecoration(
+      labelText: label,
+      hintText: hint,
+      prefixIcon: icon == null ? null : Icon(icon, color: _azul),
+      filled: true,
+      fillColor: const Color(0xFFF9FBFD),
+      contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 16),
+      border: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(12),
+        borderSide: const BorderSide(color: Color(0xFFD6E1EC)),
+      ),
+      enabledBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(12),
+        borderSide: const BorderSide(color: Color(0xFFD6E1EC)),
+      ),
+      focusedBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(12),
+        borderSide: const BorderSide(color: _azul, width: 1.5),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final vendedores = widget.vendedores.isEmpty
         ? <String>[_vendedor]
         : widget.vendedores.toSet().toList();
 
-    const navy = Color(0xFF062D49);
-    const panel = Color(0xFF0A3A5A);
-    const accent = Color(0xFF12A8FF);
-    const muted = Color(0xFFB8D1E3);
-
-    InputDecoration fieldDecoration(String label, {IconData? icon}) {
-      return InputDecoration(
-        labelText: label,
-        labelStyle: const TextStyle(color: muted, fontWeight: FontWeight.w500),
-        prefixIcon: icon == null ? null : Icon(icon, color: accent, size: 20),
-        filled: true,
-        fillColor: panel,
-        contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
-        border: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(12),
-          borderSide: const BorderSide(color: Color(0xFF12618A)),
-        ),
-        enabledBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(12),
-          borderSide: const BorderSide(color: Color(0xFF12618A)),
-        ),
-        focusedBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(12),
-          borderSide: const BorderSide(color: accent, width: 1.5),
-        ),
-      );
-    }
-
-    return AlertDialog(
-      backgroundColor: navy,
-      surfaceTintColor: Colors.transparent,
-      insetPadding: const EdgeInsets.symmetric(horizontal: 28, vertical: 24),
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(22),
-        side: const BorderSide(color: Color(0xFF12618A)),
-      ),
-      titlePadding: const EdgeInsets.fromLTRB(26, 24, 26, 12),
-      contentPadding: const EdgeInsets.fromLTRB(26, 8, 26, 12),
-      actionsPadding: const EdgeInsets.fromLTRB(26, 8, 26, 22),
-      title: Row(
-        children: [
-          Container(
-            width: 52,
-            height: 52,
-            decoration: BoxDecoration(
-              color: accent.withOpacity(0.14),
-              borderRadius: BorderRadius.circular(15),
-            ),
-            child: const Icon(Icons.event_available_rounded, color: accent, size: 27),
-          ),
-          const SizedBox(width: 14),
-          const Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  'Nueva actividad',
-                  style: TextStyle(
-                    fontWeight: FontWeight.w900,
-                    fontSize: 23,
-                    color: Colors.white,
-                  ),
-                ),
-                SizedBox(height: 4),
-                Text(
-                  'Registra el seguimiento comercial del cliente',
-                  style: TextStyle(
-                    fontSize: 12,
-                    fontWeight: FontWeight.w400,
-                    color: muted,
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ],
-      ),
-      content: SizedBox(
-        width: 720,
-        child: SingleChildScrollView(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              const Text(
-                'DATOS DE LA ACTIVIDAD',
-                style: TextStyle(
-                  color: accent,
-                  fontSize: 11,
-                  letterSpacing: 1.1,
-                  fontWeight: FontWeight.w800,
+    return Dialog(
+      insetPadding: const EdgeInsets.symmetric(horizontal: 30, vertical: 24),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 930, maxHeight: 760),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              padding: const EdgeInsets.fromLTRB(24, 18, 18, 18),
+              decoration: const BoxDecoration(
+                color: _azul,
+                borderRadius: BorderRadius.only(
+                  topLeft: Radius.circular(20),
+                  topRight: Radius.circular(20),
                 ),
               ),
-              const SizedBox(height: 12),
-              DropdownButtonFormField<String>(
-                value: _tipo,
-                dropdownColor: panel,
-                style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w600),
-                decoration: fieldDecoration('Tipo de actividad', icon: Icons.category_outlined),
-                items: const [
-                  'LLAMADA',
-                  'WHATSAPP',
-                  'CORREO',
-                  'VISITA',
-                  'REUNION',
-                  'SEGUIMIENTO',
-                  'COBRANZA',
-                ]
-                    .map(
-                      (e) => DropdownMenuItem(
-                        value: e,
-                        child: Text(e, style: const TextStyle(color: Colors.white)),
-                      ),
-                    )
-                    .toList(),
-                onChanged:
-                    _guardando ? null : (v) => setState(() => _tipo = v!),
-              ),
-              const SizedBox(height: 14),
-
-              // Cliente dinámico: se selecciona desde un buscador, nunca se escribe manualmente.
-              InkWell(
-                onTap: _guardando ? null : _seleccionarCliente,
-                borderRadius: BorderRadius.circular(10),
-                child: InputDecorator(
-                  decoration: fieldDecoration('Cliente *', icon: Icons.business_outlined).copyWith(
-                    suffixIcon: _cliente.isEmpty
-                        ? const Icon(Icons.search_rounded, color: accent)
-                        : IconButton(
-                            tooltip: 'Cambiar cliente',
-                            icon: const Icon(Icons.edit_outlined, color: accent),
-                            onPressed: _guardando ? null : _seleccionarCliente,
-                          ),
-                    helperText: _cliente.isEmpty
-                        ? 'Toca para buscar y escoger un cliente'
-                        : '✓ Cliente seleccionado',
-                    helperStyle: TextStyle(
-                      color: _cliente.isEmpty ? muted : const Color(0xFF20D6A0),
-                      fontWeight: _cliente.isEmpty ? FontWeight.normal : FontWeight.w700,
+              child: Row(
+                children: [
+                  Container(
+                    width: 46,
+                    height: 46,
+                    decoration: BoxDecoration(
+                      color: Colors.white.withValues(alpha: .14),
+                      borderRadius: BorderRadius.circular(13),
+                    ),
+                    child: const Icon(Icons.event_note_outlined,
+                        color: Colors.white, size: 25),
+                  ),
+                  const SizedBox(width: 13),
+                  const Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text('Nueva actividad',
+                            style: TextStyle(
+                                color: Colors.white,
+                                fontSize: 21,
+                                fontWeight: FontWeight.w900)),
+                        SizedBox(height: 3),
+                        Text('Registra la gestión comercial y define la próxima acción.',
+                            style: TextStyle(color: Colors.white70, fontSize: 12)),
+                      ],
                     ),
                   ),
-                  child: Text(
-                    _cliente.isEmpty
-                        ? 'Buscar y seleccionar cliente'
-                        : _nombreClienteSeleccionado(),
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: TextStyle(
-                      color: _cliente.isEmpty ? muted : Colors.white,
-                      fontSize: 16,
-                    ),
+                  IconButton(
+                    tooltip: 'Cerrar',
+                    onPressed: _guardando ? null : () => Navigator.pop(context),
+                    icon: const Icon(Icons.close, color: Colors.white),
                   ),
-                ),
+                ],
               ),
-              const SizedBox(height: 14),
-
-              DropdownButtonFormField<String>(
-                value: vendedores.contains(_vendedor) ? _vendedor : null,
-                dropdownColor: panel,
-                style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w600),
-                decoration: fieldDecoration('Vendedor asignado', icon: Icons.person_outline_rounded),
-                items: vendedores
-                    .where((e) => e.isNotEmpty)
-                    .map(
-                      (e) => DropdownMenuItem(
-                        value: e,
-                        child: Text(e, style: const TextStyle(color: Colors.white)),
-                      ),
-                    )
-                    .toList(),
-                onChanged:
-                    _guardando ? null : (v) => setState(() => _vendedor = v ?? ''),
-              ),
-              const SizedBox(height: 18),
-              const Divider(color: Color(0xFF12618A)),
-              const SizedBox(height: 14),
-              const Text(
-                'DETALLE Y SEGUIMIENTO',
-                style: TextStyle(
-                  color: accent,
-                  fontSize: 11,
-                  letterSpacing: 1.1,
-                  fontWeight: FontWeight.w800,
-                ),
-              ),
-              const SizedBox(height: 12),
-              DropdownButtonFormField<String>(
-                value: _asuntoElegido,
-                dropdownColor: panel,
-                style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w600),
-                decoration: fieldDecoration('Asunto * · seleccionar evento', icon: Icons.touch_app_outlined),
-                items: const [
-                  'Presentación de ELCOPE',
-                  'Seguimiento de cotización',
-                  'Consulta técnica de cables',
-                  'Solicitud de precios',
-                  'Coordinación de despacho',
-                  'Seguimiento de factura',
-                  'Cobranza pendiente',
-                  'Visita comercial',
-                  'Reunión con cliente',
-                  'Renovación de requerimiento',
-                  'Otro',
-                ].map((e) => DropdownMenuItem(
-                  value: e,
-                  child: Text(e, style: const TextStyle(color: Colors.white)),
-                )).toList(),
-                onChanged: _guardando ? null : (v) => setState(() {
-                  _asuntoElegido = v;
-                  _asunto.text = v ?? '';
-                }),
-              ),
-              const SizedBox(height: 12),
-              DropdownButtonFormField<String>(
-                value: _descripcionElegida,
-                dropdownColor: panel,
-                style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w600),
-                decoration: fieldDecoration('Descripción · seleccionar motivo', icon: Icons.notes_rounded),
-                items: const [
-                  'Cliente solicita información comercial',
-                  'Se envió cotización al cliente',
-                  'Se revisaron especificaciones técnicas',
-                  'Se coordinó visita o reunión',
-                  'Cliente solicita actualización de precios',
-                  'Se coordinó entrega o despacho',
-                  'Se revisó estado de pago',
-                  'Cliente no respondió; requiere seguimiento',
-                  'Otro',
-                ].map((e) => DropdownMenuItem(
-                  value: e,
-                  child: Text(e, style: const TextStyle(color: Colors.white)),
-                )).toList(),
-                onChanged: _guardando ? null : (v) => setState(() {
-                  _descripcionElegida = v;
-                  _descripcion.text = v ?? '';
-                }),
-              ),
-              const SizedBox(height: 12),
-              DropdownButtonFormField<String>(
-                value: _resultadoElegido,
-                dropdownColor: panel,
-                style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w600),
-                decoration: fieldDecoration('Resultado · seleccionar estado', icon: Icons.check_circle_outline_rounded),
-                items: const [
-                  'Contacto efectivo',
-                  'Cotización enviada',
-                  'Pendiente de respuesta',
-                  'Requiere información técnica',
-                  'Reunión coordinada',
-                  'Pedido confirmado',
-                  'No contestó',
-                  'Reprogramar contacto',
-                  'Sin avance',
-                ].map((e) => DropdownMenuItem(
-                  value: e,
-                  child: Text(e, style: const TextStyle(color: Colors.white)),
-                )).toList(),
-                onChanged: _guardando ? null : (v) => setState(() {
-                  _resultadoElegido = v;
-                  _resultado.text = v ?? '';
-                }),
-              ),
-              const SizedBox(height: 12),
-              DropdownButtonFormField<String>(
-                value: _proximaElegida,
-                dropdownColor: panel,
-                style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w600),
-                decoration: fieldDecoration('Próxima acción · seleccionar tarea', icon: Icons.next_plan_outlined),
-                items: const [
-                  'Llamar para confirmar recepción',
-                  'Enviar cotización',
-                  'Enviar ficha técnica',
-                  'Coordinar visita comercial',
-                  'Solicitar orden de compra',
-                  'Confirmar stock y plazo',
-                  'Realizar seguimiento de pago',
-                  'Volver a contactar al cliente',
-                  'No requiere próxima acción',
-                ].map((e) => DropdownMenuItem(
-                  value: e,
-                  child: Text(e, style: const TextStyle(color: Colors.white)),
-                )).toList(),
-                onChanged: _guardando ? null : (v) => setState(() {
-                  _proximaElegida = v;
-                  _proxima.text = v ?? '';
-                }),
-              ),
-              const SizedBox(height: 14),
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-                decoration: BoxDecoration(
-                  color: panel,
-                  borderRadius: BorderRadius.circular(12),
-                  border: Border.all(color: const Color(0xFF12618A)),
-                ),
-                child: Row(
+            ),
+            Expanded(
+              child: SingleChildScrollView(
+                padding: const EdgeInsets.fromLTRB(24, 20, 24, 16),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    const Icon(Icons.calendar_month_outlined, color: accent),
-                    const SizedBox(width: 10),
-                    Expanded(
-                      child: Text(
-                        _fechaProxima == null
-                            ? 'Sin fecha de próxima acción'
-                            : 'Próxima acción: ${DateFormat('dd/MM/yyyy').format(_fechaProxima!)}',
-                        style: const TextStyle(color: muted),
-                      ),
+                    const Text('Tipo de gestión',
+                        style: TextStyle(
+                            color: _azul,
+                            fontWeight: FontWeight.w900,
+                            fontSize: 13)),
+                    const SizedBox(height: 9),
+                    Row(
+                      children: [
+                        _tipoButton(tipo: 'LLAMADA', icon: Icons.phone_outlined, color: _azul),
+                        const SizedBox(width: 8),
+                        _tipoButton(tipo: 'WHATSAPP', icon: Icons.chat_outlined, color: Colors.green),
+                        const SizedBox(width: 8),
+                        _tipoButton(tipo: 'CORREO', icon: Icons.mail_outline, color: Colors.indigo),
+                        const SizedBox(width: 8),
+                        _tipoButton(tipo: 'VISITA', icon: Icons.location_on_outlined, color: Colors.deepPurple),
+                        const SizedBox(width: 8),
+                        _tipoButton(tipo: 'REUNION', icon: Icons.groups_outlined, color: Colors.orange),
+                        const SizedBox(width: 8),
+                        _tipoButton(tipo: 'SEGUIMIENTO', icon: Icons.sync_alt, color: _azul),
+                      ],
                     ),
-                    TextButton(
-                      onPressed: _guardando ? null : _seleccionarFecha,
-                      child: const Text('Elegir fecha'),
+                    const SizedBox(height: 16),
+                    Autocomplete<Map<String, dynamic>>(
+                      displayStringForOption: _textoCliente,
+                      optionsBuilder: (value) {
+                        final q = value.text.trim().toLowerCase();
+                        if (q.isEmpty) {
+                          return const Iterable<Map<String, dynamic>>.empty();
+                        }
+                        return widget.clientes.where((c) => _coincideCliente(c, q)).take(20);
+                      },
+                      onSelected: (cliente) {
+                        setState(() => _cliente = _codigoCliente(cliente));
+                      },
+                      fieldViewBuilder: (context, controller, focusNode, onSubmitted) {
+                        if (_cliente.isNotEmpty && controller.text.isEmpty) {
+                          final selected = widget.clientes.where(
+                            (c) => _codigoCliente(c) == _cliente,
+                          );
+                          if (selected.isNotEmpty) {
+                            controller.text = _textoCliente(selected.first);
+                          }
+                        }
+                        return TextField(
+                          controller: controller,
+                          focusNode: focusNode,
+                          enabled: !_guardando,
+                          onChanged: (_) {
+                            if (_cliente.isNotEmpty) {
+                              setState(() => _cliente = '');
+                            }
+                          },
+                          decoration: _campo(
+                            label: 'Cliente *',
+                            hint: 'Escribe nombre, RUC o código',
+                            icon: Icons.business_outlined,
+                          ).copyWith(
+                            suffixIcon: const Icon(Icons.search, color: Color(0xFF6C8299)),
+                            helperText: _cliente.isEmpty
+                                ? 'Busca y selecciona un cliente para continuar'
+                                : 'Cliente seleccionado',
+                            helperStyle: TextStyle(
+                              color: _cliente.isEmpty ? const Color(0xFF71869A) : Colors.green,
+                            ),
+                          ),
+                        );
+                      },
+                      optionsViewBuilder: (context, onSelected, options) {
+                        final lista = options.toList();
+                        return Align(
+                          alignment: Alignment.topLeft,
+                          child: Material(
+                            elevation: 10,
+                            borderRadius: BorderRadius.circular(14),
+                            clipBehavior: Clip.antiAlias,
+                            child: ConstrainedBox(
+                              constraints: const BoxConstraints(maxWidth: 880, maxHeight: 300),
+                              child: ListView.separated(
+                                padding: const EdgeInsets.symmetric(vertical: 6),
+                                shrinkWrap: true,
+                                itemCount: lista.length,
+                                separatorBuilder: (_, __) => const Divider(height: 1),
+                                itemBuilder: (_, index) {
+                                  final c = lista[index];
+                                  return ListTile(
+                                    leading: const CircleAvatar(
+                                      backgroundColor: Color(0xFFEAF3FA),
+                                      child: Icon(Icons.business_outlined, color: _azul),
+                                    ),
+                                    title: Text(_nombreCliente(c),
+                                        maxLines: 1, overflow: TextOverflow.ellipsis,
+                                        style: const TextStyle(fontWeight: FontWeight.w800)),
+                                    subtitle: Text('RUC / Código: ${_codigoCliente(c)}'),
+                                    trailing: const Icon(Icons.arrow_forward_ios, size: 14),
+                                    onTap: () => onSelected(c),
+                                  );
+                                },
+                              ),
+                            ),
+                          ),
+                        );
+                      },
+                    ),
+                    const SizedBox(height: 14),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: DropdownButtonFormField<String>(
+                            value: vendedores.contains(_vendedor) ? _vendedor : null,
+                            isExpanded: true,
+                            decoration: _campo(label: 'Asesor *', hint: 'Selecciona asesor', icon: Icons.person_outline),
+                            items: vendedores.where((e) => e.isNotEmpty).map(
+                              (e) => DropdownMenuItem(value: e, child: Text(e, overflow: TextOverflow.ellipsis)),
+                            ).toList(),
+                            onChanged: _guardando ? null : (v) => setState(() => _vendedor = v ?? ''),
+                          ),
+                        ),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: TextField(
+                            controller: _asunto,
+                            enabled: !_guardando,
+                            decoration: _campo(label: 'Asunto *', hint: 'Ej. Revisión de cotización', icon: Icons.subject_outlined),
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 12),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: TextField(
+                            controller: _resultado,
+                            enabled: !_guardando,
+                            decoration: _campo(label: 'Resultado', hint: 'Ej. Interesado / En evaluación', icon: Icons.fact_check_outlined),
+                          ),
+                        ),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: TextField(
+                            controller: _proxima,
+                            enabled: !_guardando,
+                            decoration: _campo(label: 'Próxima acción', hint: 'Ej. Enviar cotización', icon: Icons.next_plan_outlined),
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 12),
+                    Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Expanded(
+                          child: InkWell(
+                            onTap: _guardando ? null : _seleccionarFecha,
+                            borderRadius: BorderRadius.circular(12),
+                            child: InputDecorator(
+                              decoration: _campo(label: 'Fecha próxima acción', hint: '', icon: Icons.calendar_today_outlined),
+                              child: Text(
+                                _fechaProxima == null
+                                    ? 'Seleccionar fecha'
+                                    : DateFormat('dd/MM/yyyy').format(_fechaProxima!),
+                                style: TextStyle(
+                                  color: _fechaProxima == null ? const Color(0xFF71869A) : _azul,
+                                  fontWeight: _fechaProxima == null ? FontWeight.w400 : FontWeight.w800,
+                                ),
+                              ),
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: TextField(
+                            controller: _descripcion,
+                            enabled: !_guardando,
+                            maxLines: 2,
+                            decoration: _campo(label: 'Descripción', hint: 'Detalle de la gestión realizada', icon: Icons.notes_outlined),
+                          ),
+                        ),
+                      ],
                     ),
                   ],
                 ),
               ),
-            ],
-          ),
-        ),
-      ),
-      actions: [
-        OutlinedButton(
-          onPressed: _guardando ? null : () => Navigator.pop(context, false),
-          style: OutlinedButton.styleFrom(
-            foregroundColor: muted,
-            side: const BorderSide(color: Color(0xFF39718F)),
-            padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 14),
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(11)),
-          ),
-          child: const Text('Cancelar'),
-        ),
-        const SizedBox(width: 8),
-        ElevatedButton.icon(
-          onPressed: _guardando ? null : _guardar,
-          icon: _guardando
-              ? const SizedBox(
-                  width: 16,
-                  height: 16,
-                  child: CircularProgressIndicator(strokeWidth: 2),
-                )
-              : const Icon(Icons.save),
-          label: Text(_guardando ? 'Guardando...' : 'Guardar actividad'),
-          style: ElevatedButton.styleFrom(
-            backgroundColor: accent,
-            foregroundColor: Colors.white,
-            disabledBackgroundColor: const Color(0xFF39718F),
-            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(11)),
-          ),
-        ),
-      ],
-    );
-  }
-}
-
-
-class _SelectorClienteDialog extends StatefulWidget {
-  final dynamic db;
-  final List<Map<String, dynamic>> clientes;
-  final String clienteActual;
-  final String vendedorActual;
-
-  const _SelectorClienteDialog({
-    required this.db,
-    required this.clientes,
-    required this.clienteActual,
-    required this.vendedorActual,
-  });
-
-  @override
-  State<_SelectorClienteDialog> createState() => _SelectorClienteDialogState();
-}
-
-class _SelectorClienteDialogState extends State<_SelectorClienteDialog> {
-  final _buscar = TextEditingController();
-  List<Map<String, dynamic>> _resultados = [];
-  bool _buscando = false;
-  bool _busquedaRealizada = false;
-  String? _errorBusqueda;
-
-  String _s(dynamic value) => value?.toString().trim() ?? '';
-
-  Future<void> _buscarClientes(String valor) async {
-    final q = valor.trim();
-    if (q.isEmpty) {
-      if (mounted) setState(() {
-        _resultados = [];
-        _buscando = false;
-        _busquedaRealizada = false;
-        _errorBusqueda = null;
-      });
-      return;
-    }
-    setState(() {
-      _buscando = true;
-      _busquedaRealizada = true;
-      _errorBusqueda = null;
-    });
-    try {
-      // Consultar Supabase al escribir, sin depender de la lista limitada/cargada
-      // previamente por la pantalla de Actividades.
-      final data = await widget.db
-          .from('clientes')
-          .select('id,codigo,nombre,razon_social,ruc,vendedor,codigo_vendedor,direccion,localidad,departamento,giro,sector,activo,estado_comercial')
-          .or('razon_social.ilike.%$q%,nombre.ilike.%$q%,ruc.ilike.%$q%,codigo.ilike.%$q%')
-          .order('razon_social')
-          .limit(80);
-      if (!mounted || _buscar.text.trim() != q) return;
-      setState(() {
-        _resultados = List<Map<String, dynamic>>.from(data as List);
-        _buscando = false;
-      });
-    } catch (e) {
-      if (!mounted) return;
-      setState(() {
-        _buscando = false;
-        _errorBusqueda = 'No se pudo consultar clientes: $e';
-        // Fallback local por si la consulta remota falla.
-        _resultados = widget.clientes.where((c) =>
-          _nombre(c).toLowerCase().contains(q.toLowerCase()) ||
-          _codigo(c).toLowerCase().contains(q.toLowerCase())
-        ).take(80).toList();
-      });
-    }
-  }
-
-  Future<void> _registrarNuevoCliente() async {
-    final creado = await showDialog<Map<String, dynamic>>(
-      context: context,
-      builder: (_) => _NuevoClienteActividadDialog(
-        db: widget.db,
-        busquedaInicial: _buscar.text.trim(),
-        vendedor: widget.vendedorActual,
-      ),
-    );
-    if (creado != null && mounted) Navigator.pop(context, creado);
-  }
-
-  String _codigo(Map<String, dynamic> c) {
-    for (final key in ['codigo', 'codigo_cliente', 'ruc']) {
-      final v = _s(c[key]);
-      if (v.isNotEmpty) return v;
-    }
-    return '';
-  }
-
-  String _nombre(Map<String, dynamic> c) {
-    for (final key in ['razon_social', 'nombre', 'cliente']) {
-      final v = _s(c[key]);
-      if (v.isNotEmpty) return v;
-    }
-    return 'Cliente sin nombre';
-  }
-
-  @override
-  void dispose() {
-    _buscar.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final lista = _resultados;
-
-    return AlertDialog(
-      backgroundColor: const Color(0xFF062A43),
-      surfaceTintColor: Colors.transparent,
-      title: const Text(
-        'Seleccionar cliente',
-        style: TextStyle(
-          fontWeight: FontWeight.w900,
-          color: Color(0xFF0B3B63),
-        ),
-      ),
-      content: SizedBox(
-        width: 650,
-        height: 520,
-        child: Column(
-          children: [
-            TextField(
-              controller: _buscar,
-              autofocus: true,
-              onChanged: (valor) => _buscarClientes(valor),
-              style: const TextStyle(color: Color(0xFF0B3B63), fontSize: 16),
-              decoration: InputDecoration(
-                filled: true,
-                fillColor: const Color(0xFFF5F8FC),
-                labelStyle: const TextStyle(color: Color(0xFF526579)),
-                hintStyle: const TextStyle(color: Color(0xFF718096)),
-                prefixIcon: const Icon(Icons.search),
-                suffixIcon: _buscar.text.isEmpty
-                    ? null
-                    : IconButton(
-                        icon: const Icon(Icons.clear),
-                        onPressed: () {
-                          _buscar.clear();
-                          setState(() {});
-                        },
-                      ),
-                hintText: 'Buscar por nombre, razón social, RUC o código...',
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(10),
+            ),
+            Container(
+              padding: const EdgeInsets.fromLTRB(24, 12, 24, 16),
+              decoration: const BoxDecoration(
+                color: Color(0xFFF7F9FC),
+                borderRadius: BorderRadius.only(
+                  bottomLeft: Radius.circular(20),
+                  bottomRight: Radius.circular(20),
                 ),
               ),
-            ),
-            const SizedBox(height: 12),
-            Align(
-              alignment: Alignment.centerLeft,
-              child: Text(
-                _buscando ? 'Buscando clientes...' : '${lista.length} clientes encontrados',
-                style: const TextStyle(
-                  color: Color(0xFFB8D1E3),
-                  fontWeight: FontWeight.w600,
-                ),
-              ),
-            ),
-            const SizedBox(height: 8),
-            Expanded(
-              child: lista.isEmpty
-                  ? Center(
-                      child: Padding(
-                        padding: const EdgeInsets.all(20),
-                        child: Column(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Icon(
-                              _buscando ? Icons.search_rounded : Icons.person_search_outlined,
-                              size: 42,
-                              color: const Color(0xFF12A8FF),
-                            ),
-                            const SizedBox(height: 12),
-                            Text(
-                              _buscando
-                                  ? 'Buscando en la base de clientes…'
-                                  : (_busquedaRealizada
-                                      ? 'No se encontró ese cliente.'
-                                      : 'Escribe un nombre, RUC o código para buscar.'),
-                              textAlign: TextAlign.center,
-                              style: const TextStyle(color: Color(0xFFDBE8F2), fontSize: 15),
-                            ),
-                            if (!_buscando && _busquedaRealizada) ...[
-                              const SizedBox(height: 16),
-                              FilledButton.icon(
-                                onPressed: _registrarNuevoCliente,
-                                icon: const Icon(Icons.person_add_alt_1_rounded),
-                                label: const Text('Registrar nuevo cliente'),
-                                style: FilledButton.styleFrom(
-                                  backgroundColor: const Color(0xFF12A8FF),
-                                  foregroundColor: Colors.white,
-                                  padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 14),
-                                ),
-                              ),
-                            ],
-                          ],
-                        ),
-                      ),
-                    )
-                  : ListView.separated(
-                      itemCount: lista.length,
-                      separatorBuilder: (_, __) => const Divider(height: 1),
-                      itemBuilder: (_, index) {
-                        final c = lista[index];
-                        final codigo = _codigo(c);
-                        final seleccionado = codigo == widget.clienteActual;
-
-                        return ListTile(
-                          leading: CircleAvatar(
-                            backgroundColor: const Color(0xFF0A3A5A),
-                            child: Icon(
-                              Icons.business_outlined,
-                              color: seleccionado
-                                  ? const Color(0xFF0A9B61)
-                                  : const Color(0xFF1468A8),
-                            ),
-                          ),
-                          title: Text(
-                            _nombre(c),
-                            maxLines: 2,
-                            overflow: TextOverflow.ellipsis,
-                            style: const TextStyle(fontWeight: FontWeight.w800, color: Colors.white),
-                          ),
-                          subtitle: Text(
-                            codigo.isEmpty ? 'Sin código' : 'RUC / Código: $codigo',
-                            style: const TextStyle(color: Color(0xFFB8D1E3)),
-                          ),
-                          trailing: seleccionado
-                              ? const Icon(
-                                  Icons.check_circle,
-                                  color: Color(0xFF0A9B61),
-                                )
-                              : const Icon(Icons.chevron_right, color: Color(0xFF12A8FF)),
-                          onTap: () => Navigator.pop(context, c),
-                          tileColor: const Color(0xFF0B3B63),
-                        );
-                      },
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.end,
+                children: [
+                  TextButton(
+                    onPressed: _guardando ? null : () => Navigator.pop(context, false),
+                    child: const Text('Cancelar'),
+                  ),
+                  const SizedBox(width: 10),
+                  FilledButton.icon(
+                    onPressed: _guardando ? null : _guardar,
+                    icon: _guardando
+                        ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2))
+                        : const Icon(Icons.save_outlined),
+                    label: const Text('Guardar actividad'),
+                    style: FilledButton.styleFrom(
+                      backgroundColor: _azul,
+                      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(11)),
                     ),
+                  ),
+                ],
+              ),
             ),
           ],
         ),
       ),
-      actions: [
-        TextButton(
-          onPressed: () => Navigator.pop(context),
-          child: const Text('Cancelar', style: TextStyle(color: Color(0xFFB8D1E3))),
-        ),
-      ],
     );
   }
 }
-
-class _NuevoClienteActividadDialog extends StatefulWidget {
-  final dynamic db;
-  final String busquedaInicial;
-  final String vendedor;
-
-  const _NuevoClienteActividadDialog({
-    required this.db,
-    required this.busquedaInicial,
-    required this.vendedor,
-  });
-
-  @override
-  State<_NuevoClienteActividadDialog> createState() => _NuevoClienteActividadDialogState();
-}
-
-class _NuevoClienteActividadDialogState extends State<_NuevoClienteActividadDialog> {
-  final _nombre = TextEditingController();
-  final _ruc = TextEditingController();
-  final _direccion = TextEditingController();
-  final _localidad = TextEditingController();
-  final _sector = TextEditingController();
-  final _giro = TextEditingController();
-  bool _guardando = false;
-  String _departamento = 'LIMA';
-
-  @override
-  void initState() {
-    super.initState();
-    _nombre.text = widget.busquedaInicial;
-  }
-
-  @override
-  void dispose() {
-    _nombre.dispose();
-    _ruc.dispose();
-    _direccion.dispose();
-    _localidad.dispose();
-    _sector.dispose();
-    _giro.dispose();
-    super.dispose();
-  }
-
-  InputDecoration _decoracion(String label, IconData icon) => InputDecoration(
-    labelText: label,
-    prefixIcon: Icon(icon, color: const Color(0xFF12A8FF)),
-    filled: true,
-    fillColor: const Color(0xFF0B3B63),
-    labelStyle: const TextStyle(color: Color(0xFFB8D1E3)),
-    enabledBorder: OutlineInputBorder(
-      borderRadius: BorderRadius.circular(10),
-      borderSide: const BorderSide(color: Color(0xFF12618A)),
-    ),
-    focusedBorder: OutlineInputBorder(
-      borderRadius: BorderRadius.circular(10),
-      borderSide: const BorderSide(color: Color(0xFF12A8FF), width: 1.5),
-    ),
-  );
-
-  Future<void> _guardar() async {
-    final nombre = _nombre.text.trim();
-    final ruc = _ruc.text.trim();
-    if (nombre.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Ingresa la razón social del cliente.')),
-      );
-      return;
-    }
-    setState(() => _guardando = true);
-    try {
-      final data = await widget.db.rpc('crm_registrar_cliente_desde_visita', params: {
-        'p_nombre': nombre,
-        'p_ruc': ruc.isEmpty ? null : ruc,
-        'p_direccion': _direccion.text.trim().isEmpty ? null : _direccion.text.trim(),
-        'p_departamento': _departamento,
-        'p_localidad': _localidad.text.trim().isEmpty ? null : _localidad.text.trim(),
-        'p_giro': _giro.text.trim().isEmpty ? null : _giro.text.trim(),
-        'p_sector': _sector.text.trim().isEmpty ? null : _sector.text.trim(),
-        'p_estado_comercial': 'PROSPECTO',
-        'p_vendedor': widget.vendedor.isEmpty ? null : widget.vendedor,
-        'p_codigo_vendedor': null,
-      });
-      final rows = List<Map<String, dynamic>>.from(data as List);
-      if (rows.isEmpty) throw Exception('Supabase no devolvió el cliente creado.');
-      final row = rows.first;
-      final cliente = <String, dynamic>{
-        ...row,
-        'cliente': row['razon_social'] ?? row['nombre'] ?? nombre,
-        'codigo': row['codigo'] ?? '',
-        'vendedor': row['vendedor'] ?? widget.vendedor,
-      };
-      if (mounted) Navigator.pop(context, cliente);
-    } catch (e) {
-      if (!mounted) return;
-      setState(() => _guardando = false);
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('No se pudo registrar el cliente: $e')),
-      );
-    }
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return AlertDialog(
-      backgroundColor: const Color(0xFF062A43),
-      title: const Text('Registrar nuevo cliente', style: TextStyle(color: Colors.white, fontWeight: FontWeight.w800)),
-      content: SizedBox(
-        width: 560,
-        child: SingleChildScrollView(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              const Align(
-                alignment: Alignment.centerLeft,
-                child: Padding(
-                  padding: EdgeInsets.only(bottom: 14),
-                  child: Text('El cliente se guardará en Supabase como PROSPECTO.', style: TextStyle(color: Color(0xFFB8D1E3))),
-                ),
-              ),
-              TextField(controller: _nombre, enabled: !_guardando, style: const TextStyle(color: Colors.white), decoration: _decoracion('Razón social *', Icons.business_outlined)),
-              const SizedBox(height: 10),
-              TextField(controller: _ruc, enabled: !_guardando, keyboardType: TextInputType.number, style: const TextStyle(color: Colors.white), decoration: _decoracion('RUC (opcional)', Icons.badge_outlined)),
-              const SizedBox(height: 10),
-              TextField(controller: _direccion, enabled: !_guardando, style: const TextStyle(color: Colors.white), decoration: _decoracion('Dirección', Icons.location_on_outlined)),
-              const SizedBox(height: 10),
-              TextField(controller: _localidad, enabled: !_guardando, style: const TextStyle(color: Colors.white), decoration: _decoracion('Localidad / distrito', Icons.map_outlined)),
-              const SizedBox(height: 10),
-              DropdownButtonFormField<String>(
-                value: _departamento,
-                dropdownColor: const Color(0xFF0B3B63),
-                style: const TextStyle(color: Colors.white),
-                decoration: _decoracion('Departamento', Icons.public_outlined),
-                items: const ['LIMA','AREQUIPA','CUSCO','LA LIBERTAD','PIURA','CALLAO','OTRO']
-                    .map((e) => DropdownMenuItem(value: e, child: Text(e, style: const TextStyle(color: Colors.white))))
-                    .toList(),
-                onChanged: _guardando ? null : (v) => setState(() => _departamento = v ?? 'LIMA'),
-              ),
-              const SizedBox(height: 10),
-              TextField(controller: _sector, enabled: !_guardando, style: const TextStyle(color: Colors.white), decoration: _decoracion('Sector', Icons.category_outlined)),
-              const SizedBox(height: 10),
-              TextField(controller: _giro, enabled: !_guardando, style: const TextStyle(color: Colors.white), decoration: _decoracion('Giro de negocio', Icons.work_outline)),
-            ],
-          ),
-        ),
-      ),
-      actions: [
-        TextButton(onPressed: _guardando ? null : () => Navigator.pop(context), child: const Text('Cancelar')),
-        FilledButton.icon(
-          onPressed: _guardando ? null : _guardar,
-          icon: _guardando ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2)) : const Icon(Icons.save_outlined),
-          label: Text(_guardando ? 'Guardando...' : 'Guardar cliente'),
-        ),
-      ],
-    );
-  }
-}
-

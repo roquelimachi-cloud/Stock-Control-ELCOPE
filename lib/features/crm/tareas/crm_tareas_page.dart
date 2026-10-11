@@ -1,10 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 
-import '../catalogos/crm_catalogos_service.dart';
-
 import '../../../services/sesion.dart';
 import '../../../services/supabase/supabase_service.dart';
+import '../shared/crm_modulo_permisos.dart';
 
 /// Módulo Tareas del CRM.
 ///
@@ -20,6 +19,51 @@ class CrmTareasPage extends StatefulWidget {
 }
 
 class _CrmTareasPageState extends State<CrmTareasPage> {
+
+  bool _cargandoPermisosModulo = true;
+  bool _puedeVerModulo = false;
+  bool _puedeCrearModulo = false;
+  bool _puedeEditarModulo = false;
+  bool _puedeEliminarModulo = false;
+  bool _puedeImprimirModulo = false;
+
+  Future<void> _cargarPermisosModulo() async {
+    final permisos = await CrmModuloPermisos.cargar('crm_tareas');
+    if (!mounted) return;
+    setState(() {
+      _puedeVerModulo = permisos['ver'] == true;
+      _puedeCrearModulo = permisos['crear'] == true;
+      _puedeEditarModulo = permisos['editar'] == true;
+      _puedeEliminarModulo = permisos['eliminar'] == true;
+      _puedeImprimirModulo = permisos['imprimir'] == true;
+      _cargandoPermisosModulo = false;
+    });
+  }
+
+  Widget _sinAccesoModulo() {
+    return Scaffold(
+      backgroundColor: const Color(0xFFF4F7FA),
+      body: Center(
+        child: Card(
+          margin: const EdgeInsets.all(24),
+          child: Padding(
+            padding: const EdgeInsets.all(28),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: const [
+                Icon(Icons.lock_outline_rounded, size: 48, color: Color(0xFF0B3B63)),
+                SizedBox(height: 12),
+                Text('Acceso no autorizado', style: TextStyle(fontSize: 21, fontWeight: FontWeight.w900)),
+                SizedBox(height: 6),
+                Text('Solicita al administrador que habilite este módulo en Usuarios y Accesos.'),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
   static const _azul = Color(0xFF0B3B63);
   static const _azulClaro = Color(0xFF1468A8);
   static const _verde = Color(0xFF0A9B61);
@@ -132,6 +176,8 @@ class _CrmTareasPageState extends State<CrmTareasPage> {
   }
 
   Future<void> _inicializar() async {
+    await _cargarPermisosModulo();
+    if (!_puedeVerModulo) { if (mounted) setState(() => _cargando = false); return; }
     if (!mounted) return;
 
     setState(() {
@@ -290,6 +336,13 @@ class _CrmTareasPageState extends State<CrmTareasPage> {
   }
 
   Future<void> _nuevaTarea() async {
+    if (!_puedeCrearModulo) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('No tienes permiso para realizar esta acción.')),
+      );
+      return;
+    }
+
     final ok = await showDialog<bool>(
       context: context,
       barrierDismissible: false,
@@ -306,6 +359,13 @@ class _CrmTareasPageState extends State<CrmTareasPage> {
   }
 
   Future<void> _editarTarea(Map<String, dynamic> tarea) async {
+    if (!_puedeEditarModulo) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('No tienes permiso para realizar esta acción.')),
+      );
+      return;
+    }
+
     final ok = await showDialog<bool>(
       context: context,
       barrierDismissible: false,
@@ -320,6 +380,20 @@ class _CrmTareasPageState extends State<CrmTareasPage> {
   }
 
   Future<void> _completarTarea(Map<String, dynamic> tarea) async {
+    if (!_puedeEditarModulo) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('No tienes permiso para editar tareas.')),
+      );
+      return;
+    }
+
+    if (!_puedeEliminarModulo) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('No tienes permiso para realizar esta acción.')),
+      );
+      return;
+    }
+
     final id = tarea['id'];
     if (id == null) return;
 
@@ -358,6 +432,13 @@ class _CrmTareasPageState extends State<CrmTareasPage> {
 
   @override
   Widget build(BuildContext context) {
+    if (_cargandoPermisosModulo) {
+      return const Scaffold(
+        backgroundColor: Color(0xFFF4F7FA),
+        body: Center(child: CircularProgressIndicator()),
+      );
+    }
+    if (!_puedeVerModulo) return _sinAccesoModulo();
     return Scaffold(
       backgroundColor: _fondo,
       appBar: AppBar(
@@ -502,7 +583,7 @@ class _CrmTareasPageState extends State<CrmTareasPage> {
 
   Widget _botonNuevaTarea() {
     return FilledButton.icon(
-      onPressed: _cargando ? null : _nuevaTarea,
+      onPressed: (_cargando || !_puedeCrearModulo) ? null : _nuevaTarea,
       icon: const Icon(Icons.add_rounded),
       label: const Text('Nueva tarea'),
       style: ButtonStyle(
@@ -1315,8 +1396,6 @@ class _NuevaTareaDialogState extends State<_NuevaTareaDialog> {
   final _descripcion = TextEditingController();
   final _proxima = TextEditingController();
   String _cliente = '';
-  String _tipo = 'SEGUIMIENTO';
-  List<String> _tiposTarea = const ['SEGUIMIENTO'];
   String _vendedor = '';
   DateTime? _fecha;
   bool _guardando = false;
@@ -1327,18 +1406,6 @@ class _NuevaTareaDialogState extends State<_NuevaTareaDialog> {
     _vendedor = widget.vendedorActual.isNotEmpty
         ? widget.vendedorActual
         : (widget.vendedores.isNotEmpty ? widget.vendedores.first : '');
-    _cargarTiposTarea();
-  }
-
-  Future<void> _cargarTiposTarea() async {
-    try {
-      final tipos = await CrmCatalogosService.obtenerNombres('tipos_tarea');
-      if (!mounted || tipos.isEmpty) return;
-      setState(() {
-        _tiposTarea = tipos;
-        if (!_tiposTarea.contains(_tipo)) _tipo = _tiposTarea.first;
-      });
-    } catch (_) {}
   }
 
   @override
@@ -1420,7 +1487,7 @@ class _NuevaTareaDialogState extends State<_NuevaTareaDialog> {
     try {
       await widget.db.rpc('crm_registrar_actividad', params: {
         'p_codigo_cliente': _cliente,
-        'p_tipo': _tipo,
+        'p_tipo': 'SEGUIMIENTO',
         'p_asunto': _asunto.text.trim(),
         'p_descripcion': _descripcion.text.trim().isEmpty ? null : _descripcion.text.trim(),
         'p_resultado': null,
@@ -1538,14 +1605,6 @@ class _NuevaTareaDialogState extends State<_NuevaTareaDialog> {
                       },
                     ),
                     const SizedBox(height: 14),
-                    DropdownButtonFormField<String>(
-                      value: _tiposTarea.contains(_tipo) ? _tipo : (_tiposTarea.isEmpty ? null : _tiposTarea.first),
-                      isExpanded: true,
-                      decoration: _campo(label: 'Tipo de tarea', hint: 'Selecciona tipo', icon: Icons.task_alt_outlined),
-                      items: _tiposTarea.map((e) => DropdownMenuItem(value: e, child: Text(e))).toList(),
-                      onChanged: _guardando ? null : (v) { if (v != null) setState(() => _tipo = v); },
-                    ),
-                    const SizedBox(height: 12),
                     Row(
                       children: [
                         Expanded(
@@ -1625,19 +1684,6 @@ class _EditarTareaDialog extends StatefulWidget {
 }
 
 class _EditarTareaDialogState extends State<_EditarTareaDialog> {
-
-  InputDecoration _campo({required String label, required String hint, IconData? icon}) {
-    return InputDecoration(
-      labelText: label,
-      hintText: hint,
-      prefixIcon: icon == null ? null : Icon(icon),
-      border: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(10),
-      ),
-      filled: true,
-      fillColor: Colors.white,
-    );
-  }
   static const _azul = Color(0xFF0B3B63);
 
   final _asunto = TextEditingController();
@@ -1645,8 +1691,6 @@ class _EditarTareaDialogState extends State<_EditarTareaDialog> {
   final _proxima = TextEditingController();
 
   String _vendedor = '';
-  String _tipo = 'SEGUIMIENTO';
-  List<String> _tiposTarea = const ['SEGUIMIENTO'];
   DateTime? _fecha;
   bool _guardando = false;
 
@@ -1659,24 +1703,9 @@ class _EditarTareaDialogState extends State<_EditarTareaDialog> {
     _descripcion.text = t['descripcion']?.toString() ?? '';
     _proxima.text = t['proxima_accion']?.toString() ?? '';
     _vendedor = t['vendedor']?.toString() ?? '';
-    _tipo = t['tipo']?.toString().trim().isNotEmpty == true
-        ? t['tipo'].toString().trim()
-        : 'SEGUIMIENTO';
-    _cargarTiposTarea();
 
     final f = t['fecha_proxima_accion']?.toString() ?? '';
     if (f.isNotEmpty) _fecha = DateTime.tryParse(f);
-  }
-
-  Future<void> _cargarTiposTarea() async {
-    try {
-      final tipos = await CrmCatalogosService.obtenerNombres('tipos_tarea');
-      if (!mounted || tipos.isEmpty) return;
-      setState(() {
-        _tiposTarea = tipos;
-        if (!_tiposTarea.contains(_tipo)) _tipo = _tiposTarea.first;
-      });
-    } catch (_) {}
   }
 
   @override
@@ -1705,14 +1734,6 @@ class _EditarTareaDialogState extends State<_EditarTareaDialog> {
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              DropdownButtonFormField<String>(
-                value: _tiposTarea.contains(_tipo) ? _tipo : (_tiposTarea.isEmpty ? null : _tiposTarea.first),
-                isExpanded: true,
-                decoration: _campo(label: 'Tipo de tarea', hint: 'Selecciona tipo', icon: Icons.task_alt_outlined),
-                items: _tiposTarea.map((e) => DropdownMenuItem(value: e, child: Text(e))).toList(),
-                onChanged: _guardando ? null : (v) { if (v != null) setState(() => _tipo = v); },
-              ),
-              const SizedBox(height: 12),
               DropdownButtonFormField<String>(
                 value: vendedores.contains(_vendedor) ? _vendedor : null,
                 decoration: const InputDecoration(labelText: 'Asesor'),
@@ -1815,7 +1836,7 @@ class _EditarTareaDialogState extends State<_EditarTareaDialog> {
         'crm_actualizar_actividad',
         params: {
           'p_id': widget.tarea['id'],
-          'p_tipo': _tipo,
+          'p_tipo': _sTipo(widget.tarea['tipo']),
           'p_asunto': _asunto.text.trim(),
           'p_descripcion': _descripcion.text.trim().isEmpty
               ? null

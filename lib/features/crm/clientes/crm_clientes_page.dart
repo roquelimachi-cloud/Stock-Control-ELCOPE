@@ -87,11 +87,9 @@ class _CrmClientesPageState extends State<CrmClientesPage> {
     if (vendedorSesion.isNotEmpty && rol != 'jefe lima' && rol != 'jefe provincia' && rol != 'gerencia') {
       _vendedor = vendedorSesion;
     }
-    // La jefatura inicia con todos los departamentos para ver la cartera
-    // completa de sus vendedores autorizados. El alcance sigue restringido
-    // por _vendedoresPermitidos() y por p_vendedores_permitidos en Supabase.
-    // El usuario puede elegir LIMA manualmente si necesita ese filtro.
-    _departamento = 'TODOS';
+    // Jefe Lima inicia y permanece limitado al departamento LIMA.
+    // Puede consultar clientes de cualquier vendedor de Lima, sin ampliar a otras regiones.
+    _departamento = rol == 'jefe lima' ? 'LIMA' : 'TODOS';
     _cargar();
   }
 
@@ -186,8 +184,9 @@ class _CrmClientesPageState extends State<CrmClientesPage> {
     final rol = Sesion.rol.trim().toLowerCase();
     final vendedorSesion = Sesion.vendedor.trim();
 
-    // Gerencia puede consultar todo.
-    if (rol == 'gerencia') {
+    // Gerencia puede consultar todo. Jefe Lima puede consultar cualquier vendedor
+    // de Lima; el departamento se fuerza a LIMA en todas las RPC de este módulo.
+    if (rol == 'gerencia' || rol == 'jefe lima') {
       return null;
     }
 
@@ -243,45 +242,74 @@ class _CrmClientesPageState extends State<CrmClientesPage> {
         _ => 'TODAS',
       };
 
-      // Carga todas las páginas de la consulta filtrada. El límite de 200 es
-      // por llamada a Supabase, no el total de clientes que debe ver el usuario.
+      // Carga inicial acotada: no descargar toda la cartera al abrir la pantalla.
+      // La RPC usa el resumen de facturación en Supabase (no recalcula facturas
+      // una por una). Se conservan los filtros de acceso en el servidor.
       const int pageSize = 200;
-      final clientes = <Map<String, dynamic>>[];
-      var offset = 0;
-      while (true) {
-        final result = await _db.rpc(
-          'crm_obtener_clientes_cartera_fast_v1',
-          params: {
-            'p_busqueda': _busqueda.trim(),
-            'p_vendedor': _vendedor,
-            'p_sector': _sector,
-            'p_giro': _giro,
-            'p_departamento': _departamento,
-            'p_estado': _estado,
-            'p_segmento': 'TODOS',
-            'p_solo_activos': _soloActivos,
-            'p_limit': pageSize,
-            'p_offset': offset,
-            'p_orden': _orden,
-            'p_anio': _anio == 'TODOS' ? null : int.tryParse(_anio),
-            'p_vendedores_permitidos': vendedoresPermitidos,
-            'p_compra_filtro': compraFiltroRpc,
-          },
-        );
-        final page = List<Map<String, dynamic>>.from(
-          (result as List).map((row) => Map<String, dynamic>.from(row as Map)),
-        );
-        clientes.addAll(page);
-        for (final c in page) {
-          final v = _s(c['vendedor']);
-          if (v.isNotEmpty) vendedoresOpciones.add(v);
-        }
-        if (page.length < pageSize) break;
-        offset += page.length;
+      final result = await _db.rpc(
+        'crm_obtener_clientes_cartera_fast_v1',
+        params: {
+          'p_busqueda': _busqueda.trim(),
+          'p_vendedor': _vendedor,
+          'p_sector': _sector,
+          'p_giro': _giro,
+          'p_departamento': Sesion.rol.trim().toLowerCase() == 'jefe lima' ? 'LIMA' : _departamento,
+          'p_estado': _estado,
+          'p_segmento': 'TODOS',
+          'p_solo_activos': _soloActivos,
+          'p_limit': pageSize,
+          'p_offset': 0,
+          'p_orden': _orden,
+          'p_anio': _anio == 'TODOS' ? null : int.tryParse(_anio),
+          'p_vendedores_permitidos': vendedoresPermitidos,
+          'p_compra_filtro': compraFiltroRpc,
+        },
+      );
+      final clientes = List<Map<String, dynamic>>.from(
+        (result as List).map((row) => Map<String, dynamic>.from(row as Map)),
+      );
+
+      // El total de cartera se calcula en Supabase sin LIMIT/OFFSET.
+      // Así la cifra no queda falsamente limitada a los 200 registros de la tabla.
+      final countParams = <String, dynamic>{
+        'p_busqueda': _busqueda.trim(),
+        'p_vendedor': _vendedor,
+        'p_sector': _sector,
+        'p_giro': _giro,
+        'p_departamento': Sesion.rol.trim().toLowerCase() == 'jefe lima' ? 'LIMA' : _departamento,
+        'p_estado': _estado,
+        'p_solo_activos': _soloActivos,
+        'p_vendedores_permitidos': vendedoresPermitidos,
+        'p_compra_filtro': compraFiltroRpc,
+      };
+      final totalResult = await _db.rpc(
+        'crm_contar_clientes_cartera_fast_v1',
+        params: countParams,
+      );
+      final totalCartera = totalResult is num
+          ? totalResult.toInt()
+          : int.tryParse(totalResult.toString()) ?? clientes.length;
+
+      // El total de activos se consulta aparte para que el KPI sea exacto
+      // incluso cuando el filtro "Solo clientes activos" esté desactivado.
+      final activosParams = Map<String, dynamic>.from(countParams)
+        ..['p_solo_activos'] = true;
+      final activosResult = await _db.rpc(
+        'crm_contar_clientes_cartera_fast_v1',
+        params: activosParams,
+      );
+      final totalActivos = activosResult is num
+          ? activosResult.toInt()
+          : int.tryParse(activosResult.toString()) ?? clientes.where((c) => c['activo'] == true).length;
+
+      for (final c in clientes) {
+        final v = _s(c['vendedor']);
+        if (v.isNotEmpty) vendedoresOpciones.add(v);
       }
 
-      // Las banderas se consultan por bloques para que las estadísticas y el
-      // gráfico se calculen con toda la cartera filtrada, no solo la primera página.
+      // Solo se consultan indicadores de gestión de los clientes de esta página.
+      // Antes se recorrían todas las páginas y se consultaban las banderas de
+      // cada cliente antes de mostrar la pantalla, provocando esperas largas.
       const int flagsBatchSize = 200;
       for (var start = 0; start < clientes.length; start += flagsBatchSize) {
         final end = (start + flagsBatchSize < clientes.length)
@@ -333,9 +361,9 @@ class _CrmClientesPageState extends State<CrmClientesPage> {
           !_b(c['tiene_whatsapp']) && !_b(c['tiene_correo']) && !_b(c['tiene_visita'])).length;
       final oportunidades = clientes.where((c) => _b(c['tiene_oportunidad'])).length;
       final gestionStats = <String, dynamic>{
-        'total': clientes.length,
-        'activos': activos,
-        'inactivos': clientes.length - activos,
+        'total': totalCartera,
+        'activos': totalActivos,
+        'inactivos': (totalCartera - totalActivos).clamp(0, totalCartera),
         'sin_llamada': sinLlamada,
         'sin_whatsapp': sinWhatsapp,
         'sin_correo': sinCorreo,
@@ -382,7 +410,7 @@ class _CrmClientesPageState extends State<CrmClientesPage> {
           ..addAll(mensual);
         _facturacionTotal = clientes.fold<double>(0, (sum, c) => sum + _n(c['facturacion']));
         _pesoTotal = clientes.fold<double>(0, (sum, c) => sum + _n(c['peso_kg']));
-        _totalClientes = clientes.length;
+        _totalClientes = totalCartera;
         _conFacturacion = clientes.where((c) => _n(c['facturacion']) > 0).length;
         _facturacionPorCliente = {};
         _pesoPorCliente = {};
@@ -397,7 +425,7 @@ class _CrmClientesPageState extends State<CrmClientesPage> {
           if (fecha != null) _ultimaCompraPorCliente[key] = fecha;
         }
         _pagina = 0;
-        _haySiguiente = _clientesVisibles.length > _porPagina;
+        _haySiguiente = clientes.length == pageSize;
         _cargando = false;
       });
     } catch (e) {
@@ -558,7 +586,7 @@ class _CrmClientesPageState extends State<CrmClientesPage> {
             'p_vendedor': _vendedor,
             'p_sector': _sector,
             'p_giro': _giro,
-            'p_departamento': _departamento,
+            'p_departamento': Sesion.rol.trim().toLowerCase() == 'jefe lima' ? 'LIMA' : _departamento,
             'p_estado': _estado,
             'p_segmento': 'TODOS',
             'p_solo_activos': _soloActivos,
@@ -1609,9 +1637,9 @@ class _CrmClientesPageState extends State<CrmClientesPage> {
   }
 
   Widget _kpisNuevo() {
-    // Los KPI representan TODA la cartera filtrada, no solo los 12/200
-    // registros cargados para la tabla.
-    final total = int.tryParse(_s(_gestionStats['total'])) ?? 0;
+    // Total y activos se consultan con COUNT en Supabase, sin límite de página.
+    // Los indicadores de actividad se calculan con los clientes cargados.
+    final total = _totalClientes;
     final activos = int.tryParse(_s(_gestionStats['activos'])) ?? 0;
     final sinContacto = int.tryParse(_s(_gestionStats['sin_contacto'])) ?? 0;
     final sinLlamada = int.tryParse(_s(_gestionStats['sin_llamada'])) ?? 0;
@@ -1729,24 +1757,7 @@ class _CrmClientesPageState extends State<CrmClientesPage> {
           return DataRow(
             onSelectChanged: (_) => _abrirCliente360(c),
             cells: [
-            DataCell(
-              SizedBox(
-                width: 132,
-                child: Tooltip(
-                  message: _nombreCliente(c),
-                  child: Text(
-                    _nombreCliente(c),
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(
-                      color: Colors.white,
-                      fontWeight: FontWeight.w800,
-                      fontSize: 10.5,
-                    ),
-                  ),
-                ),
-              ),
-            ),
+            DataCell(SizedBox(width: 150, child: Text(_nombreCliente(c), overflow: TextOverflow.ellipsis, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w800)))),
             DataCell(Text(_s(c['ruc']).isEmpty ? '-' : _s(c['ruc']), style: const TextStyle(color: Colors.white70, fontSize: 11.5), overflow: TextOverflow.ellipsis)),
             DataCell(SizedBox(width: 100, child: Text(_s(c['vendedor']), style: const TextStyle(color: Colors.white70, fontSize: 11.5), overflow: TextOverflow.ellipsis))),
             DataCell(SizedBox(width: 90, child: Text(_s(c['sector']), style: const TextStyle(color: Colors.white70, fontSize: 11.5), overflow: TextOverflow.ellipsis))),

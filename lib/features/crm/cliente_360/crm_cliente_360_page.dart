@@ -72,7 +72,9 @@ class _CrmCliente360PageState extends State<CrmCliente360Page> {
   bool get _esJefatura => _esJefeLima || Sesion.rol.trim().toLowerCase() == 'jefe provincia';
 
   Future<List<String>?> _permisosVendedor() async {
-    if (_esGerencia) return null;
+    // Jefe Lima consulta todos los vendedores, pero siempre limitado al departamento LIMA.
+    // La función RPC recibe p_departamento='LIMA' y aplica ese alcance geográfico.
+    if (_esGerencia || _esJefeLima) return null;
     if (_esJefatura) {
       final rows = await _db
           .from('usuario_permisos')
@@ -120,8 +122,9 @@ class _CrmCliente360PageState extends State<CrmCliente360Page> {
   Future<void> _buscarClientes(String texto, {bool seleccionarPrimero = false}) async {
     final departamento = _esJefeLima ? 'LIMA' : _departamento;
     final result = await _db.rpc(
-      'crm_obtener_clientes_pagina_v6',
+      'crm_obtener_clientes_pagina_por_usuario_v2',
       params: {
+        'p_usuario_id': Sesion.idUsuario,
         'p_busqueda': texto.trim(),
         'p_vendedor': 'TODOS',
         'p_vendedores_permitidos': _vendedoresPermitidos,
@@ -133,6 +136,7 @@ class _CrmCliente360PageState extends State<CrmCliente360Page> {
         'p_offset': 0,
         'p_orden': 'FACTURACION_DESC',
         'p_anio': _anio,
+        'p_compra_filtro': 'TODOS',
       },
     );
     var rows = List<Map<String, dynamic>>.from(result as List);
@@ -213,10 +217,7 @@ class _CrmCliente360PageState extends State<CrmCliente360Page> {
         'crm_obtener_cliente_360_resumen',
         params: params,
       );
-      final resumen = List<Map<String, dynamic>>.from(resumenRaw as List);
-      if (resumen.isEmpty) {
-        throw Exception('El cliente no pertenece a la cartera autorizada.');
-      }
+      var resumen = List<Map<String, dynamic>>.from(resumenRaw as List);
 
       final facturasRaw = await _db.rpc(
         'crm_obtener_cliente_360_facturas',
@@ -226,12 +227,73 @@ class _CrmCliente360PageState extends State<CrmCliente360Page> {
         'crm_obtener_cliente_360_productos',
         params: params,
       );
+      final facturas = List<Map<String, dynamic>>.from(facturasRaw as List);
+      final productos = List<Map<String, dynamic>>.from(productosRaw as List);
+
+      // Fallback para Jefe Lima: algunos clientes válidos no aparecen en el
+      // resumen RPC si la función desplegada conserva un filtro antiguo por vendedor.
+      // Se valida el departamento en la tabla maestra antes de mostrarlo.
+      if (resumen.isEmpty && _esJefeLima) {
+        final clienteRaw = await _db
+            .from('clientes')
+            .select(
+              'codigo,nombre,razon_social,ruc,direccion,localidad,departamento,'
+              'sector,giro,canal,codigo_vendedor,vendedor,activo',
+            )
+            .eq('codigo', codigo)
+            .maybeSingle();
+
+        if (clienteRaw != null &&
+            _s(clienteRaw['departamento']).toUpperCase() == 'LIMA') {
+          final facturacion = facturas.fold<double>(
+            0,
+            (sum, f) => sum + _n(f['monto_calculado']),
+          );
+          final peso = facturas.fold<double>(
+            0,
+            (sum, f) => sum + _n(f['peso_calculado']),
+          );
+          final fechas = facturas
+              .map((f) => _dt(f['fecha_factura']))
+              .whereType<DateTime>()
+              .toList()
+            ..sort();
+          resumen = [
+            <String, dynamic>{
+              'codigo_cliente': _s(clienteRaw['codigo']),
+              'nombre': clienteRaw['nombre'] ?? '',
+              'razon_social': clienteRaw['razon_social'] ??
+                  clienteRaw['nombre'] ?? '',
+              'ruc': clienteRaw['ruc'] ?? '',
+              'direccion': clienteRaw['direccion'],
+              'localidad': clienteRaw['localidad'],
+              'departamento': clienteRaw['departamento'],
+              'sector': clienteRaw['sector'],
+              'giro': clienteRaw['giro'],
+              'canal': clienteRaw['canal'],
+              'codigo_vendedor': clienteRaw['codigo_vendedor'],
+              'vendedor': clienteRaw['vendedor'],
+              'activo': clienteRaw['activo'] ?? true,
+              'facturacion_total': facturacion,
+              'peso_total_kg': peso,
+              'cantidad_facturas': facturas.length,
+              'primera_compra': fechas.isEmpty ? null : fechas.first.toIso8601String(),
+              'ultima_compra': fechas.isEmpty ? null : fechas.last.toIso8601String(),
+              'ticket_promedio': facturas.isEmpty ? 0 : facturacion / facturas.length,
+            },
+          ];
+        }
+      }
+
+      if (resumen.isEmpty) {
+        throw Exception('El cliente no pertenece a la cartera autorizada.');
+      }
 
       if (!mounted) return;
       setState(() {
         _cliente = resumen.first;
-        _facturas = List<Map<String, dynamic>>.from(facturasRaw as List);
-        _productos = List<Map<String, dynamic>>.from(productosRaw as List);
+        _facturas = facturas;
+        _productos = productos;
         _loadingDetail = false;
       });
       await _cargarContactosYActividades(codigo);

@@ -3,8 +3,6 @@ import 'package:intl/intl.dart';
 
 import '../../../services/sesion.dart';
 import '../../../services/supabase/supabase_service.dart';
-import '../shared/crm_modulo_permisos.dart';
-import '../catalogos/crm_catalogos_service.dart';
 
 class CrmSeguimientosPage extends StatefulWidget {
   const CrmSeguimientosPage({super.key});
@@ -14,55 +12,10 @@ class CrmSeguimientosPage extends StatefulWidget {
 }
 
 class _CrmSeguimientosPageState extends State<CrmSeguimientosPage> {
-
-  bool _cargandoPermisosModulo = true;
-  bool _puedeVerModulo = false;
-  bool _puedeCrearModulo = false;
-  bool _puedeEditarModulo = false;
-  bool _puedeEliminarModulo = false;
-  bool _puedeImprimirModulo = false;
-
-  Future<void> _cargarPermisosModulo() async {
-    final permisos = await CrmModuloPermisos.cargar('crm_seguimientos');
-    if (!mounted) return;
-    setState(() {
-      _puedeVerModulo = permisos['ver'] == true;
-      _puedeCrearModulo = permisos['crear'] == true;
-      _puedeEditarModulo = permisos['editar'] == true;
-      _puedeEliminarModulo = permisos['eliminar'] == true;
-      _puedeImprimirModulo = permisos['imprimir'] == true;
-      _cargandoPermisosModulo = false;
-    });
-  }
-
-  Widget _sinAccesoModulo() {
-    return Scaffold(
-      backgroundColor: const Color(0xFFF4F7FA),
-      body: Center(
-        child: Card(
-          margin: const EdgeInsets.all(24),
-          child: Padding(
-            padding: const EdgeInsets.all(28),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: const [
-                Icon(Icons.lock_outline_rounded, size: 48, color: Color(0xFF0B3B63)),
-                SizedBox(height: 12),
-                Text('Acceso no autorizado', style: TextStyle(fontSize: 21, fontWeight: FontWeight.w900)),
-                SizedBox(height: 6),
-                Text('Solicita al administrador que habilite este módulo en Usuarios y Accesos.'),
-              ],
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-
-  static const Color azul = Color(0xFF063B63);
-  static const Color azul2 = Color(0xFF1686E8);
-  static const Color fondo = Color(0xFFF4F7FA);
-  static const Color borde = Color(0xFFE0E7EF);
+  static const Color azul = Color(0xFF0A4268);
+  static const Color azul2 = Color(0xFF159FE8);
+  static const Color fondo = Color(0xFF061F33);
+  static const Color borde = Color(0xFF10516F);
   static const Color verde = Color(0xFF13B77A);
   static const Color naranja = Color(0xFFFFA726);
   static const Color rojo = Color(0xFFFF4D57);
@@ -302,8 +255,6 @@ class _CrmSeguimientosPageState extends State<CrmSeguimientosPage> {
   }
 
   Future<void> _inicializar() async {
-    await _cargarPermisosModulo();
-    if (!_puedeVerModulo) { if (mounted) setState(() => _cargando = false); return; }
     try {
       await _cargarPermisos();
       await _cargarClientes();
@@ -473,7 +424,7 @@ class _CrmSeguimientosPageState extends State<CrmSeguimientosPage> {
         gradient: LinearGradient(
           begin: Alignment.topCenter,
           end: Alignment.bottomCenter,
-          colors: [Color(0xFF063B63), Color(0xFF052C4B)],
+          colors: [Color(0xFF0A4268), Color(0xFF052C4B)],
         ),
       ),
       child: Column(
@@ -576,7 +527,7 @@ class _CrmSeguimientosPageState extends State<CrmSeguimientosPage> {
                 Text(
                   'Seguimientos',
                   style: TextStyle(
-                    color: azul,
+                    color: Colors.white,
                     fontSize: 24,
                     fontWeight: FontWeight.w900,
                   ),
@@ -584,7 +535,7 @@ class _CrmSeguimientosPageState extends State<CrmSeguimientosPage> {
                 Text(
                   'Registra y da seguimiento a tus gestiones comerciales con los clientes.',
                   style: TextStyle(
-                    color: Color(0xFF6B7E93),
+                    color: Color(0xFFA9C1D5),
                     fontSize: 13,
                   ),
                 ),
@@ -601,7 +552,7 @@ class _CrmSeguimientosPageState extends State<CrmSeguimientosPage> {
                 hintText: 'Buscar cliente, proyecto, seguimiento...',
                 prefixIcon: const Icon(Icons.search, size: 18),
                 filled: true,
-                fillColor: Colors.white,
+                fillColor: const Color(0xFF0B304A),
                 contentPadding: const EdgeInsets.symmetric(horizontal: 10),
                 border: OutlineInputBorder(
                   borderRadius: BorderRadius.circular(10),
@@ -619,27 +570,6 @@ class _CrmSeguimientosPageState extends State<CrmSeguimientosPage> {
             onPressed: _cargar,
             icon: const Icon(Icons.refresh_rounded, color: azul2),
           ),
-          const CircleAvatar(
-            radius: 18,
-            backgroundColor: azul,
-            child: Text(
-              'MR',
-              style: TextStyle(
-                color: Colors.white,
-                fontWeight: FontWeight.w900,
-              ),
-            ),
-          ),
-          const SizedBox(width: 8),
-          Text(
-            Sesion.nombre.trim().isEmpty ? 'Michael Roque' : Sesion.nombre,
-            style: const TextStyle(
-              color: azul,
-              fontWeight: FontWeight.w800,
-              fontSize: 13,
-            ),
-          ),
-          const Icon(Icons.keyboard_arrow_down, color: azul),
         ],
       ),
     );
@@ -657,7 +587,7 @@ class _CrmSeguimientosPageState extends State<CrmSeguimientosPage> {
         height: 104,
         padding: const EdgeInsets.all(14),
         decoration: BoxDecoration(
-          color: Colors.white,
+          color: const Color(0xFF0B304A),
           borderRadius: BorderRadius.circular(12),
           border: Border.all(color: borde),
         ),
@@ -681,7 +611,7 @@ class _CrmSeguimientosPageState extends State<CrmSeguimientosPage> {
                   Text(
                     title,
                     style: const TextStyle(
-                      color: Color(0xFF6C8299),
+                      color: Color(0xFFA9C1D5),
                       fontSize: 11,
                       fontWeight: FontWeight.w700,
                     ),
@@ -690,7 +620,7 @@ class _CrmSeguimientosPageState extends State<CrmSeguimientosPage> {
                   Text(
                     '$value',
                     style: const TextStyle(
-                      color: azul,
+                      color: Colors.white,
                       fontSize: 22,
                       fontWeight: FontWeight.w900,
                     ),
@@ -734,7 +664,7 @@ class _CrmSeguimientosPageState extends State<CrmSeguimientosPage> {
 
     return Card(
       elevation: 0,
-      color: Colors.white,
+      color: const Color(0xFF0B304A),
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(12),
         side: const BorderSide(color: borde),
@@ -756,7 +686,7 @@ class _CrmSeguimientosPageState extends State<CrmSeguimientosPage> {
                   hintText: 'Buscar seguimiento...',
                   prefixIcon: const Icon(Icons.search, size: 18),
                   filled: true,
-                  fillColor: const Color(0xFFF7F9FC),
+                  fillColor: const Color(0xFF061F33),
                   border: OutlineInputBorder(
                     borderRadius: BorderRadius.circular(8),
                     borderSide: BorderSide.none,
@@ -886,7 +816,7 @@ class _CrmSeguimientosPageState extends State<CrmSeguimientosPage> {
         width: double.infinity,
         padding: const EdgeInsets.all(25),
         decoration: BoxDecoration(
-          color: Colors.white,
+          color: const Color(0xFF0B304A),
           borderRadius: BorderRadius.circular(12),
           border: Border.all(color: borde),
         ),
@@ -897,7 +827,7 @@ class _CrmSeguimientosPageState extends State<CrmSeguimientosPage> {
             const Text(
               'No se pudo cargar Seguimientos',
               style: TextStyle(
-                color: azul,
+                color: Colors.white,
                 fontWeight: FontWeight.w900,
               ),
             ),
@@ -905,7 +835,7 @@ class _CrmSeguimientosPageState extends State<CrmSeguimientosPage> {
             Text(
               _error!,
               textAlign: TextAlign.center,
-              style: const TextStyle(color: Colors.grey, fontSize: 11),
+              style: const TextStyle(color: const Color(0xFFA9C1D5), fontSize: 11),
             ),
             const SizedBox(height: 12),
             FilledButton(
@@ -920,7 +850,7 @@ class _CrmSeguimientosPageState extends State<CrmSeguimientosPage> {
     return Container(
       width: double.infinity,
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: const Color(0xFF0B304A),
         borderRadius: BorderRadius.circular(12),
         border: Border.all(color: borde),
       ),
@@ -936,14 +866,14 @@ class _CrmSeguimientosPageState extends State<CrmSeguimientosPage> {
                 Text(
                   'Lista de seguimientos (${_rows.length})',
                   style: const TextStyle(
-                    color: azul,
+                    color: Colors.white,
                     fontSize: 17,
                     fontWeight: FontWeight.w900,
                   ),
                 ),
                 const Spacer(),
                 FilledButton.icon(
-                  onPressed: _puedeCrearModulo ? _nuevoSeguimiento : null,
+                  onPressed: _nuevoSeguimiento,
                   icon: const Icon(Icons.add, size: 17),
                   label: const Text('Nuevo seguimiento'),
                   style: FilledButton.styleFrom(
@@ -958,16 +888,17 @@ class _CrmSeguimientosPageState extends State<CrmSeguimientosPage> {
               scrollDirection: Axis.horizontal,
               child: DataTable(
                 headingRowColor: const WidgetStatePropertyAll(
-                  Color(0xFFF7F9FC),
+                  Color(0xFF061F33),
                 ),
                 columnSpacing: 18,
                 dataRowMinHeight: 52,
                 dataRowMaxHeight: 62,
                 headingTextStyle: const TextStyle(
-                  color: azul,
+                  color: Colors.white,
                   fontSize: 10,
                   fontWeight: FontWeight.w900,
                 ),
+                dataTextStyle: const TextStyle(color: Color(0xFFE6F0F7), fontSize: 10),
                 columns: const [
                   DataColumn(label: Text('Fecha')),
                   DataColumn(label: Text('Cliente')),
@@ -1000,7 +931,7 @@ class _CrmSeguimientosPageState extends State<CrmSeguimientosPage> {
                             style: const TextStyle(
                               fontSize: 10,
                               fontWeight: FontWeight.w800,
-                              color: azul,
+                              color: Colors.white,
                             ),
                           ),
                         ),
@@ -1040,7 +971,7 @@ class _CrmSeguimientosPageState extends State<CrmSeguimientosPage> {
                           style: const TextStyle(
                             fontSize: 10,
                             fontWeight: FontWeight.w700,
-                            color: azul,
+                            color: Colors.white,
                           ),
                         ),
                       ),
@@ -1062,7 +993,7 @@ class _CrmSeguimientosPageState extends State<CrmSeguimientosPage> {
                               icon: const Icon(
                                 Icons.more_horiz,
                                 size: 18,
-                                color: azul,
+                                color: Colors.white,
                               ),
                             ),
                           ],
@@ -1077,7 +1008,7 @@ class _CrmSeguimientosPageState extends State<CrmSeguimientosPage> {
             Text(
               'Mostrando 1 - ${_rows.length} de ${_rows.length} registros',
               style: const TextStyle(
-                color: Color(0xFF7890A5),
+                color: Color(0xFFA9C1D5),
                 fontSize: 10,
               ),
             ),
@@ -1104,7 +1035,7 @@ class _CrmSeguimientosPageState extends State<CrmSeguimientosPage> {
       width: double.infinity,
       padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: const Color(0xFF0B304A),
         borderRadius: BorderRadius.circular(12),
         border: Border.all(color: borde),
       ),
@@ -1123,7 +1054,7 @@ class _CrmSeguimientosPageState extends State<CrmSeguimientosPage> {
                 child: Text(
                   'Próximas acciones',
                   style: TextStyle(
-                    color: azul,
+                    color: Colors.white,
                     fontSize: 15,
                     fontWeight: FontWeight.w900,
                   ),
@@ -1142,7 +1073,7 @@ class _CrmSeguimientosPageState extends State<CrmSeguimientosPage> {
               child: Center(
                 child: Text(
                   'No hay próximas acciones.',
-                  style: TextStyle(color: Colors.grey, fontSize: 11),
+                  style: TextStyle(color: const Color(0xFFA9C1D5), fontSize: 11),
                 ),
               ),
             ),
@@ -1188,7 +1119,7 @@ class _CrmSeguimientosPageState extends State<CrmSeguimientosPage> {
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                   style: const TextStyle(
-                    color: azul,
+                    color: Colors.white,
                     fontSize: 11,
                     fontWeight: FontWeight.w900,
                   ),
@@ -1200,7 +1131,7 @@ class _CrmSeguimientosPageState extends State<CrmSeguimientosPage> {
                   maxLines: 2,
                   overflow: TextOverflow.ellipsis,
                   style: const TextStyle(
-                    color: Color(0xFF6C8299),
+                    color: Color(0xFFA9C1D5),
                     fontSize: 10,
                   ),
                 ),
@@ -1293,13 +1224,6 @@ class _CrmSeguimientosPageState extends State<CrmSeguimientosPage> {
 
   @override
   Widget build(BuildContext context) {
-    if (_cargandoPermisosModulo) {
-      return const Scaffold(
-        backgroundColor: Color(0xFFF4F7FA),
-        body: Center(child: CircularProgressIndicator()),
-      );
-    }
-    if (!_puedeVerModulo) return _sinAccesoModulo();
     return Scaffold(
       backgroundColor: fondo,
       body: SafeArea(
@@ -1309,13 +1233,6 @@ class _CrmSeguimientosPageState extends State<CrmSeguimientosPage> {
   }
 
   Future<void> _nuevoSeguimiento() async {
-    if (!_puedeCrearModulo) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('No tienes permiso para realizar esta acción.')),
-      );
-      return;
-    }
-
     final result = await showDialog<bool>(
       context: context,
       barrierDismissible: false,
@@ -1332,13 +1249,6 @@ class _CrmSeguimientosPageState extends State<CrmSeguimientosPage> {
   }
 
   Future<void> _editar(Map<String, dynamic> row) async {
-    if (!_puedeEditarModulo) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('No tienes permiso para realizar esta acción.')),
-      );
-      return;
-    }
-
     final result = await showDialog<bool>(
       context: context,
       barrierDismissible: false,
@@ -1410,7 +1320,7 @@ class _CrmSeguimientosPageState extends State<CrmSeguimientosPage> {
             child: Text(
               label,
               style: const TextStyle(
-                color: Color(0xFF71869A),
+                color: Color(0xFFA9C1D5),
                 fontSize: 11,
                 fontWeight: FontWeight.w700,
               ),
@@ -1420,7 +1330,7 @@ class _CrmSeguimientosPageState extends State<CrmSeguimientosPage> {
             child: Text(
               value,
               style: const TextStyle(
-                color: azul,
+                color: Colors.white,
                 fontSize: 11,
                 fontWeight: FontWeight.w700,
               ),
@@ -1453,10 +1363,11 @@ class _NuevaSeguimientoDialog extends StatefulWidget {
 }
 
 class _NuevaSeguimientoDialogState extends State<_NuevaSeguimientoDialog> {
-  static const Color azul = Color(0xFF063B63);
-  static const Color azulClaro = Color(0xFFEEF6FC);
-  static const Color borde = Color(0xFFDCE5EE);
-  static const Color textoSecundario = Color(0xFF6B7E93);
+  static const Color azul2 = Color(0xFF159FE8);
+  static const Color azul = Color(0xFF0A4268);
+  static const Color azulClaro = Color(0xFF103F5B);
+  static const Color borde = Color(0xFF10516F);
+  static const Color textoSecundario = Color(0xFFA9C1D5);
 
   final _asunto = TextEditingController();
   final _descripcion = TextEditingController();
@@ -1464,7 +1375,6 @@ class _NuevaSeguimientoDialogState extends State<_NuevaSeguimientoDialog> {
   final _proxima = TextEditingController();
 
   String _tipo = 'LLAMADA';
-  List<String> _tiposGestion = const ['LLAMADA'];
   String _cliente = '';
   String _vendedor = '';
   DateTime? _fechaProxima;
@@ -1477,20 +1387,6 @@ class _NuevaSeguimientoDialogState extends State<_NuevaSeguimientoDialog> {
     _vendedor = widget.vendedorActual.isNotEmpty
         ? widget.vendedorActual
         : (widget.vendedores.isNotEmpty ? widget.vendedores.first : '');
-    _cargarTiposGestion();
-  }
-
-  Future<void> _cargarTiposGestion() async {
-    try {
-      final tipos = await CrmCatalogosService.obtenerNombres('tipos_gestion');
-      if (!mounted || tipos.isEmpty) return;
-      setState(() {
-        _tiposGestion = tipos;
-        if (!_tiposGestion.contains(_tipo)) _tipo = _tiposGestion.first;
-      });
-    } catch (_) {
-      // Conserva el tipo inicial si el catálogo no está disponible.
-    }
   }
 
   @override
@@ -1600,7 +1496,7 @@ class _NuevaSeguimientoDialogState extends State<_NuevaSeguimientoDialog> {
           ? null
           : Icon(icon, color: azul, size: 20),
       filled: true,
-      fillColor: Colors.white,
+      fillColor: const Color(0xFF0B304A),
       contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
       border: OutlineInputBorder(
         borderRadius: BorderRadius.circular(12),
@@ -1614,21 +1510,9 @@ class _NuevaSeguimientoDialogState extends State<_NuevaSeguimientoDialog> {
         borderRadius: BorderRadius.circular(12),
         borderSide: const BorderSide(color: azul, width: 1.5),
       ),
-      labelStyle: const TextStyle(color: textoSecundario),
+      labelStyle: const TextStyle(color: Color(0xFFA9C1D5)),
+      hintStyle: const TextStyle(color: Color(0xFFB8CCDC)),
     );
-  }
-
-  IconData _iconoTipo(String tipo) {
-    final t = tipo.toLowerCase();
-    if (t.contains('video') || t.contains('videollamada')) return Icons.videocam_outlined;
-    if (t.contains('whatsapp')) return Icons.chat_outlined;
-    if (t.contains('correo') || t.contains('email')) return Icons.mail_outline;
-    if (t.contains('visita')) return Icons.location_on_outlined;
-    if (t.contains('reuni')) return Icons.groups_outlined;
-    if (t.contains('llamad')) return Icons.phone_outlined;
-    if (t.contains('segu')) return Icons.sync_alt;
-    if (t.contains('cobran')) return Icons.payments_outlined;
-    return Icons.task_alt_outlined;
   }
 
   Widget _tipoChip(String value, IconData icon) {
@@ -1640,7 +1524,7 @@ class _NuevaSeguimientoDialogState extends State<_NuevaSeguimientoDialog> {
         duration: const Duration(milliseconds: 160),
         padding: const EdgeInsets.symmetric(horizontal: 13, vertical: 10),
         decoration: BoxDecoration(
-          color: selected ? azul : Colors.white,
+          color: selected ? azul2 : const Color(0xFF0B304A),
           borderRadius: BorderRadius.circular(10),
           border: Border.all(color: selected ? azul : borde),
         ),
@@ -1692,7 +1576,7 @@ class _NuevaSeguimientoDialogState extends State<_NuevaSeguimientoDialog> {
                       e,
                       overflow: TextOverflow.ellipsis,
                       style: TextStyle(
-                        color: azul,
+                        color: Colors.white,
                         fontWeight: e == value ? FontWeight.w800 : FontWeight.w500,
                       ),
                     ),
@@ -1709,7 +1593,7 @@ class _NuevaSeguimientoDialogState extends State<_NuevaSeguimientoDialog> {
         height: 60,
         padding: const EdgeInsets.symmetric(horizontal: 14),
         decoration: BoxDecoration(
-          color: Colors.white,
+          color: const Color(0xFF0B304A),
           borderRadius: BorderRadius.circular(12),
           border: Border.all(color: borde),
         ),
@@ -1736,7 +1620,7 @@ class _NuevaSeguimientoDialogState extends State<_NuevaSeguimientoDialog> {
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                     style: const TextStyle(
-                      color: azul,
+                      color: Colors.white,
                       fontSize: 14,
                       fontWeight: FontWeight.w800,
                     ),
@@ -1814,7 +1698,7 @@ class _NuevaSeguimientoDialogState extends State<_NuevaSeguimientoDialog> {
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                       style: const TextStyle(
-                        color: azul,
+                        color: Colors.white,
                         fontWeight: FontWeight.w800,
                         fontSize: 13,
                       ),
@@ -1857,7 +1741,7 @@ class _NuevaSeguimientoDialogState extends State<_NuevaSeguimientoDialog> {
         height: 60,
         padding: const EdgeInsets.symmetric(horizontal: 14),
         decoration: BoxDecoration(
-          color: Colors.white,
+          color: const Color(0xFF0B304A),
           borderRadius: BorderRadius.circular(12),
           border: Border.all(color: borde),
         ),
@@ -1908,7 +1792,7 @@ class _NuevaSeguimientoDialogState extends State<_NuevaSeguimientoDialog> {
         : widget.vendedores.toSet().toList();
 
     return Dialog(
-      backgroundColor: const Color(0xFFF7F9FC),
+      backgroundColor: const Color(0xFF061F33),
       insetPadding: const EdgeInsets.symmetric(horizontal: 24, vertical: 24),
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(22)),
       child: ConstrainedBox(
@@ -1920,7 +1804,7 @@ class _NuevaSeguimientoDialogState extends State<_NuevaSeguimientoDialog> {
               width: double.infinity,
               padding: const EdgeInsets.fromLTRB(26, 22, 22, 20),
               decoration: const BoxDecoration(
-                color: azul,
+                color: Colors.white,
                 borderRadius: BorderRadius.only(
                   topLeft: Radius.circular(22),
                   topRight: Radius.circular(22),
@@ -1982,7 +1866,7 @@ class _NuevaSeguimientoDialogState extends State<_NuevaSeguimientoDialog> {
                     const Text(
                       'Tipo de gestión',
                       style: TextStyle(
-                        color: azul,
+                        color: Colors.white,
                         fontSize: 13,
                         fontWeight: FontWeight.w900,
                       ),
@@ -1991,9 +1875,14 @@ class _NuevaSeguimientoDialogState extends State<_NuevaSeguimientoDialog> {
                     Wrap(
                       spacing: 8,
                       runSpacing: 8,
-                      children: _tiposGestion
-                          .map((tipo) => _tipoChip(tipo, _iconoTipo(tipo)))
-                          .toList(),
+                      children: [
+                        _tipoChip('LLAMADA', Icons.phone_outlined),
+                        _tipoChip('WHATSAPP', Icons.chat_outlined),
+                        _tipoChip('CORREO', Icons.mail_outline),
+                        _tipoChip('VISITA', Icons.location_on_outlined),
+                        _tipoChip('REUNION', Icons.groups_outlined),
+                        _tipoChip('SEGUIMIENTO', Icons.sync_alt),
+                      ],
                     ),
                     const SizedBox(height: 20),
                     _clienteField(),
@@ -2168,7 +2057,7 @@ class _EditarSeguimientoDialog extends StatefulWidget {
 }
 
 class _EditarSeguimientoDialogState extends State<_EditarSeguimientoDialog> {
-  static const Color azul = Color(0xFF063B63);
+  static const Color azul = Color(0xFF0A4268);
 
   final _asunto = TextEditingController();
   final _descripcion = TextEditingController();
@@ -2177,7 +2066,6 @@ class _EditarSeguimientoDialogState extends State<_EditarSeguimientoDialog> {
 
   late String _tipo;
   late String _vendedor;
-  List<String> _tiposGestion = const ['LLAMADA'];
   DateTime? _fechaProxima;
   bool _guardando = false;
 
@@ -2187,7 +2075,6 @@ class _EditarSeguimientoDialogState extends State<_EditarSeguimientoDialog> {
     _tipo = _s(widget.row['tipo']).isEmpty
         ? 'LLAMADA'
         : _s(widget.row['tipo']);
-    _cargarTiposGestion();
     _vendedor = _s(widget.row['vendedor']);
     _asunto.text = _s(widget.row['asunto']);
     _descripcion.text = _s(widget.row['descripcion']);
@@ -2199,32 +2086,6 @@ class _EditarSeguimientoDialogState extends State<_EditarSeguimientoDialog> {
   }
 
   String _s(dynamic value) => value?.toString().trim() ?? '';
-
-  Future<void> _cargarTiposGestion() async {
-    try {
-      final tipos = await CrmCatalogosService.obtenerNombres('tipos_gestion');
-      final unicos = <String>[];
-      final vistos = <String>{};
-      for (final tipo in tipos) {
-        final nombre = tipo.trim();
-        final clave = nombre.toUpperCase();
-        if (nombre.isNotEmpty && vistos.add(clave)) {
-          unicos.add(nombre);
-        }
-      }
-      if (!mounted) return;
-      setState(() {
-        _tiposGestion = unicos.isEmpty ? ['LLAMADA'] : unicos;
-        if (!_tiposGestion.any((e) => e.toUpperCase() == _tipo.toUpperCase())) {
-          _tiposGestion.insert(0, _tipo);
-        }
-      });
-    } catch (_) {
-      if (mounted && !_tiposGestion.contains(_tipo)) {
-        setState(() => _tiposGestion = ['LLAMADA', _tipo].toSet().toList());
-      }
-    }
-  }
 
   @override
   void dispose() {
@@ -2315,11 +2176,16 @@ class _EditarSeguimientoDialogState extends State<_EditarSeguimientoDialog> {
               ),
               const SizedBox(height: 12),
               DropdownButtonFormField<String>(
-                value: _tiposGestion.contains(_tipo) ? _tipo : null,
-                isExpanded: true,
+                value: _tipo,
                 decoration: const InputDecoration(labelText: 'Tipo'),
-                items: _tiposGestion
-                    .toSet()
+                items: const [
+                  'LLAMADA',
+                  'WHATSAPP',
+                  'CORREO',
+                  'VISITA',
+                  'REUNION',
+                  'SEGUIMIENTO',
+                ]
                     .map(
                       (e) => DropdownMenuItem(
                         value: e,

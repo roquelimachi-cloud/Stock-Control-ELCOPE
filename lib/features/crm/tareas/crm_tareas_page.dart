@@ -1,9 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 
+import '../catalogos/crm_catalogos_service.dart';
+
 import '../../../services/sesion.dart';
 import '../../../services/supabase/supabase_service.dart';
-import '../shared/crm_modulo_permisos.dart';
 
 /// Módulo Tareas del CRM.
 ///
@@ -19,55 +20,10 @@ class CrmTareasPage extends StatefulWidget {
 }
 
 class _CrmTareasPageState extends State<CrmTareasPage> {
-
-  bool _cargandoPermisosModulo = true;
-  bool _puedeVerModulo = false;
-  bool _puedeCrearModulo = false;
-  bool _puedeEditarModulo = false;
-  bool _puedeEliminarModulo = false;
-  bool _puedeImprimirModulo = false;
-
-  Future<void> _cargarPermisosModulo() async {
-    final permisos = await CrmModuloPermisos.cargar('crm_tareas');
-    if (!mounted) return;
-    setState(() {
-      _puedeVerModulo = permisos['ver'] == true;
-      _puedeCrearModulo = permisos['crear'] == true;
-      _puedeEditarModulo = permisos['editar'] == true;
-      _puedeEliminarModulo = permisos['eliminar'] == true;
-      _puedeImprimirModulo = permisos['imprimir'] == true;
-      _cargandoPermisosModulo = false;
-    });
-  }
-
-  Widget _sinAccesoModulo() {
-    return Scaffold(
-      backgroundColor: const Color(0xFFF4F7FA),
-      body: Center(
-        child: Card(
-          margin: const EdgeInsets.all(24),
-          child: Padding(
-            padding: const EdgeInsets.all(28),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: const [
-                Icon(Icons.lock_outline_rounded, size: 48, color: Color(0xFF0B3B63)),
-                SizedBox(height: 12),
-                Text('Acceso no autorizado', style: TextStyle(fontSize: 21, fontWeight: FontWeight.w900)),
-                SizedBox(height: 6),
-                Text('Solicita al administrador que habilite este módulo en Usuarios y Accesos.'),
-              ],
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-
-  static const _azul = Color(0xFF0B3B63);
-  static const _azulClaro = Color(0xFF1468A8);
+  static const _azul = Color(0xFF0A4268);
+  static const _azulClaro = Color(0xFF087EB8);
   static const _verde = Color(0xFF0A9B61);
-  static const _fondo = Color(0xFFF4F7FA);
+  static const _fondo = Color(0xFF061F33);
 
   final _db = SupabaseService.client;
   final _buscar = TextEditingController();
@@ -176,8 +132,6 @@ class _CrmTareasPageState extends State<CrmTareasPage> {
   }
 
   Future<void> _inicializar() async {
-    await _cargarPermisosModulo();
-    if (!_puedeVerModulo) { if (mounted) setState(() => _cargando = false); return; }
     if (!mounted) return;
 
     setState(() {
@@ -336,13 +290,6 @@ class _CrmTareasPageState extends State<CrmTareasPage> {
   }
 
   Future<void> _nuevaTarea() async {
-    if (!_puedeCrearModulo) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('No tienes permiso para realizar esta acción.')),
-      );
-      return;
-    }
-
     final ok = await showDialog<bool>(
       context: context,
       barrierDismissible: false,
@@ -359,13 +306,6 @@ class _CrmTareasPageState extends State<CrmTareasPage> {
   }
 
   Future<void> _editarTarea(Map<String, dynamic> tarea) async {
-    if (!_puedeEditarModulo) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('No tienes permiso para realizar esta acción.')),
-      );
-      return;
-    }
-
     final ok = await showDialog<bool>(
       context: context,
       barrierDismissible: false,
@@ -380,20 +320,6 @@ class _CrmTareasPageState extends State<CrmTareasPage> {
   }
 
   Future<void> _completarTarea(Map<String, dynamic> tarea) async {
-    if (!_puedeEditarModulo) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('No tienes permiso para editar tareas.')),
-      );
-      return;
-    }
-
-    if (!_puedeEliminarModulo) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('No tienes permiso para realizar esta acción.')),
-      );
-      return;
-    }
-
     final id = tarea['id'];
     if (id == null) return;
 
@@ -432,18 +358,11 @@ class _CrmTareasPageState extends State<CrmTareasPage> {
 
   @override
   Widget build(BuildContext context) {
-    if (_cargandoPermisosModulo) {
-      return const Scaffold(
-        backgroundColor: Color(0xFFF4F7FA),
-        body: Center(child: CircularProgressIndicator()),
-      );
-    }
-    if (!_puedeVerModulo) return _sinAccesoModulo();
     return Scaffold(
       backgroundColor: _fondo,
       appBar: AppBar(
-        backgroundColor: Colors.white,
-        foregroundColor: _azul,
+        backgroundColor: const Color(0xFF0A304B),
+        foregroundColor: Colors.white,
         elevation: 0,
         automaticallyImplyLeading: false,
         leading: IconButton(
@@ -458,7 +377,7 @@ class _CrmTareasPageState extends State<CrmTareasPage> {
         titleSpacing: 4,
         title: const Text(
           'Tareas',
-          style: TextStyle(fontWeight: FontWeight.w900, fontSize: 26),
+          style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 26, color: Colors.white),
         ),
         actions: [
           IconButton(
@@ -583,7 +502,7 @@ class _CrmTareasPageState extends State<CrmTareasPage> {
 
   Widget _botonNuevaTarea() {
     return FilledButton.icon(
-      onPressed: (_cargando || !_puedeCrearModulo) ? null : _nuevaTarea,
+      onPressed: _cargando ? null : _nuevaTarea,
       icon: const Icon(Icons.add_rounded),
       label: const Text('Nueva tarea'),
       style: ButtonStyle(
@@ -603,10 +522,11 @@ class _CrmTareasPageState extends State<CrmTareasPage> {
     final vendedores = ['TODOS', ..._vendedoresPermitidos];
 
     return Card(
+      color: const Color(0xFF0B304A),
       elevation: 0,
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(16),
-        side: const BorderSide(color: Color(0xFFE0E6EC)),
+        side: const BorderSide(color: Color(0xFF10516F)),
       ),
       child: Padding(
         padding: const EdgeInsets.all(16),
@@ -691,10 +611,13 @@ class _CrmTareasPageState extends State<CrmTareasPage> {
       child: DropdownButtonFormField<String>(
         value: safe,
         isExpanded: true,
+        style: const TextStyle(color: Color(0xFFE6F0F7), fontSize: 12),
+        dropdownColor: const Color(0xFF0B304A),
         decoration: InputDecoration(
           labelText: label,
+          labelStyle: const TextStyle(color: Color(0xFFA9C1D5)),
           filled: true,
-          fillColor: _fondo,
+          fillColor: const Color(0xFF0B304A),
           border: OutlineInputBorder(
             borderRadius: BorderRadius.circular(12),
             borderSide: BorderSide.none,
@@ -755,9 +678,9 @@ class _CrmTareasPageState extends State<CrmTareasPage> {
       width: 190,
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: const Color(0xFF0B304A),
         borderRadius: BorderRadius.circular(15),
-        border: Border.all(color: const Color(0xFFE0E6EC)),
+        border: Border.all(color: const Color(0xFF10516F)),
       ),
       child: Row(
         children: [
@@ -773,7 +696,7 @@ class _CrmTareasPageState extends State<CrmTareasPage> {
           Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text(label, style: const TextStyle(color: Colors.grey)),
+              Text(label, style: const TextStyle(color: Color(0xFFA9C1D5))),
               Text(
                 value,
                 style: TextStyle(
@@ -796,7 +719,7 @@ class _CrmTareasPageState extends State<CrmTareasPage> {
         const SizedBox(width: 8),
         const Text(
           'Vista',
-          style: TextStyle(fontWeight: FontWeight.w900, color: _azul),
+          style: TextStyle(fontWeight: FontWeight.w900, color: Color(0xFFE6F0F7)),
         ),
         const SizedBox(width: 12),
         _vistaButton('LISTA', Icons.view_list_outlined, 'Lista'),
@@ -816,10 +739,10 @@ class _CrmTareasPageState extends State<CrmTareasPage> {
       icon: Icon(icon, size: 18),
       label: Text(label),
       style: OutlinedButton.styleFrom(
-        foregroundColor: selected ? Colors.white : _azul,
-        backgroundColor: selected ? _azulClaro : Colors.white,
+        foregroundColor: Colors.white,
+        backgroundColor: selected ? _azulClaro : const Color(0xFF0B304A),
         side: BorderSide(
-          color: selected ? _azulClaro : const Color(0xFFD6E0E8),
+          color: selected ? _azulClaro : const Color(0xFF20506A),
         ),
       ),
     );
@@ -876,9 +799,9 @@ class _CrmTareasPageState extends State<CrmTareasPage> {
     return Container(
       constraints: const BoxConstraints(minHeight: 180),
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: const Color(0xFF0B304A),
         borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: const Color(0xFFE0E6EC)),
+        border: Border.all(color: const Color(0xFF10516F)),
       ),
       child: Column(
         children: [
@@ -966,9 +889,9 @@ class _CrmTareasPageState extends State<CrmTareasPage> {
         margin: const EdgeInsets.only(bottom: 9),
         padding: const EdgeInsets.all(13),
         decoration: BoxDecoration(
-          color: Colors.white,
+          color: const Color(0xFF0D3854),
           borderRadius: BorderRadius.circular(13),
-          border: Border.all(color: const Color(0xFFE2E8EE)),
+          border: Border.all(color: const Color(0xFF16445F)),
           boxShadow: const [
             BoxShadow(
               color: Color(0x0A000000),
@@ -988,7 +911,7 @@ class _CrmTareasPageState extends State<CrmTareasPage> {
                     maxLines: 2,
                     overflow: TextOverflow.ellipsis,
                     style: const TextStyle(
-                      color: _azul,
+                      color: Colors.white,
                       fontWeight: FontWeight.w900,
                       fontSize: 14,
                     ),
@@ -1073,7 +996,7 @@ class _CrmTareasPageState extends State<CrmTareasPage> {
                 Text(
                   _s(t['tipo']).isEmpty ? 'SEGUIMIENTO' : _s(t['tipo']),
                   style: const TextStyle(
-                    color: Colors.grey,
+                    color: const Color(0xFFA9C1D5),
                     fontSize: 10,
                     fontWeight: FontWeight.w700,
                   ),
@@ -1097,7 +1020,7 @@ class _CrmTareasPageState extends State<CrmTareasPage> {
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
             style: const TextStyle(
-              color: Color(0xFF52657A),
+              color: Color(0xFFB8CCDC),
               fontSize: 11,
             ),
           ),
@@ -1114,9 +1037,9 @@ class _CrmTareasPageState extends State<CrmTareasPage> {
     return Container(
       padding: const EdgeInsets.all(18),
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: const Color(0xFF0B304A),
         borderRadius: BorderRadius.circular(17),
-        border: Border.all(color: const Color(0xFFE0E6EC)),
+        border: Border.all(color: const Color(0xFF10516F)),
       ),
       child: Column(
         children: [
@@ -1127,7 +1050,7 @@ class _CrmTareasPageState extends State<CrmTareasPage> {
               const Text(
                 'Listado de tareas',
                 style: TextStyle(
-                  color: _azul,
+                  color: Colors.white,
                   fontSize: 18,
                   fontWeight: FontWeight.w900,
                 ),
@@ -1135,7 +1058,7 @@ class _CrmTareasPageState extends State<CrmTareasPage> {
               const Spacer(),
               Text(
                 '${_tareas.length} registros',
-                style: const TextStyle(color: Colors.grey),
+                style: const TextStyle(color: Color(0xFFA9C1D5)),
               ),
             ],
           ),
@@ -1155,9 +1078,9 @@ class _CrmTareasPageState extends State<CrmTareasPage> {
       margin: const EdgeInsets.only(bottom: 9),
       padding: const EdgeInsets.symmetric(horizontal: 13, vertical: 12),
       decoration: BoxDecoration(
-        color: const Color(0xFFFBFCFD),
+        color: const Color(0xFF0B304A),
         borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: const Color(0xFFE5EBF0)),
+        border: Border.all(color: const Color(0xFF16445F)),
       ),
       child: Row(
         children: [
@@ -1181,7 +1104,7 @@ class _CrmTareasPageState extends State<CrmTareasPage> {
               maxLines: 2,
               overflow: TextOverflow.ellipsis,
               style: const TextStyle(
-                color: _azul,
+                color: Colors.white,
                 fontWeight: FontWeight.w800,
               ),
             ),
@@ -1194,7 +1117,7 @@ class _CrmTareasPageState extends State<CrmTareasPage> {
                   ? '-'
                   : _s(t['codigo_cliente']),
               overflow: TextOverflow.ellipsis,
-              style: const TextStyle(color: Color(0xFF52657A)),
+              style: const TextStyle(color: Color(0xFFB8CCDC)),
             ),
           ),
           const SizedBox(width: 15),
@@ -1203,7 +1126,7 @@ class _CrmTareasPageState extends State<CrmTareasPage> {
             child: Text(
               _s(t['vendedor']).isEmpty ? '-' : _s(t['vendedor']),
               overflow: TextOverflow.ellipsis,
-              style: const TextStyle(color: Color(0xFF52657A)),
+              style: const TextStyle(color: Color(0xFFB8CCDC)),
             ),
           ),
           const SizedBox(width: 15),
@@ -1250,7 +1173,7 @@ class _CrmTareasPageState extends State<CrmTareasPage> {
             decoration: BoxDecoration(
               color: Colors.white,
               borderRadius: BorderRadius.circular(12),
-              border: Border.all(color: const Color(0xFFE0E6EC)),
+              border: Border.all(color: const Color(0xFF10516F)),
             ),
             child: Row(
               children: [
@@ -1259,7 +1182,7 @@ class _CrmTareasPageState extends State<CrmTareasPage> {
                 Text(
                   _fecha.format(DateTime.parse(key)),
                   style: const TextStyle(
-                    color: _azul,
+                    color: Colors.white,
                     fontWeight: FontWeight.w900,
                   ),
                 ),
@@ -1285,18 +1208,18 @@ class _CrmTareasPageState extends State<CrmTareasPage> {
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(18),
-        border: Border.all(color: const Color(0xFFE0E6EC)),
+        border: Border.all(color: const Color(0xFF10516F)),
       ),
       child: const Column(
         children: [
-          Icon(Icons.inbox_outlined, size: 56, color: Color(0xFF9AA8B5)),
+          Icon(Icons.inbox_outlined, size: 56, color: Color(0xFFB8CCDC)),
           SizedBox(height: 12),
           Text(
             'No hay tareas para mostrar',
             style: TextStyle(
               fontSize: 18,
               fontWeight: FontWeight.w900,
-              color: _azul,
+              color: Colors.white,
             ),
           ),
           SizedBox(height: 6),
@@ -1391,11 +1314,13 @@ class _NuevaTareaDialog extends StatefulWidget {
 }
 
 class _NuevaTareaDialogState extends State<_NuevaTareaDialog> {
-  static const _azul = Color(0xFF0B3B63);
+  static const _azul = Color(0xFF0A4268);
   final _asunto = TextEditingController();
   final _descripcion = TextEditingController();
   final _proxima = TextEditingController();
   String _cliente = '';
+  String _tipo = 'SEGUIMIENTO';
+  List<String> _tiposTarea = const ['SEGUIMIENTO'];
   String _vendedor = '';
   DateTime? _fecha;
   bool _guardando = false;
@@ -1406,6 +1331,18 @@ class _NuevaTareaDialogState extends State<_NuevaTareaDialog> {
     _vendedor = widget.vendedorActual.isNotEmpty
         ? widget.vendedorActual
         : (widget.vendedores.isNotEmpty ? widget.vendedores.first : '');
+    _cargarTiposTarea();
+  }
+
+  Future<void> _cargarTiposTarea() async {
+    try {
+      final tipos = await CrmCatalogosService.obtenerNombres('tipos_tarea');
+      if (!mounted || tipos.isEmpty) return;
+      setState(() {
+        _tiposTarea = tipos;
+        if (!_tiposTarea.contains(_tipo)) _tipo = _tiposTarea.first;
+      });
+    } catch (_) {}
   }
 
   @override
@@ -1443,15 +1380,15 @@ class _NuevaTareaDialogState extends State<_NuevaTareaDialog> {
       hintText: hint,
       prefixIcon: icon == null ? null : Icon(icon, color: _azul),
       filled: true,
-      fillColor: const Color(0xFFF9FBFD),
+      fillColor: const Color(0xFF0B304A),
       contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 16),
       border: OutlineInputBorder(
         borderRadius: BorderRadius.circular(12),
-        borderSide: const BorderSide(color: Color(0xFFD6E1EC)),
+        borderSide: const BorderSide(color: Color(0xFF20506A)),
       ),
       enabledBorder: OutlineInputBorder(
         borderRadius: BorderRadius.circular(12),
-        borderSide: const BorderSide(color: Color(0xFFD6E1EC)),
+        borderSide: const BorderSide(color: Color(0xFF20506A)),
       ),
       focusedBorder: OutlineInputBorder(
         borderRadius: BorderRadius.circular(12),
@@ -1487,7 +1424,7 @@ class _NuevaTareaDialogState extends State<_NuevaTareaDialog> {
     try {
       await widget.db.rpc('crm_registrar_actividad', params: {
         'p_codigo_cliente': _cliente,
-        'p_tipo': 'SEGUIMIENTO',
+        'p_tipo': _tipo,
         'p_asunto': _asunto.text.trim(),
         'p_descripcion': _descripcion.text.trim().isEmpty ? null : _descripcion.text.trim(),
         'p_resultado': null,
@@ -1523,7 +1460,7 @@ class _NuevaTareaDialogState extends State<_NuevaTareaDialog> {
             Container(
               padding: const EdgeInsets.fromLTRB(24, 18, 18, 18),
               decoration: const BoxDecoration(
-                color: _azul,
+                color: Colors.white,
                 borderRadius: BorderRadius.only(topLeft: Radius.circular(20), topRight: Radius.circular(20)),
               ),
               child: Row(
@@ -1567,9 +1504,9 @@ class _NuevaTareaDialogState extends State<_NuevaTareaDialog> {
                           enabled: !_guardando,
                           onChanged: (_) { if (_cliente.isNotEmpty) setState(() => _cliente = ''); },
                           decoration: _campo(label: 'Cliente *', hint: 'Escribe nombre, RUC o código', icon: Icons.business_outlined).copyWith(
-                            suffixIcon: const Icon(Icons.search, color: Color(0xFF6C8299)),
+                            suffixIcon: const Icon(Icons.search, color: Color(0xFFA9C1D5)),
                             helperText: _cliente.isEmpty ? 'Busca y selecciona un cliente' : 'Cliente seleccionado',
-                            helperStyle: TextStyle(color: _cliente.isEmpty ? const Color(0xFF71869A) : Colors.green),
+                            helperStyle: TextStyle(color: _cliente.isEmpty ? const Color(0xFFA9C1D5) : Colors.green),
                           ),
                         );
                       },
@@ -1591,7 +1528,7 @@ class _NuevaTareaDialogState extends State<_NuevaTareaDialog> {
                                 itemBuilder: (_, i) {
                                   final c = lista[i];
                                   return ListTile(
-                                    leading: const CircleAvatar(backgroundColor: Color(0xFFEAF3FA), child: Icon(Icons.business_outlined, color: _azul)),
+                                    leading: const CircleAvatar(backgroundColor: Color(0xFF103F5B), child: Icon(Icons.business_outlined, color: _azul)),
                                     title: Text(_nombre(c), maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontWeight: FontWeight.w800)),
                                     subtitle: Text('RUC / Código: ${_codigo(c)}'),
                                     trailing: const Icon(Icons.arrow_forward_ios, size: 14),
@@ -1605,6 +1542,16 @@ class _NuevaTareaDialogState extends State<_NuevaTareaDialog> {
                       },
                     ),
                     const SizedBox(height: 14),
+                    DropdownButtonFormField<String>(
+                      style: const TextStyle(color: Color(0xFFE6F0F7)),
+                      dropdownColor: const Color(0xFF0B304A),
+                      value: _tiposTarea.contains(_tipo) ? _tipo : (_tiposTarea.isEmpty ? null : _tiposTarea.first),
+                      isExpanded: true,
+                      decoration: _campo(label: 'Tipo de tarea', hint: 'Selecciona tipo', icon: Icons.task_alt_outlined),
+                      items: _tiposTarea.map((e) => DropdownMenuItem(value: e, child: Text(e))).toList(),
+                      onChanged: _guardando ? null : (v) { if (v != null) setState(() => _tipo = v); },
+                    ),
+                    const SizedBox(height: 12),
                     Row(
                       children: [
                         Expanded(
@@ -1632,7 +1579,7 @@ class _NuevaTareaDialogState extends State<_NuevaTareaDialog> {
                             child: InputDecorator(
                               decoration: _campo(label: 'Fecha de cumplimiento', hint: '', icon: Icons.calendar_today_outlined),
                               child: Text(_fecha == null ? 'Seleccionar fecha' : DateFormat('dd/MM/yyyy').format(_fecha!),
-                                style: TextStyle(color: _fecha == null ? const Color(0xFF71869A) : _azul, fontWeight: _fecha == null ? FontWeight.w400 : FontWeight.w800)),
+                                style: TextStyle(color: _fecha == null ? const Color(0xFFA9C1D5) : _azul, fontWeight: _fecha == null ? FontWeight.w400 : FontWeight.w800)),
                             ),
                           ),
                         ),
@@ -1646,7 +1593,7 @@ class _NuevaTareaDialogState extends State<_NuevaTareaDialog> {
             ),
             Container(
               padding: const EdgeInsets.fromLTRB(24, 12, 24, 16),
-              decoration: const BoxDecoration(color: Color(0xFFF7F9FC), borderRadius: BorderRadius.only(bottomLeft: Radius.circular(20), bottomRight: Radius.circular(20))),
+              decoration: const BoxDecoration(color: Color(0xFF061F33), borderRadius: BorderRadius.only(bottomLeft: Radius.circular(20), bottomRight: Radius.circular(20))),
               child: Row(
                 mainAxisAlignment: MainAxisAlignment.end,
                 children: [
@@ -1684,13 +1631,28 @@ class _EditarTareaDialog extends StatefulWidget {
 }
 
 class _EditarTareaDialogState extends State<_EditarTareaDialog> {
-  static const _azul = Color(0xFF0B3B63);
+
+  InputDecoration _campo({required String label, required String hint, IconData? icon}) {
+    return InputDecoration(
+      labelText: label,
+      hintText: hint,
+      prefixIcon: icon == null ? null : Icon(icon),
+      border: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(10),
+      ),
+      filled: true,
+      fillColor: const Color(0xFF0B304A),
+    );
+  }
+  static const _azul = Color(0xFF0A4268);
 
   final _asunto = TextEditingController();
   final _descripcion = TextEditingController();
   final _proxima = TextEditingController();
 
   String _vendedor = '';
+  String _tipo = 'SEGUIMIENTO';
+  List<String> _tiposTarea = const ['SEGUIMIENTO'];
   DateTime? _fecha;
   bool _guardando = false;
 
@@ -1703,9 +1665,24 @@ class _EditarTareaDialogState extends State<_EditarTareaDialog> {
     _descripcion.text = t['descripcion']?.toString() ?? '';
     _proxima.text = t['proxima_accion']?.toString() ?? '';
     _vendedor = t['vendedor']?.toString() ?? '';
+    _tipo = t['tipo']?.toString().trim().isNotEmpty == true
+        ? t['tipo'].toString().trim()
+        : 'SEGUIMIENTO';
+    _cargarTiposTarea();
 
     final f = t['fecha_proxima_accion']?.toString() ?? '';
     if (f.isNotEmpty) _fecha = DateTime.tryParse(f);
+  }
+
+  Future<void> _cargarTiposTarea() async {
+    try {
+      final tipos = await CrmCatalogosService.obtenerNombres('tipos_tarea');
+      if (!mounted || tipos.isEmpty) return;
+      setState(() {
+        _tiposTarea = tipos;
+        if (!_tiposTarea.contains(_tipo)) _tipo = _tiposTarea.first;
+      });
+    } catch (_) {}
   }
 
   @override
@@ -1735,6 +1712,18 @@ class _EditarTareaDialogState extends State<_EditarTareaDialog> {
             mainAxisSize: MainAxisSize.min,
             children: [
               DropdownButtonFormField<String>(
+                style: const TextStyle(color: Color(0xFFE6F0F7)),
+                dropdownColor: const Color(0xFF0B304A),
+                value: _tiposTarea.contains(_tipo) ? _tipo : (_tiposTarea.isEmpty ? null : _tiposTarea.first),
+                isExpanded: true,
+                decoration: _campo(label: 'Tipo de tarea', hint: 'Selecciona tipo', icon: Icons.task_alt_outlined),
+                items: _tiposTarea.map((e) => DropdownMenuItem(value: e, child: Text(e))).toList(),
+                onChanged: _guardando ? null : (v) { if (v != null) setState(() => _tipo = v); },
+              ),
+              const SizedBox(height: 12),
+              DropdownButtonFormField<String>(
+                style: const TextStyle(color: Color(0xFFE6F0F7)),
+                dropdownColor: const Color(0xFF0B304A),
                 value: vendedores.contains(_vendedor) ? _vendedor : null,
                 decoration: const InputDecoration(labelText: 'Asesor'),
                 items: vendedores.map(
@@ -1836,7 +1825,7 @@ class _EditarTareaDialogState extends State<_EditarTareaDialog> {
         'crm_actualizar_actividad',
         params: {
           'p_id': widget.tarea['id'],
-          'p_tipo': _sTipo(widget.tarea['tipo']),
+          'p_tipo': _tipo,
           'p_asunto': _asunto.text.trim(),
           'p_descripcion': _descripcion.text.trim().isEmpty
               ? null

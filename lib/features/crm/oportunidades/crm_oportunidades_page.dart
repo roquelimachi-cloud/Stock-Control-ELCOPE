@@ -37,7 +37,7 @@ class _CrmOportunidadesPageState extends State<CrmOportunidadesPage> {
 
   Widget _sinAccesoModulo() {
     return Scaffold(
-      backgroundColor: const Color(0xFFF4F7FA),
+      backgroundColor: const Color(0xFF061F33),
       body: Center(
         child: Card(
           margin: const EdgeInsets.all(24),
@@ -46,7 +46,7 @@ class _CrmOportunidadesPageState extends State<CrmOportunidadesPage> {
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: const [
-                Icon(Icons.lock_outline_rounded, size: 48, color: Color(0xFF0B3B63)),
+                Icon(Icons.lock_outline_rounded, size: 48, color: Color(0xFF0A4268)),
                 SizedBox(height: 12),
                 Text('Acceso no autorizado', style: TextStyle(fontSize: 21, fontWeight: FontWeight.w900)),
                 SizedBox(height: 6),
@@ -59,10 +59,10 @@ class _CrmOportunidadesPageState extends State<CrmOportunidadesPage> {
     );
   }
 
-  static const Color azul = Color(0xFF063B63);
-  static const Color azul2 = Color(0xFF1686E8);
-  static const Color fondo = Color(0xFFF4F7FA);
-  static const Color borde = Color(0xFFE0E7EF);
+  static const Color azul = Color(0xFF0A4268);
+  static const Color azul2 = Color(0xFF159FE8);
+  static const Color fondo = Color(0xFF061F33);
+  static const Color borde = Color(0xFF10516F);
   static const Color verde = Color(0xFF13B77A);
   static const Color naranja = Color(0xFFFFA726);
   static const Color rojo = Color(0xFFFF4D57);
@@ -204,7 +204,7 @@ class _CrmOportunidadesPageState extends State<CrmOportunidadesPage> {
               Text(
                 'Oportunidades',
                 style: TextStyle(
-                  color: azul,
+                  color: Colors.white,
                   fontSize: 24,
                   fontWeight: FontWeight.w900,
                 ),
@@ -212,7 +212,7 @@ class _CrmOportunidadesPageState extends State<CrmOportunidadesPage> {
               Text(
                 'Gestiona tus oportunidades de venta y convierte más proyectos.',
                 style: TextStyle(
-                  color: Color(0xFF6B7E93),
+                  color: Color(0xFFA9C1D5),
                   fontSize: 13,
                 ),
               ),
@@ -229,7 +229,7 @@ class _CrmOportunidadesPageState extends State<CrmOportunidadesPage> {
               hintText: 'Buscar cliente, proyecto, oportunidad...',
               prefixIcon: const Icon(Icons.search, size: 18),
               filled: true,
-              fillColor: Colors.white,
+              fillColor: const Color(0xFF0B304A),
               border: OutlineInputBorder(
                 borderRadius: BorderRadius.circular(10),
                 borderSide: const BorderSide(color: borde),
@@ -241,28 +241,6 @@ class _CrmOportunidadesPageState extends State<CrmOportunidadesPage> {
             ),
           ),
         ),
-        const SizedBox(width: 10),
-        const CircleAvatar(
-          radius: 18,
-          backgroundColor: azul,
-          child: Text(
-            'MR',
-            style: TextStyle(
-              color: Colors.white,
-              fontWeight: FontWeight.w900,
-            ),
-          ),
-        ),
-        const SizedBox(width: 8),
-        const Text(
-          'Michael Roque',
-          style: TextStyle(
-            color: azul,
-            fontWeight: FontWeight.w800,
-            fontSize: 13,
-          ),
-        ),
-        const Icon(Icons.keyboard_arrow_down, color: azul),
       ],
     );
   }
@@ -279,7 +257,7 @@ class _CrmOportunidadesPageState extends State<CrmOportunidadesPage> {
         height: 104,
         padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
         decoration: BoxDecoration(
-          color: Colors.white,
+          color: const Color(0xFF0B304A),
           borderRadius: BorderRadius.circular(12),
           border: Border.all(color: borde),
         ),
@@ -303,7 +281,7 @@ class _CrmOportunidadesPageState extends State<CrmOportunidadesPage> {
                   Text(
                     title,
                     style: const TextStyle(
-                      color: Color(0xFF6C8299),
+                      color: Color(0xFFA9C1D5),
                       fontSize: 11,
                       fontWeight: FontWeight.w700,
                     ),
@@ -312,7 +290,7 @@ class _CrmOportunidadesPageState extends State<CrmOportunidadesPage> {
                   Text(
                     value,
                     style: const TextStyle(
-                      color: azul,
+                      color: Colors.white,
                       fontSize: 22,
                       fontWeight: FontWeight.w900,
                     ),
@@ -351,7 +329,7 @@ class _CrmOportunidadesPageState extends State<CrmOportunidadesPage> {
     return Container(
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: const Color(0xFF0B304A),
         borderRadius: BorderRadius.circular(12),
         border: Border.all(color: borde),
       ),
@@ -370,7 +348,7 @@ class _CrmOportunidadesPageState extends State<CrmOportunidadesPage> {
                 hintText: 'Buscar oportunidad...',
                 prefixIcon: const Icon(Icons.search, size: 18),
                 filled: true,
-                fillColor: const Color(0xFFF7F9FC),
+                fillColor: const Color(0xFF061F33),
                 border: OutlineInputBorder(
                   borderRadius: BorderRadius.circular(8),
                   borderSide: BorderSide.none,
@@ -470,7 +448,7 @@ class _CrmOportunidadesPageState extends State<CrmOportunidadesPage> {
           Text(
             '$value%',
             style: const TextStyle(
-              color: azul,
+              color: Colors.white,
               fontSize: 10,
               fontWeight: FontWeight.w800,
             ),
@@ -482,7 +460,7 @@ class _CrmOportunidadesPageState extends State<CrmOportunidadesPage> {
               child: LinearProgressIndicator(
                 value: value / 100,
                 minHeight: 7,
-                backgroundColor: const Color(0xFFE3EBF3),
+                backgroundColor: const Color(0xFF16445F),
                 valueColor: const AlwaysStoppedAnimation<Color>(verde),
               ),
             ),
@@ -498,7 +476,7 @@ class _CrmOportunidadesPageState extends State<CrmOportunidadesPage> {
     return Container(
       width: double.infinity,
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: const Color(0xFF0B304A),
         borderRadius: BorderRadius.circular(12),
         border: Border.all(color: borde),
       ),
@@ -517,7 +495,7 @@ class _CrmOportunidadesPageState extends State<CrmOportunidadesPage> {
               Text(
                 'Oportunidades Comerciales (${rows.length})',
                 style: const TextStyle(
-                  color: azul,
+                  color: Colors.white,
                   fontSize: 17,
                   fontWeight: FontWeight.w900,
                 ),
@@ -529,16 +507,17 @@ class _CrmOportunidadesPageState extends State<CrmOportunidadesPage> {
             scrollDirection: Axis.horizontal,
             child: DataTable(
               headingRowColor: const WidgetStatePropertyAll(
-                Color(0xFFF7F9FC),
+                Color(0xFF061F33),
               ),
               columnSpacing: 22,
               dataRowMinHeight: 55,
               dataRowMaxHeight: 65,
               headingTextStyle: const TextStyle(
-                color: azul,
+                color: Colors.white,
                 fontSize: 10,
                 fontWeight: FontWeight.w900,
               ),
+              dataTextStyle: const TextStyle(color: Color(0xFFE6F0F7), fontSize: 10),
               columns: const [
                 DataColumn(label: Text('Cliente')),
                 DataColumn(label: Text('Proyecto / Oportunidad')),
@@ -563,7 +542,7 @@ class _CrmOportunidadesPageState extends State<CrmOportunidadesPage> {
                           maxLines: 2,
                           overflow: TextOverflow.ellipsis,
                           style: const TextStyle(
-                            color: azul,
+                            color: Colors.white,
                             fontSize: 10,
                             fontWeight: FontWeight.w800,
                           ),
@@ -585,7 +564,7 @@ class _CrmOportunidadesPageState extends State<CrmOportunidadesPage> {
                       Text(
                         _money(row['monto']),
                         style: const TextStyle(
-                          color: azul,
+                          color: Colors.white,
                           fontSize: 10,
                           fontWeight: FontWeight.w900,
                         ),
@@ -603,7 +582,7 @@ class _CrmOportunidadesPageState extends State<CrmOportunidadesPage> {
                       Text(
                         row['asesor'].toString(),
                         style: const TextStyle(
-                          color: azul,
+                          color: Colors.white,
                           fontSize: 10,
                           fontWeight: FontWeight.w700,
                         ),
@@ -626,7 +605,7 @@ class _CrmOportunidadesPageState extends State<CrmOportunidadesPage> {
                             onPressed: () => _eliminar(row),
                             icon: const Icon(
                               Icons.more_horiz,
-                              color: azul,
+                              color: Colors.white,
                               size: 18,
                             ),
                           ),
@@ -655,7 +634,7 @@ class _CrmOportunidadesPageState extends State<CrmOportunidadesPage> {
           width: double.infinity,
           padding: const EdgeInsets.all(14),
           decoration: BoxDecoration(
-            color: Colors.white,
+            color: const Color(0xFF0B304A),
             borderRadius: BorderRadius.circular(12),
             border: Border.all(color: borde),
           ),
@@ -669,7 +648,7 @@ class _CrmOportunidadesPageState extends State<CrmOportunidadesPage> {
                   Text(
                     'Top 5 oportunidades',
                     style: TextStyle(
-                      color: azul,
+                      color: Colors.white,
                       fontSize: 15,
                       fontWeight: FontWeight.w900,
                     ),
@@ -687,7 +666,7 @@ class _CrmOportunidadesPageState extends State<CrmOportunidadesPage> {
           width: double.infinity,
           padding: const EdgeInsets.all(14),
           decoration: BoxDecoration(
-            color: Colors.white,
+            color: const Color(0xFF0B304A),
             borderRadius: BorderRadius.circular(12),
             border: Border.all(color: borde),
           ),
@@ -705,7 +684,7 @@ class _CrmOportunidadesPageState extends State<CrmOportunidadesPage> {
                   Text(
                     'Actividades próximas',
                     style: TextStyle(
-                      color: azul,
+                      color: Colors.white,
                       fontSize: 15,
                       fontWeight: FontWeight.w900,
                     ),
@@ -752,13 +731,13 @@ class _CrmOportunidadesPageState extends State<CrmOportunidadesPage> {
             decoration: BoxDecoration(
               color: index == 1
                   ? naranja.withValues(alpha: .15)
-                  : const Color(0xFFF0F5FA),
+                  : const Color(0xFF0D3854),
               shape: BoxShape.circle,
             ),
             child: Text(
               '$index',
               style: const TextStyle(
-                color: azul,
+                color: Colors.white,
                 fontSize: 10,
                 fontWeight: FontWeight.w900,
               ),
@@ -774,7 +753,7 @@ class _CrmOportunidadesPageState extends State<CrmOportunidadesPage> {
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                   style: const TextStyle(
-                    color: azul,
+                    color: Colors.white,
                     fontSize: 10,
                     fontWeight: FontWeight.w900,
                   ),
@@ -784,7 +763,7 @@ class _CrmOportunidadesPageState extends State<CrmOportunidadesPage> {
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                   style: const TextStyle(
-                    color: Color(0xFF71869A),
+                    color: Color(0xFFA9C1D5),
                     fontSize: 9,
                   ),
                 ),
@@ -794,7 +773,7 @@ class _CrmOportunidadesPageState extends State<CrmOportunidadesPage> {
           Text(
             _money(row['monto']),
             style: const TextStyle(
-              color: azul,
+              color: Colors.white,
               fontSize: 9,
               fontWeight: FontWeight.w900,
             ),
@@ -889,7 +868,7 @@ class _CrmOportunidadesPageState extends State<CrmOportunidadesPage> {
   Widget build(BuildContext context) {
     if (_cargandoPermisosModulo) {
       return const Scaffold(
-        backgroundColor: Color(0xFFF4F7FA),
+        backgroundColor: Color(0xFF061F33),
         body: Center(child: CircularProgressIndicator()),
       );
     }
@@ -961,7 +940,7 @@ class _CrmOportunidadesPageState extends State<CrmOportunidadesPage> {
       builder: (_) => AlertDialog(
         title: const Text(
           'Oportunidad',
-          style: TextStyle(color: azul, fontWeight: FontWeight.w900),
+          style: TextStyle(color: Colors.white, fontWeight: FontWeight.w900),
         ),
         content: Text(
           '¿Qué deseas hacer con "${row['proyecto']}"?',
@@ -1008,7 +987,7 @@ class _ActivityPreview extends StatelessWidget {
             child: Text(
               time,
               style: const TextStyle(
-                color: Color(0xFF1686E8),
+                color: Color(0xFF159FE8),
                 fontSize: 10,
                 fontWeight: FontWeight.w900,
               ),
@@ -1017,7 +996,7 @@ class _ActivityPreview extends StatelessWidget {
           const Icon(
             Icons.event_note_outlined,
             size: 16,
-            color: Color(0xFF1686E8),
+            color: Color(0xFF159FE8),
           ),
           const SizedBox(width: 6),
           Expanded(
@@ -1029,7 +1008,7 @@ class _ActivityPreview extends StatelessWidget {
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                   style: const TextStyle(
-                    color: Color(0xFF063B63),
+                    color: Color(0xFF0A4268),
                     fontSize: 10,
                     fontWeight: FontWeight.w800,
                   ),
@@ -1039,7 +1018,7 @@ class _ActivityPreview extends StatelessWidget {
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                   style: const TextStyle(
-                    color: Color(0xFF71869A),
+                    color: Color(0xFFA9C1D5),
                     fontSize: 9,
                   ),
                 ),
@@ -1064,8 +1043,8 @@ class _OportunidadDialog extends StatefulWidget {
 }
 
 class _OportunidadDialogState extends State<_OportunidadDialog> {
-  static const Color azul = Color(0xFF063B63);
-  static const Color borde = Color(0xFFE0E7EF);
+  static const Color azul = Color(0xFF0A4268);
+  static const Color borde = Color(0xFF10516F);
   final _cliente = TextEditingController();
   final _proyecto = TextEditingController();
   final _monto = TextEditingController();
@@ -1117,7 +1096,7 @@ class _OportunidadDialogState extends State<_OportunidadDialog> {
       hintText: hint,
       prefixIcon: icon == null ? null : Icon(icon, color: azul),
       filled: true,
-      fillColor: const Color(0xFFF9FBFD),
+      fillColor: const Color(0xFF0B304A),
       contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 16),
       border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: const BorderSide(color: borde)),
       enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: const BorderSide(color: borde)),
@@ -1174,7 +1153,7 @@ class _OportunidadDialogState extends State<_OportunidadDialog> {
             Container(
               padding: const EdgeInsets.fromLTRB(24, 18, 18, 18),
               decoration: const BoxDecoration(
-                color: azul,
+                color: Colors.white,
                 borderRadius: BorderRadius.only(topLeft: Radius.circular(20), topRight: Radius.circular(20)),
               ),
               child: Row(
@@ -1230,9 +1209,9 @@ class _OportunidadDialogState extends State<_OportunidadDialog> {
                             if (_clienteSeleccionado.isNotEmpty) setState(() => _clienteSeleccionado = '');
                           },
                           decoration: _campo(label: 'Cliente *', hint: 'Escribe nombre, RUC o código', icon: Icons.business_outlined).copyWith(
-                            suffixIcon: const Icon(Icons.search, color: Color(0xFF6C8299)),
+                            suffixIcon: const Icon(Icons.search, color: Color(0xFFA9C1D5)),
                             helperText: _clienteSeleccionado.isEmpty ? 'Busca y selecciona un cliente' : 'Cliente seleccionado',
-                            helperStyle: TextStyle(color: _clienteSeleccionado.isEmpty ? const Color(0xFF71869A) : Colors.green),
+                            helperStyle: TextStyle(color: _clienteSeleccionado.isEmpty ? const Color(0xFFA9C1D5) : Colors.green),
                           ),
                         );
                       },
@@ -1254,7 +1233,7 @@ class _OportunidadDialogState extends State<_OportunidadDialog> {
                                 itemBuilder: (_, i) {
                                   final c = lista[i];
                                   return ListTile(
-                                    leading: const CircleAvatar(backgroundColor: Color(0xFFEAF3FA), child: Icon(Icons.business_outlined, color: azul)),
+                                    leading: const CircleAvatar(backgroundColor: Color(0xFF103F5B), child: Icon(Icons.business_outlined, color: azul)),
                                     title: Text(_nombre(c), maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontWeight: FontWeight.w800)),
                                     subtitle: Text(_codigo(c).isEmpty ? 'Cliente registrado' : 'RUC / Código: ${_codigo(c)}'),
                                     trailing: const Icon(Icons.arrow_forward_ios, size: 14),
@@ -1295,7 +1274,7 @@ class _OportunidadDialogState extends State<_OportunidadDialog> {
                             child: InputDecorator(
                               decoration: _campo(label: 'Cierre estimado', hint: '', icon: Icons.calendar_today_outlined),
                               child: Text(_cierre.text.isEmpty ? 'Seleccionar fecha' : _cierre.text,
-                                style: TextStyle(color: _cierre.text.isEmpty ? const Color(0xFF71869A) : azul, fontWeight: _cierre.text.isEmpty ? FontWeight.w400 : FontWeight.w800)),
+                                style: TextStyle(color: _cierre.text.isEmpty ? const Color(0xFFA9C1D5) : azul, fontWeight: _cierre.text.isEmpty ? FontWeight.w400 : FontWeight.w800)),
                             ),
                           ),
                         ),
@@ -1315,7 +1294,7 @@ class _OportunidadDialogState extends State<_OportunidadDialog> {
             ),
             Container(
               padding: const EdgeInsets.fromLTRB(24, 12, 24, 16),
-              decoration: const BoxDecoration(color: Color(0xFFF7F9FC), borderRadius: BorderRadius.only(bottomLeft: Radius.circular(20), bottomRight: Radius.circular(20))),
+              decoration: const BoxDecoration(color: Color(0xFF061F33), borderRadius: BorderRadius.only(bottomLeft: Radius.circular(20), bottomRight: Radius.circular(20))),
               child: Row(
                 mainAxisAlignment: MainAxisAlignment.end,
                 children: [

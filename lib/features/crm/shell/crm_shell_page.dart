@@ -12,6 +12,7 @@ import '../facturacion/facturacion_importacion_page.dart';
 import '../cobranza/crm_cobranza_page.dart';
 import '../comisiones/crm_comisiones_page.dart';
 import '../reportes/crm_reportes_page.dart';
+import '../configuracion/crm_catalogos_page.dart';
 import '../../../services/sesion.dart';
 import '../../../services/supabase/supabase_service.dart';
 import '../../../screens/login/login_page.dart';
@@ -61,6 +62,7 @@ class _CrmShellPageState extends State<CrmShellPage> {
   // Cobranza no se muestra a usuarios no administradores.
   List<int> get _indicesMenuVisibles => List<int>.generate(_items.length, (i) => i)
       .where((i) {
+        if (i == 12) return _esAdministrador;
         if (_esAdministrador || i == 0) return true;
         final codigo = _codigoModuloPorIndice[i];
         if (codigo == null) return true;
@@ -145,6 +147,7 @@ class _CrmShellPageState extends State<CrmShellPage> {
     _CrmMenuItem(Icons.account_balance_wallet_rounded, 'Cobranza'),
     _CrmMenuItem(Icons.percent_rounded, 'Comisiones'),
     _CrmMenuItem(Icons.bar_chart_rounded, 'Reportes'),
+    _CrmMenuItem(Icons.tune_rounded, 'Catálogos'),
   ];
 
   @override
@@ -219,6 +222,10 @@ class _CrmShellPageState extends State<CrmShellPage> {
         return const ComisionesProductosPage();
       case 11:
         return const CrmReportesPage();
+      case 12:
+        return _esAdministrador
+            ? const CrmCatalogosPage()
+            : const CrmDashboardPage(embebido: true);
       default:
         return const CrmDashboardPage(embebido: true);
     }
@@ -355,6 +362,12 @@ class _CrmShellPageState extends State<CrmShellPage> {
           const Text('ELCOPE', style: TextStyle(color: Colors.white, fontSize: 25, fontWeight: FontWeight.w900, fontStyle: FontStyle.italic)),
           const SizedBox(width: 12),
           const Text('CRM', style: TextStyle(color: Colors.white, fontSize: 19, fontWeight: FontWeight.w400)),
+          if (_indice == 12) ...[
+            const SizedBox(width: 14),
+            Container(width: 1, height: 26, color: Colors.white.withValues(alpha: .28)),
+            const SizedBox(width: 14),
+            const Text('Catálogos', style: TextStyle(color: Colors.white, fontSize: 17, fontWeight: FontWeight.w800)),
+          ],
           if (_indice == 9) ...[
             const SizedBox(width: 14),
             Container(width: 1, height: 26, color: Colors.white.withValues(alpha: .28)),

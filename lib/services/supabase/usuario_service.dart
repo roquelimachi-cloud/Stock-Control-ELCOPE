@@ -1,6 +1,7 @@
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../../models/usuario.dart';
+import '../sesion.dart';
 import 'supabase_service.dart';
 
 class UsuarioService {
@@ -124,20 +125,23 @@ class UsuarioService {
     String usuario,
     String password,
   ) async {
-    final respuesta = await db
-        .from('usuarios')
-        .select()
-        // Usuario sin distinguir mayúsculas/minúsculas; contraseña sí distingue.
-        .ilike('usuario', usuario.trim())
-        .eq('password', password);
-
-    if (respuesta.isEmpty) {
-      return null;
-    }
-
-    return Usuario.fromJson(
-      respuesta.first,
+    // El login lo valida el servidor. La contraseña nunca se consulta desde Flutter.
+    final response = await db.functions.invoke(
+      'crm-cliente360',
+      body: {
+        'action': 'login',
+        'usuario': usuario.trim(),
+        'password': password,
+      },
     );
+    final payload = Map<String, dynamic>.from(response.data as Map);
+    final userData = payload['usuario'];
+    final token = payload['token']?.toString();
+    if (userData is! Map || token == null || token.isEmpty) return null;
+
+    // El token queda solo en memoria durante la sesión actual.
+    Sesion.tokenCliente360 = token;
+    return Usuario.fromJson(Map<String, dynamic>.from(userData));
   }
 
   // ============================================================

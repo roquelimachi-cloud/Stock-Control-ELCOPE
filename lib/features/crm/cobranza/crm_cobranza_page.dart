@@ -62,6 +62,7 @@ class _CrmCobranzaPageState extends State<CrmCobranzaPage> {
   bool _cargandoComisiones = false;
   bool _comisionesCargadas = false;
   DateTime _fechaCorteComision = DateTime.now();
+  DateTime _fechaDesdeComision = DateTime(DateTime.now().year, 1, 1);
   List<Map<String, dynamic>> _filasComision = [];
   String? _errorComisiones;
   final Map<String, List<String>> opcionesFiltros = {}; 
@@ -246,38 +247,10 @@ class _CrmCobranzaPageState extends State<CrmCobranzaPage> {
     final departamento = _normalizar(_s(cl?['departamento']));
     final sector = _normalizar(_s(cl?['sector']));
     final canal = _normalizar(_s(x['canal']));
-    final vendedorFila = _normalizar(_s(x['vendedor']));
-
-    // Licitaciones conserva su ámbito específico.
     if (_esLicitacion) return sector.contains('LICIT') || canal.contains('LICIT');
-
-    // Primero se limita por zona. Jefe Lima incluye Lima y Callao;
-    // Jefe Provincia excluye ambas regiones.
-    if (_esJefeLima && departamento != 'LIMA' && departamento != 'CALLAO') {
-      return false;
-    }
-    if (_esJefeProvincia &&
-        (departamento.isEmpty || departamento == 'LIMA' || departamento == 'CALLAO')) {
-      return false;
-    }
-
-    // Para jefaturas también se respeta la asignación de vendedores configurada
-    // en usuario_permisos. Si existe una lista asignada, no se muestran vendedores
-    // ajenos a ella. La zona sigue siendo obligatoria aunque la lista esté vacía.
-    if (esJefatura &&
-        vendedoresPermitidos != null &&
-        vendedoresPermitidos!.isNotEmpty &&
-        !vendedoresPermitidos!.any((v) => _normalizar(v) == vendedorFila)) {
-      return false;
-    }
-
-    // Los perfiles comerciales individuales solo ven su propia cartera.
-    if (_esPerfilConCarteraPropia &&
-        (vendedoresPermitidos == null ||
-            vendedoresPermitidos!.isEmpty ||
-            !vendedoresPermitidos!.any((v) => _normalizar(v) == vendedorFila))) {
-      return false;
-    }
+    if (_esJefeLima) return departamento == 'LIMA' || departamento == 'CALLAO';
+    if (_esJefeProvincia) return departamento.isNotEmpty && departamento != 'LIMA' && departamento != 'CALLAO';
+    if (_esPerfilConCarteraPropia && (vendedoresPermitidos == null || vendedoresPermitidos!.isEmpty || !vendedoresPermitidos!.any((v) => _normalizar(v) == _normalizar(_s(x['vendedor']))))) return false;
     return true;
   }
 
@@ -1216,7 +1189,6 @@ class _CrmCobranzaPageState extends State<CrmCobranzaPage> {
         _tabButton(2, Icons.warning_amber_rounded, 'Vencidos'),
         _tabButton(3, Icons.task_alt, 'Pagados'),
         _tabButton(4, Icons.percent, 'Comisiones'),
-        _tabButton(5, Icons.account_balance_outlined, 'Por cobrar'),
       ]),
     ),
   );
@@ -1263,6 +1235,21 @@ class _CrmCobranzaPageState extends State<CrmCobranzaPage> {
     );
   }
 
+  Future<void> _seleccionarDesdeComision() async {
+    final seleccion = await showDatePicker(
+      context: context,
+      initialDate: _fechaDesdeComision,
+      firstDate: DateTime(2020),
+      lastDate: _fechaCorteComision,
+      helpText: 'Fecha inicial de comisiones',
+      cancelText: 'Cancelar',
+      confirmText: 'Aplicar desde',
+    );
+    if (seleccion == null) return;
+    setState(() => _fechaDesdeComision = DateTime(seleccion.year, seleccion.month, seleccion.day));
+    await _cargarComisiones();
+  }
+
   Future<void> _seleccionarCorteComision() async {
     final seleccion = await showDatePicker(
       context: context,
@@ -1289,6 +1276,11 @@ class _CrmCobranzaPageState extends State<CrmCobranzaPage> {
       _errorComisiones = null;
     });
     try {
+      final desde = DateTime(
+        _fechaDesdeComision.year,
+        _fechaDesdeComision.month,
+        _fechaDesdeComision.day,
+      );
       final corte = DateTime(
         _fechaCorteComision.year,
         _fechaCorteComision.month,
@@ -1309,6 +1301,7 @@ class _CrmCobranzaPageState extends State<CrmCobranzaPage> {
           consulta = consulta.eq('vendedor', vendedor);
         }
         final lote = await consulta
+            .gte('fecha_factura', DateFormat('yyyy-MM-dd').format(desde))
             .lte('fecha_factura', DateFormat('yyyy-MM-dd').format(corte))
             .order('fecha_factura', ascending: false)
             .range(inicioPaginaComision, inicioPaginaComision + tamanoPaginaComision - 1);
@@ -1475,7 +1468,7 @@ class _CrmCobranzaPageState extends State<CrmCobranzaPage> {
         margin: const pw.EdgeInsets.all(22),
         header: (_) => pw.Column(crossAxisAlignment: pw.CrossAxisAlignment.start, children: [
           pw.Text('ELCOPE CRM · Comisiones por cobranza', style: pw.TextStyle(fontSize: 15, fontWeight: pw.FontWeight.bold)),
-          pw.Text('Fecha de corte: ${date.format(_fechaCorteComision)} · Generado: ${date.format(DateTime.now())}', style: const pw.TextStyle(fontSize: 9)),
+          pw.Text('Periodo: ${date.format(_fechaDesdeComision)} al ${date.format(_fechaCorteComision)} · Generado: ${date.format(DateTime.now())}', style: const pw.TextStyle(fontSize: 9)),
           pw.SizedBox(height: 8),
         ]),
         build: (_) => [
@@ -1521,12 +1514,17 @@ class _CrmCobranzaPageState extends State<CrmCobranzaPage> {
             children: [
               Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
                 const Text('Comisiones por cobranza', style: TextStyle(color: texto, fontSize: 15, fontWeight: FontWeight.w900)),
-                Text('Facturas emitidas hasta el corte que figuran totalmente pagadas en la cartera. Tasa por producto y vigencia.', style: const TextStyle(color: textoSuave, fontSize: 11)),
+                Text('Facturas del periodo que figuran totalmente pagadas. Tasa por producto y vigencia.', style: const TextStyle(color: textoSuave, fontSize: 11)),
               ]),
               OutlinedButton.icon(
-                onPressed: _seleccionarCorteComision,
+                onPressed: _seleccionarDesdeComision,
                 icon: const Icon(Icons.calendar_month_outlined),
-                label: Text('Corte: ${date.format(_fechaCorteComision)}'),
+                label: Text('Desde: ${date.format(_fechaDesdeComision)}'),
+              ),
+              OutlinedButton.icon(
+                onPressed: _seleccionarCorteComision,
+                icon: const Icon(Icons.event_outlined),
+                label: Text('Hasta: ${date.format(_fechaCorteComision)}'),
               ),
               IconButton(
                 tooltip: 'Actualizar comisiones',
@@ -1653,7 +1651,6 @@ class _CrmCobranzaPageState extends State<CrmCobranzaPage> {
     if (_tabSeleccionada == 1) return _tablaSimple('Compromisos de pago', rows.where((r) => _n(r['saldo']) > 0 && _s(r['estado']) == 'PENDIENTE').toList());
     if (_tabSeleccionada == 2) return _tablaSimple('Vencidos', rows.where((r) { final e = _s(r['estado']).toUpperCase(); return e == 'VENCIDO' || e == 'VENCIDO PARCIAL'; }).toList());
     if (_tabSeleccionada == 3) return _tablaSimple('Documentos pagados', rows.where((r) => _s(r['estado']).toUpperCase() == 'PAGADO' || _s(r['estado']).toUpperCase() == 'PAGADA' || _n(r['saldo']) <= 0.01).toList());
-    if (_tabSeleccionada == 5) return _tablaSimple('Por cobrar', rows.where((r) { final e = _s(r['estado']).toUpperCase(); return _n(r['saldo']) > 0.01 && e != 'VENCIDO' && e != 'VENCIDO PARCIAL' && e != 'PAGADO' && e != 'PAGADA'; }).toList());
     if (!_comisionesCargadas && !_cargandoComisiones && _errorComisiones == null) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (mounted && _tabSeleccionada == 4 && !_cargandoComisiones && _filasComision.isEmpty && _errorComisiones == null) {

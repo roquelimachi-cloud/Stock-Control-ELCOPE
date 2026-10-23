@@ -1,3 +1,4 @@
+
 name: stock_control_elcope
 description: Sistema Control de Stock ELCOPE
 publish_to: 'none'
@@ -98,6 +99,7 @@ flutter:
   assets:
     - .env
     - assets/images/
+    - assets/images/reportes/
     - assets/crm/images/logo_elcope.png
     - assets/crm/images/amperio.png
 

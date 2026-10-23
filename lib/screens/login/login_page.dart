@@ -4,6 +4,7 @@ import '../../services/supabase/usuario_service.dart';
 import '../../models/usuario.dart';
 import '../dashboard/stock_dashboard_moderno.dart';
 import '../../services/sesion.dart';
+import '../../services/supabase/supabase_service.dart';
 class LoginPage extends StatefulWidget {
   const LoginPage({super.key});
 
@@ -48,6 +49,27 @@ if (!mounted) return;
 if (usuario != null) {
   // Guardar el usuario en la sesión
   Sesion.usuarioActual = usuario;
+  // Token propio para acceder a Cliente 360° a través de la Edge Function.
+  try {
+    final response = await SupabaseService.client.functions.invoke(
+      'crm-cliente360',
+      body: {
+        'action': 'login',
+        'usuario': usuarioController.text.trim(),
+        'password': passwordController.text.trim(),
+      },
+    );
+    final payload = response.data;
+    if (response.status < 200 || response.status >= 300 ||
+        payload is! Map || (payload['token']?.toString().isNotEmpty != true)) {
+      throw Exception('No se pudo iniciar la sesión segura de Cliente 360°: ${payload is Map ? payload['error'] ?? 'respuesta inválida' : 'respuesta inválida'}');
+    }
+    Sesion.tokenCliente360 = payload['token'].toString();
+  } catch (e) {
+    Sesion.usuarioActual = null;
+    Sesion.tokenCliente360 = null;
+    rethrow;
+  }
 
   Navigator.pushReplacement(
     context,

@@ -87,9 +87,11 @@ class _CrmClientesPageState extends State<CrmClientesPage> {
     if (vendedorSesion.isNotEmpty && rol != 'jefe lima' && rol != 'jefe provincia' && rol != 'gerencia') {
       _vendedor = vendedorSesion;
     }
-    // Jefe Lima inicia y permanece limitado al departamento LIMA.
-    // Puede consultar clientes de cualquier vendedor de Lima, sin ampliar a otras regiones.
-    _departamento = rol == 'jefe lima' ? 'LIMA' : 'TODOS';
+    // La jefatura inicia con todos los departamentos para ver la cartera
+    // completa de sus vendedores autorizados. El alcance sigue restringido
+    // por _vendedoresPermitidos() y por p_vendedores_permitidos en Supabase.
+    // El usuario puede elegir LIMA manualmente si necesita ese filtro.
+    _departamento = 'TODOS';
     _cargar();
   }
 
@@ -184,9 +186,8 @@ class _CrmClientesPageState extends State<CrmClientesPage> {
     final rol = Sesion.rol.trim().toLowerCase();
     final vendedorSesion = Sesion.vendedor.trim();
 
-    // Gerencia puede consultar todo. Jefe Lima puede consultar cualquier vendedor
-    // de Lima; el departamento se fuerza a LIMA en todas las RPC de este módulo.
-    if (rol == 'gerencia' || rol == 'jefe lima') {
+    // Gerencia puede consultar todo.
+    if (rol == 'gerencia') {
       return null;
     }
 
@@ -242,74 +243,45 @@ class _CrmClientesPageState extends State<CrmClientesPage> {
         _ => 'TODAS',
       };
 
-      // Carga inicial acotada: no descargar toda la cartera al abrir la pantalla.
-      // La RPC usa el resumen de facturación en Supabase (no recalcula facturas
-      // una por una). Se conservan los filtros de acceso en el servidor.
+      // Carga todas las páginas de la consulta filtrada. El límite de 200 es
+      // por llamada a Supabase, no el total de clientes que debe ver el usuario.
       const int pageSize = 200;
-      final result = await _db.rpc(
-        'crm_obtener_clientes_cartera_fast_v1',
-        params: {
-          'p_busqueda': _busqueda.trim(),
-          'p_vendedor': _vendedor,
-          'p_sector': _sector,
-          'p_giro': _giro,
-          'p_departamento': Sesion.rol.trim().toLowerCase() == 'jefe lima' ? 'LIMA' : _departamento,
-          'p_estado': _estado,
-          'p_segmento': 'TODOS',
-          'p_solo_activos': _soloActivos,
-          'p_limit': pageSize,
-          'p_offset': 0,
-          'p_orden': _orden,
-          'p_anio': _anio == 'TODOS' ? null : int.tryParse(_anio),
-          'p_vendedores_permitidos': vendedoresPermitidos,
-          'p_compra_filtro': compraFiltroRpc,
-        },
-      );
-      final clientes = List<Map<String, dynamic>>.from(
-        (result as List).map((row) => Map<String, dynamic>.from(row as Map)),
-      );
-
-      // El total de cartera se calcula en Supabase sin LIMIT/OFFSET.
-      // Así la cifra no queda falsamente limitada a los 200 registros de la tabla.
-      final countParams = <String, dynamic>{
-        'p_busqueda': _busqueda.trim(),
-        'p_vendedor': _vendedor,
-        'p_sector': _sector,
-        'p_giro': _giro,
-        'p_departamento': Sesion.rol.trim().toLowerCase() == 'jefe lima' ? 'LIMA' : _departamento,
-        'p_estado': _estado,
-        'p_solo_activos': _soloActivos,
-        'p_vendedores_permitidos': vendedoresPermitidos,
-        'p_compra_filtro': compraFiltroRpc,
-      };
-      final totalResult = await _db.rpc(
-        'crm_contar_clientes_cartera_fast_v1',
-        params: countParams,
-      );
-      final totalCartera = totalResult is num
-          ? totalResult.toInt()
-          : int.tryParse(totalResult.toString()) ?? clientes.length;
-
-      // El total de activos se consulta aparte para que el KPI sea exacto
-      // incluso cuando el filtro "Solo clientes activos" esté desactivado.
-      final activosParams = Map<String, dynamic>.from(countParams)
-        ..['p_solo_activos'] = true;
-      final activosResult = await _db.rpc(
-        'crm_contar_clientes_cartera_fast_v1',
-        params: activosParams,
-      );
-      final totalActivos = activosResult is num
-          ? activosResult.toInt()
-          : int.tryParse(activosResult.toString()) ?? clientes.where((c) => c['activo'] == true).length;
-
-      for (final c in clientes) {
-        final v = _s(c['vendedor']);
-        if (v.isNotEmpty) vendedoresOpciones.add(v);
+      final clientes = <Map<String, dynamic>>[];
+      var offset = 0;
+      while (true) {
+        final result = await _db.rpc(
+          'crm_obtener_clientes_cartera_fast_v1',
+          params: {
+            'p_busqueda': _busqueda.trim(),
+            'p_vendedor': _vendedor,
+            'p_sector': _sector,
+            'p_giro': _giro,
+            'p_departamento': _departamento,
+            'p_estado': _estado,
+            'p_segmento': 'TODOS',
+            'p_solo_activos': _soloActivos,
+            'p_limit': pageSize,
+            'p_offset': offset,
+            'p_orden': _orden,
+            'p_anio': _anio == 'TODOS' ? null : int.tryParse(_anio),
+            'p_vendedores_permitidos': vendedoresPermitidos,
+            'p_compra_filtro': compraFiltroRpc,
+          },
+        );
+        final page = List<Map<String, dynamic>>.from(
+          (result as List).map((row) => Map<String, dynamic>.from(row as Map)),
+        );
+        clientes.addAll(page);
+        for (final c in page) {
+          final v = _s(c['vendedor']);
+          if (v.isNotEmpty) vendedoresOpciones.add(v);
+        }
+        if (page.length < pageSize) break;
+        offset += page.length;
       }
 
-      // Solo se consultan indicadores de gestión de los clientes de esta página.
-      // Antes se recorrían todas las páginas y se consultaban las banderas de
-      // cada cliente antes de mostrar la pantalla, provocando esperas largas.
+      // Las banderas se consultan por bloques para que las estadísticas y el
+      // gráfico se calculen con toda la cartera filtrada, no solo la primera página.
       const int flagsBatchSize = 200;
       for (var start = 0; start < clientes.length; start += flagsBatchSize) {
         final end = (start + flagsBatchSize < clientes.length)
@@ -361,9 +333,9 @@ class _CrmClientesPageState extends State<CrmClientesPage> {
           !_b(c['tiene_whatsapp']) && !_b(c['tiene_correo']) && !_b(c['tiene_visita'])).length;
       final oportunidades = clientes.where((c) => _b(c['tiene_oportunidad'])).length;
       final gestionStats = <String, dynamic>{
-        'total': totalCartera,
-        'activos': totalActivos,
-        'inactivos': (totalCartera - totalActivos).clamp(0, totalCartera),
+        'total': clientes.length,
+        'activos': activos,
+        'inactivos': clientes.length - activos,
         'sin_llamada': sinLlamada,
         'sin_whatsapp': sinWhatsapp,
         'sin_correo': sinCorreo,
@@ -410,7 +382,7 @@ class _CrmClientesPageState extends State<CrmClientesPage> {
           ..addAll(mensual);
         _facturacionTotal = clientes.fold<double>(0, (sum, c) => sum + _n(c['facturacion']));
         _pesoTotal = clientes.fold<double>(0, (sum, c) => sum + _n(c['peso_kg']));
-        _totalClientes = totalCartera;
+        _totalClientes = clientes.length;
         _conFacturacion = clientes.where((c) => _n(c['facturacion']) > 0).length;
         _facturacionPorCliente = {};
         _pesoPorCliente = {};
@@ -425,7 +397,7 @@ class _CrmClientesPageState extends State<CrmClientesPage> {
           if (fecha != null) _ultimaCompraPorCliente[key] = fecha;
         }
         _pagina = 0;
-        _haySiguiente = clientes.length == pageSize;
+        _haySiguiente = _clientesVisibles.length > _porPagina;
         _cargando = false;
       });
     } catch (e) {
@@ -561,18 +533,6 @@ class _CrmClientesPageState extends State<CrmClientesPage> {
       _mensaje('Consultando todos los clientes que coinciden con los filtros...');
 
       final vendedoresPermitidos = await _vendedoresPermitidos();
-      final compraFiltroRpc = switch (_ultimaCompraFiltro) {
-        'SIN_VENTAS' => 'SIN VENTAS',
-        'CON_VENTAS' => 'CON VENTAS',
-        '0_30' => '0-30 DIAS',
-        '31_60' => '31-60 DIAS',
-        '61_90' => '61-90 DIAS',
-        'MAS_30' => 'MAS DE 30 DIAS',
-        'MAS_60' => 'MAS DE 60 DIAS',
-        'MAS_90' => 'MAS DE 90 DIAS',
-        _ => 'TODAS',
-      };
-
       // La pantalla carga solo 200 clientes para mantenerla ágil.
       // La exportación, en cambio, recorre la RPC por páginas hasta obtenerlos todos.
       const pageSize = 200;
@@ -586,7 +546,7 @@ class _CrmClientesPageState extends State<CrmClientesPage> {
             'p_vendedor': _vendedor,
             'p_sector': _sector,
             'p_giro': _giro,
-            'p_departamento': Sesion.rol.trim().toLowerCase() == 'jefe lima' ? 'LIMA' : _departamento,
+            'p_departamento': _departamento,
             'p_estado': _estado,
             'p_segmento': 'TODOS',
             'p_solo_activos': _soloActivos,
@@ -595,7 +555,7 @@ class _CrmClientesPageState extends State<CrmClientesPage> {
             'p_orden': _orden,
             'p_anio': _anio == 'TODOS' ? null : int.tryParse(_anio),
             'p_vendedores_permitidos': vendedoresPermitidos,
-            'p_compra_filtro': compraFiltroRpc,
+            'p_compra_filtro': 'TODAS',
           },
         );
         final page = List<Map<String, dynamic>>.from(
@@ -615,36 +575,79 @@ class _CrmClientesPageState extends State<CrmClientesPage> {
       }
 
       final excel = Excel.createExcel();
-      final sheet = excel['Clientes'];
-      sheet.appendRow([
-        TextCellValue('Código'),
-        TextCellValue('RUC'),
-        TextCellValue('Cliente'),
-        TextCellValue('Vendedor'),
-        TextCellValue('Sector'),
-        TextCellValue('Giro'),
-        TextCellValue('Departamento'),
-        TextCellValue('Facturación'),
-        TextCellValue('Peso (kg)'),
-        TextCellValue('Última compra'),
-        TextCellValue('Estado'),
-      ]);
 
-      for (final c in todos) {
-        final fecha = _ultimaCompra(c);
+      // Exporta un libro con una pestana por cada filtro de Última compra.
+      // Se conservan los demás filtros seleccionados (vendedor, año, sector, etc.).
+      final hoy = DateTime.now();
+      final pestanas = <({String nombre, bool Function(Map<String, dynamic>) incluir})>[
+        (nombre: 'Todas las compras', incluir: (c) => true),
+        (nombre: 'Sin ventas', incluir: (c) => _ultimaCompra(c) == null),
+        (nombre: 'Con ventas', incluir: (c) => _ultimaCompra(c) != null),
+        (nombre: 'Compra 0-30 días', incluir: (c) {
+          final f = _ultimaCompra(c);
+          if (f == null) return false;
+          final d = hoy.difference(f).inDays;
+          return d >= 0 && d <= 30;
+        }),
+        (nombre: 'Compra 31-60 días', incluir: (c) {
+          final f = _ultimaCompra(c);
+          if (f == null) return false;
+          final d = hoy.difference(f).inDays;
+          return d >= 31 && d <= 60;
+        }),
+        (nombre: 'Compra 61-90 días', incluir: (c) {
+          final f = _ultimaCompra(c);
+          if (f == null) return false;
+          final d = hoy.difference(f).inDays;
+          return d >= 61 && d <= 90;
+        }),
+        (nombre: 'Sin compra > 30 días', incluir: (c) {
+          final f = _ultimaCompra(c);
+          return f != null && hoy.difference(f).inDays > 30;
+        }),
+        (nombre: 'Sin compra > 60 días', incluir: (c) {
+          final f = _ultimaCompra(c);
+          return f != null && hoy.difference(f).inDays > 60;
+        }),
+        (nombre: 'Sin compra > 90 días', incluir: (c) {
+          final f = _ultimaCompra(c);
+          return f != null && hoy.difference(f).inDays > 90;
+        }),
+      ];
+
+      for (final pestana in pestanas) {
+        final sheet = excel[pestana.nombre];
         sheet.appendRow([
-          TextCellValue(_s(c['codigo'])),
-          TextCellValue(_s(c['ruc'])),
-          TextCellValue(_nombreCliente(c)),
-          TextCellValue(_s(c['vendedor'])),
-          TextCellValue(_s(c['sector'])),
-          TextCellValue(_s(c['giro'])),
-          TextCellValue(_s(c['departamento'])),
-          DoubleCellValue(_facturacionCliente(c)),
-          DoubleCellValue(_pesoCliente(c)),
-          TextCellValue(fecha == null ? '' : DateFormat('dd/MM/yyyy').format(fecha)),
-          TextCellValue(c['activo'] == true ? 'ACTIVO' : 'INACTIVO'),
+          TextCellValue('Código'),
+          TextCellValue('RUC'),
+          TextCellValue('Cliente'),
+          TextCellValue('Vendedor'),
+          TextCellValue('Sector'),
+          TextCellValue('Giro'),
+          TextCellValue('Departamento'),
+          TextCellValue('Facturación'),
+          TextCellValue('Peso (kg)'),
+          TextCellValue('Última compra'),
+          TextCellValue('Estado'),
         ]);
+
+        final clientesPestana = todos.where(pestana.incluir);
+        for (final c in clientesPestana) {
+          final fecha = _ultimaCompra(c);
+          sheet.appendRow([
+            TextCellValue(_s(c['codigo'])),
+            TextCellValue(_s(c['ruc'])),
+            TextCellValue(_nombreCliente(c)),
+            TextCellValue(_s(c['vendedor'])),
+            TextCellValue(_s(c['sector'])),
+            TextCellValue(_s(c['giro'])),
+            TextCellValue(_s(c['departamento'])),
+            DoubleCellValue(_facturacionCliente(c)),
+            DoubleCellValue(_pesoCliente(c)),
+            TextCellValue(fecha == null ? '' : DateFormat('dd/MM/yyyy').format(fecha)),
+            TextCellValue(c['activo'] == true ? 'ACTIVO' : 'INACTIVO'),
+          ]);
+        }
       }
 
       final bytes = excel.encode();
@@ -658,7 +661,7 @@ class _CrmClientesPageState extends State<CrmClientesPage> {
       if (ruta == null) return;
       final path = ruta.toLowerCase().endsWith('.xlsx') ? ruta : '$ruta.xlsx';
       await File(path).writeAsBytes(bytes, flush: true);
-      _mensaje('Excel generado correctamente: ${todos.length} clientes exportados.');
+      _mensaje('Excel generado correctamente: ${todos.length} clientes distribuidos en 9 pestanas.');
     } catch (e) {
       _mensaje('Error al exportar Excel: $e', error: true);
     } finally {
@@ -1579,6 +1582,7 @@ class _CrmClientesPageState extends State<CrmClientesPage> {
             runSpacing: 6,
             children: [
               field('Vendedor', _vendedor, _vendedoresOpciones, (v) => _actualizarFiltro(() => _vendedor = v)),
+              field('Año', _anio, ['TODOS', ...List.generate(7, (i) => (DateTime.now().year - i).toString())], (v) => _actualizarFiltro(() => _anio = v)),
               field('Sector', _sector, _opcionesLocales('sector'), (v) => _actualizarFiltro(() => _sector = v)),
               field('Giro', _giro, _opcionesLocales('giro'), (v) => _actualizarFiltro(() => _giro = v)),
               field('Departamento', _departamento, _opcionesLocales('departamento'), (v) => _actualizarFiltro(() => _departamento = v)),
@@ -1601,6 +1605,7 @@ class _CrmClientesPageState extends State<CrmClientesPage> {
                       _busqueda = '';
                       _vendedor = Sesion.vendedor.trim().isEmpty ? 'TODOS' : Sesion.vendedor.trim();
                       _sector = _giro = _departamento = _estado = 'TODOS';
+                      _anio = 'TODOS';
                       _ultimaCompraFiltro = 'TODAS';
                       _soloActivos = true;
                       _pagina = 0;
@@ -1637,9 +1642,9 @@ class _CrmClientesPageState extends State<CrmClientesPage> {
   }
 
   Widget _kpisNuevo() {
-    // Total y activos se consultan con COUNT en Supabase, sin límite de página.
-    // Los indicadores de actividad se calculan con los clientes cargados.
-    final total = _totalClientes;
+    // Los KPI representan TODA la cartera filtrada, no solo los 12/200
+    // registros cargados para la tabla.
+    final total = int.tryParse(_s(_gestionStats['total'])) ?? 0;
     final activos = int.tryParse(_s(_gestionStats['activos'])) ?? 0;
     final sinContacto = int.tryParse(_s(_gestionStats['sin_contacto'])) ?? 0;
     final sinLlamada = int.tryParse(_s(_gestionStats['sin_llamada'])) ?? 0;

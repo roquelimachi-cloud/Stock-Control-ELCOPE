@@ -1,0 +1,31 @@
+ICONOS PARA REPORTE COMERCIAL ELCOPE
+=====================================
+
+Archivos PNG con fondo transparente y tile pastel, listos para Flutter.
+
+Contenido:
+- evolucion_anual.png
+- mes_mayor_compra.png
+- productos_mayor_metraje.png
+- planificacion_abastecimiento.png
+- siguiente_paso.png
+- compromiso_elcope.png
+
+Instalación sugerida:
+1. Descomprime la carpeta "reportes" dentro de:
+   assets/images/reportes/
+
+2. En pubspec.yaml agrega (o incorpora dentro de la sección assets existente):
+   assets:
+     - assets/images/reportes/
+
+   No dupliques la clave "assets:" si ya existe; añade solamente la ruta a la lista.
+
+3. Ejecuta:
+   flutter pub get
+
+Uso en Flutter:
+  Image.asset('assets/images/reportes/evolucion_anual.png')
+
+Para PDF con el paquete `pdf`, puedes cargar el PNG como bytes y usar pw.Image.
+Estos iconos son recursos gráficos PNG, no emoticones Unicode; por ello no dependen de una fuente emoji.

@@ -2,6 +2,8 @@ import '../models/usuario.dart';
 
 class Sesion {
   static Usuario? usuarioActual;
+  // Token opaco emitido por la Edge Function protegida de Cliente 360.
+  static String? tokenCliente360;
 
   // ============================================================
   // ESTADO DE SESIÓN
@@ -60,5 +62,6 @@ class Sesion {
 
   static void cerrarSesion() {
     usuarioActual = null;
+    tokenCliente360 = null;
   }
 }

@@ -323,140 +323,74 @@ class _CrmCliente360PageState extends State<CrmCliente360Page> {
     List<Map<String, dynamic>> facturasHistoricas = const <Map<String, dynamic>>[],
     List<Map<String, dynamic>> detallesHistoricos = const <Map<String, dynamic>>[],
   }) {
-    if (productos.isEmpty) {
-      return <String>[
-        'No se encontraron productos detallados en el periodo seleccionado; no es posible determinar la rotación de cables.',
-        'Se recomienda validar que las facturas del periodo tengan líneas de detalle cargadas antes de programar una reposición.',
-      ];
+    final inicio = DateTime(rango.start.year, rango.start.month, rango.start.day);
+    final finExclusivo = DateTime(rango.end.year, rango.end.month, rango.end.day)
+        .add(const Duration(days: 1));
+    final facturasPeriodo = facturasHistoricas.where((f) {
+      final fecha = _dt(f['fecha_factura']);
+      return fecha != null && !fecha.isBefore(inicio) && fecha.isBefore(finExclusivo);
+    }).toList();
+    final totalActual = facturasPeriodo.fold<double>(
+      0, (sum, f) => sum + _n(f['monto_calculado']));
+
+    final inicioAnterior = DateTime(rango.start.year - 1, rango.start.month, rango.start.day);
+    final finAnterior = DateTime(rango.end.year - 1, rango.end.month, rango.end.day)
+        .add(const Duration(days: 1));
+    final facturasAnterior = facturasHistoricas.where((f) {
+      final fecha = _dt(f['fecha_factura']);
+      return fecha != null && !fecha.isBefore(inicioAnterior) && fecha.isBefore(finAnterior);
+    }).toList();
+    final totalAnterior = facturasAnterior.fold<double>(
+      0, (sum, f) => sum + _n(f['monto_calculado']));
+
+    final conclusiones = <String>[];
+    if (facturasAnterior.isEmpty) {
+      conclusiones.add(
+        '📊 Compras del periodo: ${_moneyValue(totalActual)}. No hay un periodo anterior comparable para calcular la variación anual.');
+    } else if (totalAnterior <= 0) {
+      conclusiones.add(
+        '📊 Compras del periodo: ${_moneyValue(totalActual)}. El periodo anterior no registra un importe positivo que permita calcular la variación.');
+    } else {
+      final variacion = ((totalActual - totalAnterior) / totalAnterior) * 100;
+      final texto = variacion > 0
+          ? 'aumentaron ${variacion.toStringAsFixed(1)}%'
+          : variacion < 0
+              ? 'disminuyeron ${variacion.abs().toStringAsFixed(1)}%'
+              : 'se mantuvieron sin variación';
+      conclusiones.add(
+        '📊 Compras del periodo: ${_moneyValue(totalActual)}; frente al mismo periodo del año anterior, $texto.');
+    }
+
+    final comprasPorMes = <int, double>{};
+    for (final factura in facturasPeriodo) {
+      final fecha = _dt(factura['fecha_factura']);
+      if (fecha == null) continue;
+      comprasPorMes[fecha.month] = (comprasPorMes[fecha.month] ?? 0) +
+          _n(factura['monto_calculado']);
+    }
+    if (comprasPorMes.isNotEmpty) {
+      const meses = ['enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio',
+        'julio', 'agosto', 'septiembre', 'octubre', 'noviembre', 'diciembre'];
+      final pico = comprasPorMes.entries.reduce((a, b) => a.value >= b.value ? a : b);
+      conclusiones.add(
+        '📅 Mayor compra mensual registrada: ${meses[pico.key - 1]}, ${_moneyValue(pico.value)}. Usar como referencia de planificación, no como garantía de demanda futura.');
     }
 
     final porMetraje = [...productos]
       ..sort((a, b) => _n(b['cantidad']).compareTo(_n(a['cantidad'])));
-    final principal = porMetraje.first;
-    final descripcion = _s(principal['descripcion']).isEmpty
-        ? 'Producto sin descripción registrada'
-        : _s(principal['descripcion']);
-    final metraje = _n(principal['cantidad']);
-    final monto = _n(principal['monto']);
-    final peso = _n(principal['peso']);
-    final diasPeriodo = rango.end.difference(rango.start).inDays + 1;
-    final semanasPeriodo = diasPeriodo / 7.0;
-    final metrajeSemanal = semanasPeriodo <= 0 ? 0.0 : metraje / semanasPeriodo;
-    final fechasRaw = principal['fechas_compra'];
-    final fechas = (fechasRaw is List ? fechasRaw : <dynamic>[])
-        .map((e) => DateTime.tryParse(e.toString()))
-        .whereType<DateTime>()
-        .map((d) => DateTime(d.year, d.month, d.day))
-        .toSet()
-        .toList()
-      ..sort();
-
-    final conclusiones = <String>[];
-    final inicio = DateTime(rango.start.year, rango.start.month, rango.start.day);
-    final finExclusivo = DateTime(rango.end.year, rango.end.month, rango.end.day).add(const Duration(days: 1));
-    final totalActual = facturasHistoricas.where((f) {
-      final d = _dt(f['fecha_factura']);
-      return d != null && !d.isBefore(inicio) && d.isBefore(finExclusivo);
-    }).fold<double>(0, (sum, f) => sum + _n(f['monto_calculado']));
-    final inicioAnterior = DateTime(rango.start.year - 1, rango.start.month, rango.start.day);
-    final finAnteriorExclusivo = DateTime(rango.end.year - 1, rango.end.month, rango.end.day).add(const Duration(days: 1));
-    final facturasAnterior = facturasHistoricas.where((f) {
-      final d = _dt(f['fecha_factura']);
-      return d != null && !d.isBefore(inicioAnterior) && d.isBefore(finAnteriorExclusivo);
-    }).toList();
-    final totalAnterior = facturasAnterior.fold<double>(0, (sum, f) => sum + _n(f['monto_calculado']));
-    if (facturasAnterior.isNotEmpty) {
-      final variacion = totalAnterior == 0 ? 0.0 : ((totalActual - totalAnterior) / totalAnterior) * 100;
-      final comparacion = variacion > 0 ? 'aumentaron ${variacion.abs().toStringAsFixed(1)}%' : variacion < 0 ? 'disminuyeron ${variacion.abs().toStringAsFixed(1)}%' : 'se mantuvieron al mismo nivel';
-      conclusiones.add('📊 Comparación anual: entre ${_date.format(rango.start)} y ${_date.format(rango.end)} se registraron ${_moneyValue(totalActual)} en compras, frente a ${_moneyValue(totalAnterior)} en el mismo periodo del año anterior. Las compras $comparacion. Esta referencia ayuda a observar la evolución del abastecimiento; la variación puede responder al calendario de proyectos y a las necesidades de consumo de cada periodo.');
+    if (porMetraje.isEmpty) {
+      conclusiones.add(
+        '📦 No hay detalle suficiente de productos para identificar los cables de mayor rotación. Conviene validar las líneas de factura antes de planificar reposiciones.');
     } else {
-      conclusiones.add('📊 Durante el periodo seleccionado se registraron ${_moneyValue(totalActual)} en compras. No hay facturación histórica suficiente del mismo periodo del año anterior para realizar una comparación fiable; cuando exista información comparable, podremos evaluar mejor la evolución del abastecimiento.');
+      final principales = porMetraje.take(3).map((p) {
+        final descripcion = _s(p['descripcion']).isEmpty
+            ? 'Producto sin descripción'
+            : _s(p['descripcion']);
+        return '$descripcion (${_money.format(_n(p['cantidad']))} m)';
+      }).join('; ');
+      conclusiones.add(
+        '📦 Productos con mayor metraje: $principales. Siguiente paso: confirmar cantidades y fechas requeridas para revisar stock, fabricación y cotización.');
     }
-
-    final monthly = <int, double>{};
-    for (final f in facturasHistoricas) {
-      final d = _dt(f['fecha_factura']);
-      if (d == null || d.year != rango.start.year || d.isBefore(inicio) || !d.isBefore(finExclusivo)) continue;
-      monthly[d.month] = (monthly[d.month] ?? 0) + _n(f['monto_calculado']);
-    }
-    if (monthly.isNotEmpty) {
-      final peak = monthly.entries.reduce((a, b) => a.value >= b.value ? a : b);
-      const meses = ['enero','febrero','marzo','abril','mayo','junio','julio','agosto','septiembre','octubre','noviembre','diciembre'];
-      conclusiones.add('📅 El mes con mayor volumen de compras fue ${meses[peak.key - 1]}, con ${_moneyValue(peak.value)}. Este dato puede servir como referencia para anticipar la coordinación de pedidos en periodos de mayor actividad, sin asumir que la demanda se repetirá automáticamente.');
-    }
-
-    // Comparación mensual de cables por metraje: año del periodo vs. año anterior.
-    // Se vinculan las líneas de detalle con la fecha de su factura para no inventar datos.
-    if (detallesHistoricos.isNotEmpty && facturasHistoricas.isNotEmpty) {
-      final fechaPorFactura = <String, DateTime>{};
-      for (final f in facturasHistoricas) {
-        final id = _s(f['id']);
-        final fecha = _dt(f['fecha_factura']);
-        if (id.isNotEmpty && fecha != null) fechaPorFactura[id] = fecha;
-      }
-      final metrajePorMesAnioProducto = <int, Map<int, Map<String, double>>>{};
-      final descripcionPorClave = <String, String>{};
-      for (final d in detallesHistoricos) {
-        final fecha = fechaPorFactura[_s(d['factura_id'])];
-        if (fecha == null) continue;
-        final clave = _s(d['codigo_articulo']).isNotEmpty
-            ? _s(d['codigo_articulo'])
-            : _s(d['articulo']);
-        if (clave.isEmpty) continue;
-        final descripcionCable = _s(d['articulo']).isNotEmpty ? _s(d['articulo']) : clave;
-        descripcionPorClave[clave] = descripcionCable;
-        final rawMetros = _n(d['cantidad_metros']);
-        final metros = rawMetros > 0 ? rawMetros : _n(d['cantidad']);
-        final porAnio = metrajePorMesAnioProducto.putIfAbsent(fecha.month, () => <int, Map<String, double>>{});
-        final porProducto = porAnio.putIfAbsent(fecha.year, () => <String, double>{});
-        porProducto[clave] = (porProducto[clave] ?? 0) + metros;
-      }
-      final anioActual = rango.end.year;
-      final mesInicio = rango.start.year == anioActual ? rango.start.month : 1;
-      final mesFin = rango.end.month;
-      const nombresMeses = ['enero','febrero','marzo','abril','mayo','junio','julio','agosto','septiembre','octubre','noviembre','diciembre'];
-      final aniosDisponibles = metrajePorMesAnioProducto.values
-          .expand((porAnio) => porAnio.keys)
-          .where((anio) => anio <= anioActual)
-          .toSet()
-          .toList()
-        ..sort((a, b) => b.compareTo(a));
-      final comparacionesMensuales = <String>[];
-      for (var mes = mesInicio; mes <= mesFin; mes++) {
-        final porAnio = metrajePorMesAnioProducto[mes];
-        if (porAnio == null) continue;
-        final resultadosAnio = <String>[];
-        for (final anio in aniosDisponibles) {
-          final productosAnio = porAnio[anio];
-          if (productosAnio == null || productosAnio.isEmpty) continue;
-          final top = productosAnio.entries.reduce((a, b) => a.value >= b.value ? a : b);
-          final nombreCable = descripcionPorClave[top.key] ?? top.key;
-          resultadosAnio.add('$anio: $nombreCable (${_money.format(top.value)} m)');
-        }
-        if (resultadosAnio.isNotEmpty) {
-          comparacionesMensuales.add('${nombresMeses[mes - 1]} — ${resultadosAnio.join('; ')}');
-        }
-      }
-      if (comparacionesMensuales.isNotEmpty) {
-        conclusiones.add('📈 Cables de mayor movimiento por mes: para cada mes se muestra el cable con mayor metraje y su volumen por año disponible, hasta $anioActual: ${comparacionesMensuales.join(' | ')}. La comparación utiliza únicamente las líneas de detalle y fechas registradas; si un año no tiene datos para un mes, no se completa con estimaciones. Esto ayuda a detectar cambios en los cables demandados y planificar reposiciones con anticipación.');
-      } else {
-        conclusiones.add('📈 Comparación mensual de cables: no se encontraron líneas de detalle suficientes para comparar el metraje mensual entre los años disponibles.');
-      }
-    } else {
-      conclusiones.add('📈 Comparación mensual de cables: el historial disponible no incluye suficiente detalle de productos vinculado a las fechas de factura para comparar los cables de mayor movimiento entre años.');
-    }
-
-    final topMetraje = [...productos]..sort((a, b) => _n(b['cantidad']).compareTo(_n(a['cantidad'])));
-    if (topMetraje.isNotEmpty) {
-      final top = topMetraje.take(3).toList();
-      final listado = top.map((p) => '${_s(p['descripcion'])} (${_money.format(_n(p['cantidad']))} m)').join('; ');
-      conclusiones.add('📦 Los productos con mayor metraje adquirido fueron: $listado. Este comportamiento permite identificar los cables de mayor movimiento y tomar como referencia las cantidades compradas al organizar futuras obras, mantenimientos o reposiciones.');
-      conclusiones.add('💡 Planificación de abastecimiento: sugerimos revisar con anticipación los metrajes estimados, calibres, colores, clase del conductor, aislamiento y fecha requerida para cada proyecto. Con esa información, ELCOPE podrá verificar la disponibilidad real de stock, validar las especificaciones técnicas y, si corresponde, revisar alternativas compatibles o programar fabricación.');
-      conclusiones.add('🧾 Recomendación comercial: para agilizar sus próximas compras, puede compartirnos su requerimiento proyectado y la fecha estimada de entrega. Así podremos preparar una cotización actualizada, evaluar cantidades por producto y coordinar oportunamente las condiciones de suministro, sin comprometer stock ni fechas hasta su confirmación.');
-    } else {
-      conclusiones.add('No se dispone de suficiente detalle de productos para identificar los cables de mayor movimiento. Recomendamos validar las líneas de las facturas y compartir el requerimiento próximo para que ELCOPE pueda revisar las especificaciones, confirmar disponibilidad y preparar una cotización.');
-    }
-    conclusiones.add('🤝 Compromiso ELCOPE: nuestro equipo comercial está a su disposición para acompañarlos en la planificación de sus próximos requerimientos, resolver consultas técnicas y preparar una propuesta comercial acorde con las cantidades, especificaciones y plazos de su proyecto.');
     return conclusiones;
   }
 
@@ -470,7 +404,13 @@ class _CrmCliente360PageState extends State<CrmCliente360Page> {
       final facturasReporte = datosPeriodo['facturas'] as List<Map<String, dynamic>>;
       final productosReporte = datosPeriodo['productos'] as List<Map<String, dynamic>>;
       final periodoTexto = '${_date.format(rango.start)} - ${_date.format(rango.end)}';
+      final fechaEmision = DateTime.now();
+      final fechaEmisionTexto = _date.format(fechaEmision);
+      final fechaArchivo = DateFormat('yyyy-MM-dd').format(fechaEmision);
       final nombre = _s(cliente['razon_social']).isEmpty ? _s(cliente['nombre']) : _s(cliente['razon_social']);
+      final nombreArchivo = nombre
+          .replaceAll(RegExp(r'[^A-Za-z0-9]+'), '_')
+          .replaceAll(RegExp(r'^_+|_+$'), '');
       final ruc = _s(cliente['ruc']).isEmpty ? _s(cliente['codigo_cliente']) : _s(cliente['ruc']);
       final total = facturasReporte.fold<double>(0, (sum, f) => sum + _n(f['monto_calculado']));
       final peso = facturasReporte.fold<double>(0, (sum, f) => sum + _n(f['peso_calculado']));
@@ -487,69 +427,34 @@ class _CrmCliente360PageState extends State<CrmCliente360Page> {
         // El reporte sigue funcionando si el logo no está declarado en assets.
       }
 
-      // Cargar los iconos PNG del reporte desde assets/images/reportes.
-      // Al ser imágenes, se imprimen correctamente en PDF sin depender de fuentes emoji.
-      final iconosReporte = <String, pw.MemoryImage>{};
-      const rutasIconosReporte = <String, String>{
-        '📊': 'assets/images/reportes/evolucion_anual.png',
-        '📅': 'assets/images/reportes/mes_mayor_compra.png',
-        '📈': 'assets/images/reportes/productos_mayor_metraje.png',
-        '📦': 'assets/images/reportes/productos_mayor_metraje.png',
-        '💡': 'assets/images/reportes/planificacion_abastecimiento.png',
-        '🧾': 'assets/images/reportes/siguiente_paso.png',
-        '🤝': 'assets/images/reportes/compromiso_elcope.png',
-      };
-      for (final entrada in rutasIconosReporte.entries) {
-        try {
-          final data = await rootBundle.load(entrada.value);
-          iconosReporte[entrada.key] = pw.MemoryImage(data.buffer.asUint8List());
-        } catch (_) {
-          // Si falta un recurso, se utiliza el indicador de respaldo más abajo.
-        }
-      }
-
-      pw.Widget iconoConclusion(int index, String texto) {
-        String? prefijo;
-        for (final clave in rutasIconosReporte.keys) {
-          if (texto.startsWith(clave)) {
-            prefijo = clave;
-            break;
-          }
-        }
-        final imagen = prefijo == null ? null : iconosReporte[prefijo];
-        if (imagen != null) {
-          return pw.Container(
-            width: 32,
-            height: 32,
-            child: pw.Image(imagen, fit: pw.BoxFit.contain),
-          );
-        }
-        return pw.Container(
-          width: 32,
-          height: 32,
-          alignment: pw.Alignment.center,
-          decoration: pw.BoxDecoration(
-            color: azulClaro,
-            borderRadius: pw.BorderRadius.circular(7),
-          ),
-          child: pw.Text(
-            '${index + 1}',
-            style: pw.TextStyle(
-              fontSize: 9,
-              fontWeight: pw.FontWeight.bold,
-              color: PdfColors.white,
-            ),
-          ),
-        );
-      }
-
       final monthly = List<double>.filled(12, 0);
       for (final f in facturasReporte) {
         final d = _dt(f['fecha_factura']);
         if (d != null) monthly[d.month - 1] += _n(f['monto_calculado']);
       }
       final monthNames = ['Ene','Feb','Mar','Abr','May','Jun','Jul','Ago','Sep','Oct','Nov','Dic'];
+      const monthNamesFull = ['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'];
       final monthlyMax = monthly.fold<double>(1, (a, b) => a > b ? a : b);
+      // Evolución anual calculada con el historial completo devuelto por el servicio,
+      // independiente del periodo que el usuario haya elegido para el detalle del PDF.
+      final facturasHistoricas = (datosPeriodo['facturasHistoricas'] as List? ?? const [])
+          .whereType<Map>()
+          .map((f) => Map<String, dynamic>.from(f))
+          .toList();
+      final annualTotals = <int, double>{};
+      for (final f in facturasHistoricas) {
+        final fecha = _dt(f['fecha_factura']);
+        if (fecha == null) continue;
+        annualTotals[fecha.year] = (annualTotals[fecha.year] ?? 0) + _n(f['monto_calculado']);
+      }
+      final annualYears = annualTotals.keys.toList()..sort();
+      final annualYearsToShow = annualYears.length > 4
+          ? annualYears.sublist(annualYears.length - 4)
+          : annualYears;
+      final annualMax = annualYearsToShow.fold<double>(1, (maxValue, year) {
+        final value = annualTotals[year] ?? 0;
+        return value > maxValue ? value : maxValue;
+      });
       final familyTotals = <String, double>{};
       for (final p in productosReporte) {
         final family = _familiaCable(_s(p['descripcion']));
@@ -557,12 +462,12 @@ class _CrmCliente360PageState extends State<CrmCliente360Page> {
       }
       final families = familyTotals.entries.toList()..sort((a, b) => b.value.compareTo(a.value));
       final topProducts = productosReporte.take(5).toList();
-      final facturasHistoricas = (datosPeriodo['facturasHistoricas'] as List? ?? const []).map((e) => Map<String, dynamic>.from(e as Map)).toList();
-      final conclusiones = _conclusionesReporte(
-        productosReporte, rango,
-        facturasHistoricas: facturasHistoricas,
-        detallesHistoricos: (datosPeriodo['detallesHistoricos'] as List? ?? const []).map((e) => Map<String, dynamic>.from(e as Map)).toList(),
-      );
+      final topMetrajeProducts = [...productosReporte]
+        ..sort((a, b) => _n(b['cantidad']).compareTo(_n(a['cantidad'])));
+      final tieneComprasMensuales = monthly.any((valor) => valor > 0);
+      final mesMayorCompraIndex = tieneComprasMensuales
+          ? monthly.indexWhere((valor) => valor == monthly.reduce((a, b) => a >= b ? a : b))
+          : -1;
       final pdf = pw.Document(title: 'Reporte Comercial - $nombre', author: 'ELCOPE');
       pdf.addPage(pw.MultiPage(
         pageFormat: PdfPageFormat.a4.landscape,
@@ -578,7 +483,7 @@ class _CrmCliente360PageState extends State<CrmCliente360Page> {
             ])),
             pw.Column(crossAxisAlignment: pw.CrossAxisAlignment.end, children: [
               pw.Text('INFORMACIÓN CONFIDENCIAL', style: pw.TextStyle(fontSize: 8, fontWeight: pw.FontWeight.bold, color: azul)),
-              pw.Text('Emisión: ${_date.format(DateTime.now())}', style: const pw.TextStyle(fontSize: 8)),
+              pw.Text('Fecha de generación: $fechaEmisionTexto', style: const pw.TextStyle(fontSize: 8)),
               pw.Text('Periodo: ${periodoTexto}', style: const pw.TextStyle(fontSize: 8)),
             ]),
           ]),
@@ -588,6 +493,8 @@ class _CrmCliente360PageState extends State<CrmCliente360Page> {
           pw.SizedBox(height: 10),
           pw.Container(padding: const pw.EdgeInsets.all(10), decoration: pw.BoxDecoration(color: fondo, border: pw.Border.all(color: gris), borderRadius: pw.BorderRadius.circular(8)), child: pw.Row(children: [
             pw.Expanded(child: pw.Column(crossAxisAlignment: pw.CrossAxisAlignment.start, children: [
+              pw.Text('RAZÓN SOCIAL', style: pw.TextStyle(fontSize: 7, fontWeight: pw.FontWeight.bold, color: PdfColors.grey700)),
+              pw.SizedBox(height: 2),
               pw.Text(nombre, style: pw.TextStyle(fontSize: 17, fontWeight: pw.FontWeight.bold, color: azul)),
               pw.SizedBox(height: 4),
               pw.Text('RUC: $ruc     |     Sector: ${_s(cliente['sector']).isEmpty ? '-' : _s(cliente['sector'])}     |     Departamento: ${_s(cliente['departamento']).isEmpty ? '-' : _s(cliente['departamento'])}     |     Asesor comercial: ${_s(cliente['vendedor']).isEmpty ? '-' : _s(cliente['vendedor'])}', style: const pw.TextStyle(fontSize: 8)),
@@ -709,43 +616,161 @@ class _CrmCliente360PageState extends State<CrmCliente360Page> {
             ],
           ),
           pw.NewPage(),
-          pw.Text('CONCLUSIÓN Y RECOMENDACIONES COMERCIALES', style: pw.TextStyle(fontSize: 14, fontWeight: pw.FontWeight.bold, color: azul)),
+          pw.SizedBox(height: 8),
+          pw.Text('RESUMEN DE SU ACTIVIDAD COMERCIAL', style: pw.TextStyle(fontSize: 15, fontWeight: pw.FontWeight.bold, color: azul)),
           pw.SizedBox(height: 5),
-          pw.Text('Análisis automático del historial disponible para el periodo ${periodoTexto}. Las estimaciones se basan únicamente en los productos y fechas registrados.', style: const pw.TextStyle(fontSize: 8, color: PdfColors.grey700)),
-          pw.SizedBox(height: 12),
+          pw.Text(
+            'Gracias por la confianza depositada en ELCOPE. Presentamos un resumen de las compras registradas entre ${periodoTexto}, con información útil para planificar sus próximos requerimientos.',
+            style: const pw.TextStyle(fontSize: 9, color: PdfColors.grey700, lineSpacing: 2),
+          ),
+          pw.SizedBox(height: 14),
+          pw.Row(children: [
+            pw.Expanded(child: pw.Container(
+              padding: const pw.EdgeInsets.all(13),
+              decoration: pw.BoxDecoration(color: fondo, border: pw.Border.all(color: gris), borderRadius: pw.BorderRadius.circular(8)),
+              child: pw.Column(crossAxisAlignment: pw.CrossAxisAlignment.start, children: [
+                pw.Text('COMPRAS REGISTRADAS', style: pw.TextStyle(fontSize: 8, fontWeight: pw.FontWeight.bold, color: azul)),
+                pw.SizedBox(height: 6),
+                pw.Text(_moneyValue(total), style: pw.TextStyle(fontSize: 19, fontWeight: pw.FontWeight.bold, color: azul)),
+                pw.Text('Durante el periodo seleccionado', style: const pw.TextStyle(fontSize: 8, color: PdfColors.grey700)),
+              ]),
+            )),
+            pw.SizedBox(width: 12),
+            pw.Expanded(child: pw.Container(
+              padding: const pw.EdgeInsets.all(13),
+              decoration: pw.BoxDecoration(color: fondo, border: pw.Border.all(color: gris), borderRadius: pw.BorderRadius.circular(8)),
+              child: pw.Column(crossAxisAlignment: pw.CrossAxisAlignment.start, children: [
+                pw.Text('MES DE MAYOR COMPRA', style: pw.TextStyle(fontSize: 8, fontWeight: pw.FontWeight.bold, color: azul)),
+                pw.SizedBox(height: 6),
+                pw.Text(mesMayorCompraIndex >= 0 ? monthNamesFull[mesMayorCompraIndex] : 'Sin registro', style: pw.TextStyle(fontSize: 19, fontWeight: pw.FontWeight.bold, color: azul)),
+                pw.Text(mesMayorCompraIndex >= 0 ? _moneyValue(monthly[mesMayorCompraIndex]) : 'No hay compras registradas en el periodo', style: const pw.TextStyle(fontSize: 8, color: PdfColors.grey700)),
+              ]),
+            )),
+          ]),
+          pw.SizedBox(height: 16),
           pw.Container(
             width: double.infinity,
             padding: const pw.EdgeInsets.all(12),
+            decoration: pw.BoxDecoration(
+              color: PdfColors.white,
+              border: pw.Border.all(color: gris),
+              borderRadius: pw.BorderRadius.circular(8),
+            ),
+            child: pw.Column(
+              crossAxisAlignment: pw.CrossAxisAlignment.start,
+              children: [
+                pw.Row(children: [
+                  pw.Container(
+                    width: 23,
+                    height: 23,
+                    alignment: pw.Alignment.center,
+                    decoration: pw.BoxDecoration(color: fondo, borderRadius: pw.BorderRadius.circular(4)),
+                    child: pw.Text('AN', style: pw.TextStyle(fontSize: 7, fontWeight: pw.FontWeight.bold, color: azulClaro)),
+                  ),
+                  pw.SizedBox(width: 8),
+                  pw.Text('EVOLUCIÓN ANUAL', style: pw.TextStyle(fontSize: 11, fontWeight: pw.FontWeight.bold, color: azul)),
+                ]),
+                pw.SizedBox(height: 9),
+                if (annualYearsToShow.isEmpty)
+                  pw.Text('No hay información histórica suficiente para mostrar la evolución anual.', style: const pw.TextStyle(fontSize: 8, color: PdfColors.grey700))
+                else
+                  for (final year in annualYearsToShow)
+                    pw.Padding(
+                      padding: const pw.EdgeInsets.symmetric(vertical: 3),
+                      child: pw.Row(
+                        children: [
+                          pw.SizedBox(width: 34, child: pw.Text('$year', style: const pw.TextStyle(fontSize: 8, color: PdfColors.grey700))),
+                          pw.SizedBox(width: 8),
+                          pw.Expanded(
+                            child: pw.Container(
+                              height: 9,
+                              decoration: pw.BoxDecoration(color: fondo, borderRadius: pw.BorderRadius.circular(5)),
+                              child: pw.Align(
+                                alignment: pw.Alignment.centerLeft,
+                                child: pw.Container(
+                                  width: 520 * ((annualTotals[year] ?? 0) / annualMax).clamp(0.0, 1.0),
+                                  height: 9,
+                                  decoration: pw.BoxDecoration(color: azulClaro, borderRadius: pw.BorderRadius.circular(5)),
+                                ),
+                              ),
+                            ),
+                          ),
+                          pw.SizedBox(width: 10),
+                          pw.SizedBox(
+                            width: 94,
+                            child: pw.Align(
+                              alignment: pw.Alignment.centerRight,
+                              child: pw.Text(_moneyValue(annualTotals[year] ?? 0), style: pw.TextStyle(fontSize: 8, fontWeight: pw.FontWeight.bold, color: azul)),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                pw.SizedBox(height: 3),
+                pw.Text('Importes anuales calculados desde las facturas históricas disponibles.', style: const pw.TextStyle(fontSize: 7, color: PdfColors.grey700)),
+              ],
+            ),
+          ),
+          pw.SizedBox(height: 16),
+          pw.Text('PRODUCTOS DESTACADOS DE SU HISTORIAL', style: pw.TextStyle(fontSize: 11, fontWeight: pw.FontWeight.bold, color: azul)),
+          pw.SizedBox(height: 7),
+          pw.Table(
+            border: pw.TableBorder(horizontalInside: pw.BorderSide(color: gris, width: .5), bottom: pw.BorderSide(color: gris, width: .5)),
+            columnWidths: {0: const pw.FixedColumnWidth(28), 1: const pw.FlexColumnWidth(6), 2: const pw.FixedColumnWidth(115)},
+            children: [
+              pw.TableRow(decoration: pw.BoxDecoration(color: azul), children: [
+                for (final h in ['N.º', 'Producto / cable', 'Metraje registrado'])
+                  pw.Padding(padding: const pw.EdgeInsets.all(7), child: pw.Text(h, style: pw.TextStyle(fontSize: 8, fontWeight: pw.FontWeight.bold, color: PdfColors.white))),
+              ]),
+              if (topMetrajeProducts.isEmpty)
+                pw.TableRow(children: [
+                  pw.Padding(padding: const pw.EdgeInsets.all(7), child: pw.Text('-', style: const pw.TextStyle(fontSize: 8))),
+                  pw.Padding(padding: const pw.EdgeInsets.all(7), child: pw.Text('No hay productos detallados para el periodo seleccionado.', style: const pw.TextStyle(fontSize: 8))),
+                  pw.Padding(padding: const pw.EdgeInsets.all(7), child: pw.Text('-', style: const pw.TextStyle(fontSize: 8))),
+                ])
+              else
+                for (var i = 0; i < topMetrajeProducts.take(3).length; i++)
+                  pw.TableRow(decoration: pw.BoxDecoration(color: i.isEven ? fondo : PdfColors.white), children: [
+                    pw.Padding(padding: const pw.EdgeInsets.all(7), child: pw.Text('${i + 1}', style: pw.TextStyle(fontSize: 8, fontWeight: pw.FontWeight.bold, color: azul))),
+                    pw.Padding(padding: const pw.EdgeInsets.all(7), child: pw.Text(_s(topMetrajeProducts[i]['descripcion']).isEmpty ? 'Producto sin descripción' : _s(topMetrajeProducts[i]['descripcion']), style: const pw.TextStyle(fontSize: 8))),
+                    pw.Padding(padding: const pw.EdgeInsets.all(7), child: pw.Align(alignment: pw.Alignment.centerRight, child: pw.Text('${_money.format(_n(topMetrajeProducts[i]['cantidad']))} m', style: pw.TextStyle(fontSize: 8, fontWeight: pw.FontWeight.bold, color: azul)))),
+                  ]),
+            ],
+          ),
+          pw.SizedBox(height: 16),
+          pw.Container(
+            width: double.infinity,
+            padding: const pw.EdgeInsets.all(13),
             decoration: pw.BoxDecoration(color: fondo, border: pw.Border.all(color: gris), borderRadius: pw.BorderRadius.circular(8)),
             child: pw.Column(crossAxisAlignment: pw.CrossAxisAlignment.start, children: [
-              for (var i = 0; i < conclusiones.length; i++)
-                pw.Padding(
-                  padding: const pw.EdgeInsets.only(bottom: 12),
-                  child: pw.Row(
-                    crossAxisAlignment: pw.CrossAxisAlignment.start,
-                    children: [
-                      iconoConclusion(i, conclusiones[i]),
-                      pw.SizedBox(width: 9),
-                      pw.Expanded(
-                        child: pw.Text(
-                          conclusiones[i].replaceFirst(
-                            RegExp(r'^(📊|📅|📦|💡|🧾|🤝|📈)\\s*'),
-                            '',
-                          ),
-                          style: const pw.TextStyle(fontSize: 9, lineSpacing: 2),
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
+              pw.Text('¿CÓMO PODEMOS AYUDARLE?', style: pw.TextStyle(fontSize: 11, fontWeight: pw.FontWeight.bold, color: azul)),
+              pw.SizedBox(height: 8),
+              pw.Row(crossAxisAlignment: pw.CrossAxisAlignment.start, children: [
+                pw.Container(width: 5, height: 5, margin: const pw.EdgeInsets.only(top: 4, right: 8), decoration: pw.BoxDecoration(color: azulClaro, shape: pw.BoxShape.circle)),
+                pw.Expanded(child: pw.Text('Planificar próximos pedidos según las cantidades y especificaciones requeridas.', style: const pw.TextStyle(fontSize: 9, lineSpacing: 2))),
+              ]),
+              pw.SizedBox(height: 6),
+              pw.Row(crossAxisAlignment: pw.CrossAxisAlignment.start, children: [
+                pw.Container(width: 5, height: 5, margin: const pw.EdgeInsets.only(top: 4, right: 8), decoration: pw.BoxDecoration(color: azulClaro, shape: pw.BoxShape.circle)),
+                pw.Expanded(child: pw.Text('Revisar disponibilidad de stock y plazos de fabricación para sus requerimientos.', style: const pw.TextStyle(fontSize: 9, lineSpacing: 2))),
+              ]),
+              pw.SizedBox(height: 6),
+              pw.Row(crossAxisAlignment: pw.CrossAxisAlignment.start, children: [
+                pw.Container(width: 5, height: 5, margin: const pw.EdgeInsets.only(top: 4, right: 8), decoration: pw.BoxDecoration(color: azulClaro, shape: pw.BoxShape.circle)),
+                pw.Expanded(child: pw.Text('Preparar cotizaciones de acuerdo con sus necesidades de abastecimiento.', style: const pw.TextStyle(fontSize: 9, lineSpacing: 2))),
+              ]),
             ]),
           ),
-          pw.SizedBox(height: 12),
-          pw.Text('La frecuencia y la próxima compra son estimaciones comerciales; confirmar con el cliente antes de comprometer cantidades o fechas.', style: const pw.TextStyle(fontSize: 8, color: PdfColors.grey700)),
+          pw.SizedBox(height: 14),
+          pw.Text('En ELCOPE estamos a su disposición para acompañar sus próximos proyectos.', style: pw.TextStyle(fontSize: 10, fontWeight: pw.FontWeight.bold, color: azul)),
+          pw.SizedBox(height: 4),
+          pw.Text('Asesor comercial: ${_s(cliente['vendedor']).isEmpty ? 'Equipo comercial ELCOPE' : _s(cliente['vendedor'])}', style: const pw.TextStyle(fontSize: 9)),
+          pw.SizedBox(height: 10),
+          pw.Text('Los datos presentados corresponden a las compras registradas en el periodo indicado.', style: const pw.TextStyle(fontSize: 7, color: PdfColors.grey700)),
         ],
       ));
       await Printing.layoutPdf(
-        name: 'Reporte_Comercial_${nombre.replaceAll(RegExp(r'[^A-Za-z0-9]+'), '_')}.pdf',
+        name: 'Reporte_Comercial_${nombreArchivo}_$fechaArchivo.pdf',
         onLayout: (_) async => pdf.save(),
       );
     } catch (e) {
@@ -874,16 +899,16 @@ class _CrmCliente360PageState extends State<CrmCliente360Page> {
         detallesHistoricos: (datosPeriodo['detallesHistoricos'] as List? ?? const []).map((e) => Map<String, dynamic>.from(e as Map)).toList(),
       );
     final recomendaciones = excel['Conclusiones y Recomendaciones'];
-    recomendaciones.appendRow([xl.TextCellValue('ELCOPE | CONCLUSIÓN Y RECOMENDACIONES COMERCIALES')]);
+    recomendaciones.appendRow([xl.TextCellValue('ELCOPE | RESUMEN DE ACTIVIDAD COMERCIAL')]);
     recomendaciones.appendRow([xl.TextCellValue('Cliente'), xl.TextCellValue(nombre)]);
     recomendaciones.appendRow([xl.TextCellValue('Periodo analizado'), xl.TextCellValue(periodoTexto)]);
     recomendaciones.appendRow([]);
-    recomendaciones.appendRow([xl.TextCellValue('ANÁLISIS COMERCIAL')]);
+    recomendaciones.appendRow([xl.TextCellValue('PUNTOS DESTACADOS DEL PERIODO')]);
     for (var i = 0; i < conclusionesExcel.length; i++) {
       recomendaciones.appendRow([xl.TextCellValue('${i + 1}. ${conclusionesExcel[i]}')]);
     }
     recomendaciones.appendRow([]);
-    recomendaciones.appendRow([xl.TextCellValue('NOTA'), xl.TextCellValue('La frecuencia y próxima compra son estimaciones basadas en el historial disponible; confirmar con el cliente antes de comprometer cantidades o fechas.')]);
+    recomendaciones.appendRow([xl.TextCellValue('SIGUIENTE PASO'), xl.TextCellValue('ELCOPE puede apoyar la planificación de pedidos, la revisión de stock y plazos de fabricación, y la preparación de cotizaciones según los requerimientos del cliente.')]);
 
     // Apply a consistent ELCOPE navy header style to each report sheet.
     for (final sheet in [resumen, facturas, productos, recomendaciones]) {
@@ -1412,15 +1437,162 @@ class _CrmCliente360PageState extends State<CrmCliente360Page> {
   }
 
   Widget _insightsCard(double total, double cantidad) {
-    final top = _productos.isEmpty ? null : _productos.first;
-    final avg = _productos.map((p) => _stringList(p['fechas_compra']).length).fold<int>(0, (a, b) => a + b);
-    final items = <String>[
-      if (top != null) 'El producto de mayor facturación es ${_s(top['descripcion'])}, con ${_moneyValue(top['monto'])}.',
-      'Se registran ${_productos.length} productos distintos y ${_facturas.length} facturas en el periodo.',
-      if (avg == 0) 'Aún no hay suficientes fechas de compra para calcular patrones de reposición por producto.' else 'El historial disponible permite estimar intervalos de recompra por producto; validar las recomendaciones con el cliente.',
-      if (cantidad > 0) 'El metraje agregado disponible es ${_money.format(cantidad)}; revisar inventario antes de proponer reposición.',
-    ];
-    return _panel('Recomendaciones comerciales', Column(crossAxisAlignment: CrossAxisAlignment.start, children: [for (var i = 0; i < items.length; i++) Padding(padding: const EdgeInsets.only(bottom: 10), child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [Container(width: 22, height: 22, alignment: Alignment.center, decoration: const BoxDecoration(color: Color(0xFFE7F1FF), shape: BoxShape.circle), child: Text('${i + 1}', style: const TextStyle(color: Color(0xFF1677E8), fontWeight: FontWeight.w900))), const SizedBox(width: 8), Expanded(child: Text(items[i], style: const TextStyle(fontSize: 11, color: _azul, height: 1.35)))]))]));
+    final productosPorMetraje = [..._productos]
+      ..sort((a, b) => _n(b['cantidad']).compareTo(_n(a['cantidad'])));
+    final productosPrincipales = productosPorMetraje.take(5).toList();
+    final facturasRecientes = [..._facturas]
+      ..sort((a, b) => (_dt(b['fecha_factura']) ?? DateTime(1900))
+          .compareTo(_dt(a['fecha_factura']) ?? DateTime(1900)));
+    final fechas = _facturas.map((f) => _dt(f['fecha_factura']))
+        .whereType<DateTime>().toList()..sort();
+    final promedioDias = fechas.length < 2
+        ? null
+        : fechas.last.difference(fechas.first).inDays / (fechas.length - 1);
+
+    Widget opportunity({
+      required IconData icon,
+      required Color color,
+      required String title,
+      required String subtitle,
+      required Widget details,
+      String? actionLabel,
+      VoidCallback? onAction,
+    }) => Card(
+      elevation: 0,
+      margin: const EdgeInsets.only(bottom: 9),
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(12),
+        side: const BorderSide(color: _borde),
+      ),
+      child: ExpansionTile(
+        leading: Container(
+          width: 40,
+          height: 40,
+          decoration: BoxDecoration(
+            color: color.withValues(alpha: .10),
+            borderRadius: BorderRadius.circular(10),
+          ),
+          child: Icon(icon, color: color),
+        ),
+        title: Text(title, style: const TextStyle(
+          color: _azul, fontWeight: FontWeight.w800, fontSize: 12)),
+        subtitle: Text(subtitle, style: const TextStyle(
+          color: Colors.blueGrey, fontSize: 10, height: 1.35)),
+        childrenPadding: const EdgeInsets.fromLTRB(16, 0, 16, 14),
+        expandedCrossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          details,
+          if (actionLabel != null && onAction != null) ...[
+            const SizedBox(height: 10),
+            Align(
+              alignment: Alignment.centerLeft,
+              child: OutlinedButton.icon(
+                onPressed: onAction,
+                icon: const Icon(Icons.arrow_forward, size: 16),
+                label: Text(actionLabel),
+              ),
+            ),
+          ],
+        ],
+      ),
+    );
+
+    return _panel('Oportunidades comerciales', Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Wrap(spacing: 8, runSpacing: 8, children: [
+          _kpi('Compras registradas', _moneyValue(total), Icons.payments_outlined,
+              const Color(0xFF1685F8)),
+          _kpi('Metraje', '${_money.format(cantidad)} m', Icons.cable,
+              const Color(0xFF9855E8)),
+        ]),
+        const SizedBox(height: 10),
+        opportunity(
+          icon: Icons.inventory_2_outlined,
+          color: const Color(0xFF1685F8),
+          title: 'Productos de mayor rotación',
+          subtitle: 'Consulta los productos con más metraje adquirido.',
+          details: productosPrincipales.isEmpty
+              ? const Text('No hay productos detallados en el periodo.',
+                  style: TextStyle(fontSize: 11, color: Colors.blueGrey))
+              : Column(children: [
+                  for (var i = 0; i < productosPrincipales.length; i++)
+                    Padding(
+                      padding: const EdgeInsets.symmetric(vertical: 5),
+                      child: Row(children: [
+                        CircleAvatar(
+                          radius: 12,
+                          backgroundColor: const Color(0xFFE7F1FF),
+                          child: Text('${i + 1}', style: const TextStyle(
+                            color: _azul, fontSize: 10, fontWeight: FontWeight.w800)),
+                        ),
+                        const SizedBox(width: 8),
+                        Expanded(child: Text(_s(productosPrincipales[i]['descripcion']),
+                          style: const TextStyle(fontSize: 11, color: _azul))),
+                        Text('${_money.format(_n(productosPrincipales[i]['cantidad']))} m',
+                          style: const TextStyle(fontSize: 10, fontWeight: FontWeight.w800)),
+                      ]),
+                    ),
+                ]),
+          actionLabel: 'Ver productos',
+          onAction: () => setState(() => _tabActivo = 2),
+        ),
+        opportunity(
+          icon: Icons.receipt_long_outlined,
+          color: const Color(0xFF0A9B61),
+          title: 'Historial de compras',
+          subtitle: '${_facturas.length} facturas registradas · abre el historial para revisar documentos e importes.',
+          details: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            if (facturasRecientes.isEmpty)
+              const Text('No hay facturas en el periodo seleccionado.',
+                style: TextStyle(fontSize: 11, color: Colors.blueGrey))
+            else
+              for (final factura in facturasRecientes.take(3))
+                Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 5),
+                  child: Row(children: [
+                    Expanded(child: Text(
+                      '${_dateText(factura['fecha_factura'])} · ${_s(factura['punto_factura'])}-${_s(factura['numero_factura'])}',
+                      style: const TextStyle(fontSize: 10, color: _azul))),
+                    Text(_moneyValue(factura['monto_calculado']),
+                      style: const TextStyle(fontSize: 10, fontWeight: FontWeight.w800)),
+                  ]),
+                ),
+          ]),
+          actionLabel: 'Ver facturas',
+          onAction: () => setState(() => _tabActivo = 1),
+        ),
+        opportunity(
+          icon: Icons.event_available_outlined,
+          color: const Color(0xFF9855E8),
+          title: 'Planificar próximo abastecimiento',
+          subtitle: 'Revisa cantidades, fechas y disponibilidad antes de cotizar.',
+          details: Text(
+            promedioDias == null
+                ? 'Todavía no hay suficientes fechas de compra para estimar un intervalo de recompra. Comparte el metraje y la fecha requerida para revisar disponibilidad y plazo de fabricación.'
+                : 'Las fechas registradas tienen un intervalo promedio aproximado de ${promedioDias.round()} días entre compras. Es una referencia histórica, no una predicción. Confirma con el cliente el metraje y la fecha requerida antes de cotizar.',
+            style: const TextStyle(fontSize: 11, color: _azul, height: 1.4),
+          ),
+          actionLabel: 'Preparar datos de compra',
+          onAction: () => showDialog<void>(
+            context: context,
+            builder: (context) => AlertDialog(
+              title: const Text('Datos para próxima compra'),
+              content: Text(
+                'Productos registrados: ${_productos.length}\n'
+                'Metraje histórico: ${_money.format(cantidad)} m\n'
+                'Facturas del periodo: ${_facturas.length}\n\n'
+                'Antes de emitir una cotización, confirmar con el cliente los productos, cantidades, especificaciones y fecha de entrega.',
+              ),
+              actions: [TextButton(
+                onPressed: () => Navigator.of(context).pop(),
+                child: const Text('Cerrar'),
+              )],
+            ),
+          ),
+        ),
+      ],
+    ));
   }
 
   Widget _infoCliente(Map<String, dynamic> c) => _card(child: Wrap(spacing: 30, runSpacing: 14, children: [

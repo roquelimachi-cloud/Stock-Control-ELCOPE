@@ -34,6 +34,10 @@ class _ProduccionDashboardState
 
   final pdfService = PdfDashboardService();
 
+  // Cambia la clave para forzar la recarga de "Mis Producciones"
+  // después de una importación de Excel.
+  int _refreshProduccionesKey = 0;
+
   @override
   void initState() {
     super.initState();
@@ -136,6 +140,14 @@ Wrap(
                 await importService.importar(lista);
 
             await controller.cargar();
+
+            if (!mounted) {
+              return;
+            }
+
+            setState(() {
+              _refreshProduccionesKey++;
+            });
 
             if (!mounted) {
               return;
@@ -525,7 +537,9 @@ const SizedBox(height: 25),
 // MIS PRODUCCIONES
 // =====================================================
 
-const MisProduccionesWidget(),
+MisProduccionesWidget(
+  key: ValueKey(_refreshProduccionesKey),
+),
 
                 // =====================================================
                 // RESUMEN EJECUTIVO

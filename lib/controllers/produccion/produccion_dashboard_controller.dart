@@ -55,7 +55,11 @@ List<TopClienteModel> topClientes = [];
 
     //---------------- KPIs ----------------
 
-    totalOp = producciones.length;
+    totalOp = producciones
+        .map((e) => e.numeroProduccion.trim())
+        .where((op) => op.isNotEmpty)
+        .toSet()
+        .length;
 
     clientes = producciones
         .map((e) => e.cliente)
